@@ -100,6 +100,7 @@ static const char *HOOK_ZYGISK               = "zygisk";
 static const char *HOOK_XPOSED               = "xposed";
 static const char *HOOK_LSPD                 = "lspd";
 static const char *HOOK_EDXPOSED             = "edxposed";
+static const char *HOOK_FRIDA                = "frida";
 static const char *PROC_MAPS                  = "/proc/self/maps";
 static const char *PROC_STATUS                = "/proc/self/task/%s/status";
 static const char *PROC_FD                    = "/proc/self/fd";
@@ -758,7 +759,8 @@ static int hook_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
         my_strstr(info->dlpi_name, HOOK_ZYGISK)  ||
         my_strstr(info->dlpi_name, HOOK_XPOSED)  ||
         my_strstr(info->dlpi_name, HOOK_LSPD)    ||
-        my_strstr(info->dlpi_name, HOOK_EDXPOSED)) {
+        my_strstr(info->dlpi_name, HOOK_EDXPOSED)||
+        my_strstr(info->dlpi_name, HOOK_FRIDA)) {
         *(int *)data = 1;
         return 1;   // stop iteration
     }
@@ -779,7 +781,8 @@ static void detect_riru_zygisk(void) {
                     my_strstr(map, HOOK_ZYGISK)  ||
                     my_strstr(map, HOOK_XPOSED)  ||
                     my_strstr(map, HOOK_LSPD)    ||
-                    my_strstr(map, HOOK_EDXPOSED)) {
+                    my_strstr(map, HOOK_EDXPOSED)||
+                    my_strstr(map, HOOK_FRIDA)) {
                     PH_NUKE("hooking framework in /proc/self/maps: %s", map);
                     my_close(fd); nuke_app();
                 }
@@ -1084,6 +1087,100 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeShard(
         offset    += chunk;
         remaining -= chunk;
     }
+}
+
+// ?
+// LAYER 2b -- nativeWipeArtDex()  [JNI -- called after all shards are loaded]
+//
+// ART internally mmaps the DEX into its own anonymous read-only memory region
+// when InMemoryDexClassLoader (or the file-based fallback) parses it.  That
+// region persists for the life of the process -- even after nativeWipeShard()
+// zeroes the Java byte[] source.  Any scanner reading /proc/self/mem without
+// root can find it via its "dex\n" magic at offset 0.
+//
+// This function:
+//   1. Reads /proc/self/maps line by line.
+//   2. Selects anonymous regions (inode == 0) that are readable and at least
+//      112 bytes (minimum DEX header size).  Skips [stack], [heap], [vdso],
+//      [vvar] and other well-known non-DEX anonymous regions.
+//   3. Peeks at byte 0-3 of each region — read is allowed since perm[0]=='r'.
+//   4. If "dex\n" magic is found: uses my_mprotect (raw syscall, bypasses libc
+//      hooks) to temporarily add PROT_WRITE, zeroes magic (bytes 0-7) and
+//      endian_tag (bytes 40-43), then restores PROT_READ.
+//
+// Zeroing the magic and endian_tag is sufficient to defeat all memory scanners
+// that locate DEX via these fields, without affecting ART class resolution —
+// ART has already fully parsed the DEX into its internal structures before
+// this is called.
+//
+// Must be called AFTER InMemoryDexClassLoader has consumed all shards.
+// ?
+
+JNIEXPORT void JNICALL
+Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeArtDex(
+        JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+
+    int fd = my_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0) return;
+
+    char line[MAX_LINE];
+    while (read_one_line(fd, line, MAX_LINE) > 0) {
+        unsigned long start = 0, end = 0;
+        char perms[5]   = {0};
+        unsigned long offset = 0;
+        unsigned int dev_maj = 0, dev_min = 0;
+        unsigned long inode  = 0;
+        char path[256]  = {0};
+
+        // Parse maps line: start-end perms offset dev inode [path]
+        int n = sscanf(line, "%lx-%lx %4s %lx %x:%x %lu %255s",
+                       &start, &end, perms, &offset,
+                       &dev_maj, &dev_min, &inode, path);
+        if (n < 7) continue;
+        if (end <= start || (end - start) < 112) continue;
+
+        // Only anonymous regions — file-backed regions are not ART's mmap copy
+        if (inode != 0) continue;
+
+        // Must be readable (perms[0] == 'r')
+        if (perms[0] != 'r') continue;
+
+        // Skip known non-DEX anonymous regions by name
+        if (n >= 8 && path[0] == '[') {
+            if (my_strncmp(path, "[stack", 6) == 0 ||
+                my_strncmp(path, "[heap",  5) == 0 ||
+                my_strncmp(path, "[vvar",  5) == 0 ||
+                my_strncmp(path, "[vdso",  5) == 0 ||
+                my_strncmp(path, "[vsys",  5) == 0) continue;
+        }
+
+        uint8_t *ptr = (uint8_t *)start;
+
+        // Peek at first 4 bytes — readable since perms[0] == 'r'
+        // DEX magic: 'd'(0x64) 'e'(0x65) 'x'(0x78) '\n'(0x0A)
+        if (ptr[0] != 0x64 || ptr[1] != 0x65 ||
+            ptr[2] != 0x78 || ptr[3] != 0x0A) continue;
+
+        // DEX magic confirmed — need write permission to zero it.
+        // my_mprotect is a raw syscall (bypasses any libc/Frida hook).
+        // We operate only on the first page (4096 bytes); both the
+        // 8-byte magic (offset 0) and endian_tag (offset 40) lie within it.
+        bool was_ro = (perms[1] != 'w');
+        if (was_ro) {
+            if (my_mprotect(ptr, 4096, PROT_READ | PROT_WRITE) != 0) continue;
+        }
+
+        // Zero DEX magic + version string (bytes 0-7): e.g. "dex\n035\0"
+        my_memset(ptr, 0, 8);
+        // Zero endian_tag (bytes 40-43): 0x12345678 little-endian
+        my_memset(ptr + 40, 0, 4);
+
+        // Restore original permissions
+        if (was_ro) my_mprotect(ptr, 4096, PROT_READ);
+    }
+    my_close(fd);
 }
 
 // ?

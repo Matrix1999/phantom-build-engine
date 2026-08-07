@@ -178,6 +178,17 @@ public class DexProtector {
             DexCrypto.nativeWipeShard(shard);
         }
 
+        // ── Layer-2b anti-dump ────────────────────────────────────────────
+        // nativeWipeShard() zeroed the Java byte[] sources above, but ART
+        // internally mmaps each DEX into its own anonymous read-only region
+        // when InMemoryDexClassLoader parses it.  That ART-internal copy
+        // survives with a valid "dex\n" magic header readable via
+        // /proc/self/mem without root.  nativeWipeArtDex() scans
+        // /proc/self/maps for those anonymous regions and zeros their magic
+        // + endian_tag using mprotect (raw syscall — bypasses Frida libc
+        // hooks) so no memory scanner can locate them.
+        DexCrypto.nativeWipeArtDex();
+
     }
 
     // ── File-based path (API 21-26 fallback) ──────────────────────────────────

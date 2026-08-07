@@ -66,6 +66,27 @@ public class DexCrypto {
      */
     public static native void nativeWipeShard(byte[] dexBytes);
 
+    /**
+     * Layer-2b anti-dump — wipe DEX magic from ART's internal mmap copy.
+     *
+     * When InMemoryDexClassLoader parses a DEX, ART mmaps the bytes into its
+     * own anonymous read-only region in the process's virtual address space.
+     * That region persists for the lifetime of the process.  nativeWipeShard()
+     * zeroes the Java byte[] source, but ART's internal copy still has a valid
+     * "dex\n" magic header readable via /proc/self/mem without root.
+     *
+     * This function scans /proc/self/maps for anonymous regions with DEX magic,
+     * uses mprotect (raw syscall — bypasses Frida libc hooks) to temporarily
+     * add write permission, zeroes bytes 0-7 (magic+version) and 40-43
+     * (endian_tag), then restores the original protection.  ART class resolution
+     * is unaffected — ART has already fully parsed the DEX into its internal
+     * structures before this is called.
+     *
+     * MUST be called only after all shards have been loaded and nativeWipeShard()
+     * has been called on each.  Requires {@link #loadPhantomLib(Context)}.
+     */
+    public static native void nativeWipeArtDex();
+
     // ── Blob bootstrap ────────────────────────────────────────────────────────
 
     /**
