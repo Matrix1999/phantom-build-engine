@@ -80,6 +80,10 @@ jobs:
           echo "NDK_CXX_ARM32=$TC/bin/armv7a-linux-androideabi21-clang++"       >> $GITHUB_ENV
           echo "SYSROOT=$TC/sysroot"                                             >> $GITHUB_ENV
 
+      # ── Install amice shared-lib dependencies ──────────────────────────────
+      - name: Install amice runtime dependencies
+        run: sudo apt-get install -y --no-install-recommends libedit2 libncurses5
+
       # ── Smoke-test amice plugin ─────────────────────────────────────────────
       - name: Smoke-test amice plugin
         run: |
