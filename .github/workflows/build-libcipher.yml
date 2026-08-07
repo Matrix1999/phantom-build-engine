@@ -82,7 +82,7 @@ jobs:
 
       # ── Install amice shared-lib dependencies ──────────────────────────────
       - name: Install amice runtime dependencies
-        run: sudo apt-get install -y --no-install-recommends libedit2 libncurses5
+        run: sudo apt-get install -y --no-install-recommends libedit2 libncurses6 libtinfo6
 
       # ── Smoke-test amice plugin ─────────────────────────────────────────────
       - name: Smoke-test amice plugin
