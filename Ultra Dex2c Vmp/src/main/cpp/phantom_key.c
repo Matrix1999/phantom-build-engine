@@ -59,16 +59,11 @@
 #include <arpa/inet.h>
 #include <link.h>
 #include <dlfcn.h>
-#include <android/log.h>
 #include <zlib.h>
 
-// ── Debug logging ─────────────────────────────────────────────────────────────
-// Tag visible in: adb logcat -s PHANTOM
-#define PH_TAG "PHANTOM"
-#define PH_LOG(fmt, ...) \
-    __android_log_print(ANDROID_LOG_DEBUG, PH_TAG, fmt, ##__VA_ARGS__)
-#define PH_NUKE(reason, ...) \
-    __android_log_print(ANDROID_LOG_ERROR, PH_TAG, "NUKE: " reason, ##__VA_ARGS__)
+// ── Debug logging — silenced for release (zero ADB output, zero binary footprint)
+#define PH_LOG(fmt, ...)       ((void)0)
+#define PH_NUKE(reason, ...)   ((void)0)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ?
