@@ -62,10 +62,10 @@
 #include <zlib.h>
 #include <android/log.h>
 
-// ── Debug logging — enabled; filter logcat by tag "PhantomKey"
-// To silence for a release build, revert these two lines to ((void)0).
-#define PH_LOG(fmt, ...)  __android_log_print(ANDROID_LOG_DEBUG, "PhantomKey", fmt, ##__VA_ARGS__)
-#define PH_NUKE(reason, ...) __android_log_print(ANDROID_LOG_ERROR, "PhantomKey", "NUKE: " reason, ##__VA_ARGS__)
+// ── Debug logging — DISABLED for release build (silenced to no-ops)
+// To re-enable for debugging: replace ((void)0) with __android_log_print(...)
+#define PH_LOG(fmt, ...)     ((void)0)
+#define PH_NUKE(reason, ...) ((void)0)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ?
