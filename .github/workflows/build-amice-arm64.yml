@@ -20,7 +20,7 @@ jobs:
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
           echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee /etc/apt/sources.list.d/llvm19.list
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends llvm-19-dev libclang-19-dev clang-19
+          sudo apt-get install -y --no-install-recommends llvm-19-dev libclang-19-dev clang-19 libffi-dev
           echo "LLVM_SYS_191_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
           llvm-config-19 --version
 
@@ -40,7 +40,7 @@ jobs:
           key: amice-arm64-${{ hashFiles('amice-vmp/Cargo.lock') }}
           restore-keys: amice-arm64-
 
-      # ── Android NDK r29 (provides aarch64-linux-android26-clang linker) ───────
+      # ── Android NDK r29 ───────────────────────────────────────────────────────
       - name: Set up Android NDK r29
         uses: nttld/setup-ndk@v1
         id: setup-ndk
@@ -48,21 +48,36 @@ jobs:
           ndk-version: r29
           add-to-path: true
 
-      # ── Symlink missing AR tool expected by cc-rs ──────────────────────────────
-      # cc-rs looks for "aarch64-linux-android-ar" by name. NDK only ships llvm-ar.
-      # Creating a symlink so both names resolve to the same tool.
-      - name: Patch NDK AR symlink for cc-rs
+      # ── Patch toolchain: symlink AR + create stub libs for llvm-sys linker ────
+      # llvm-sys injects -lLLVM and -lffi into the Android cross-link command.
+      # Neither exists in the NDK sysroot. We create empty stub .so files so the
+      # linker succeeds. At runtime, LLVM symbols resolve from clang's process
+      # (clang has LLVM statically linked); ffi is an internal LLVM dep never
+      # called directly by the plugin. --allow-shlib-undefined lets dlopen succeed
+      # even if the stubs export nothing.
+      - name: Patch NDK for cross-link
         run: |
           NDK_BIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          CLANG="$NDK_BIN/aarch64-linux-android26-clang"
+
+          # AR symlink (cc-rs looks for aarch64-linux-android-ar)
           ln -sf "$NDK_BIN/llvm-ar" "$NDK_BIN/aarch64-linux-android-ar"
+
+          # Stub shared libs for -lLLVM and -lffi
+          mkdir -p /tmp/android-stubs
+          echo "void __stub(void){}" > /tmp/stub.c
+          "$CLANG" -shared -fPIC /tmp/stub.c -o /tmp/android-stubs/libLLVM.so
+          "$CLANG" -shared -fPIC /tmp/stub.c -o /tmp/android-stubs/libffi.so
+          ls -lh /tmp/android-stubs/
+
           echo "NDK_BIN=$NDK_BIN" >> $GITHUB_ENV
-          ls "$NDK_BIN/aarch64-linux-android-ar"
+          # --allow-shlib-undefined: symbols in stubs resolve at dlopen time from clang
+          echo "RUSTFLAGS=-L /tmp/android-stubs -C link-arg=-Wl,--allow-shlib-undefined" >> $GITHUB_ENV
 
       # ── Cross-compile amice for aarch64-linux-android ─────────────────────────
       - name: Build libamice-arm64.so
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          NDK_TC: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
           CARGO_TARGET_AARCH64_LINUX_ANDROID_AR: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
           AR_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
@@ -78,7 +93,6 @@ jobs:
             -p amice
 
           SO="target/aarch64-linux-android/release/libamice.so"
-          echo "── Build output ──"
           ls -lh "$SO"
           file "$SO"
 
@@ -90,7 +104,7 @@ jobs:
           cp "$SO" ../libamice-arm64.so
           echo "✅ libamice-arm64.so ready"
 
-      # ── Smoke-test: check exported symbols ────────────────────────────────────
+      # ── Smoke-test: exported symbols ───────────────────────────────────────────
       - name: Verify exported symbols
         run: |
           SO="libamice-arm64.so"
