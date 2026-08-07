@@ -1,0 +1,48 @@
+name: Upload libLLVM.so to release (one-shot)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  upload-llvm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download NDK clang tarball + extract libLLVM.so
+        run: |
+          sudo apt-get install -y --no-install-recommends zstd
+          curl -L --retry 3 \
+            "https://github.com/Ylarod/setup-ndk-clang/releases/download/prebuilt/clang-linux-x86-ndk-r29-r563880c.tar.zst" \
+            | zstd -d - | tar -x --wildcards "*/libLLVM*.so*" -C /tmp/
+          LLVM_SO=$(find /tmp -name "libLLVM*.so*" -type f | head -1)
+          echo "Found: $LLVM_SO  size=$(du -sh $LLVM_SO | cut -f1)"
+          cp "$LLVM_SO" /tmp/libLLVM.so
+          ls -lh /tmp/libLLVM.so
+
+      - name: Upload libLLVM.so to phantom-build-engine amice-ndk-r29 release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete existing asset if present
+          EXISTING=$(curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/amice-ndk-r29" \
+            | jq -r '.assets[] | select(.name=="libLLVM.so") | .id')
+          if [ -n "$EXISTING" ]; then
+            curl -s -X DELETE \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/assets/$EXISTING"
+            echo "Deleted old libLLVM.so asset"
+          fi
+
+          RELEASE_ID=$(curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/amice-ndk-r29" \
+            | jq -r '.id')
+
+          curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=libLLVM.so" \
+            --data-binary @/tmp/libLLVM.so \
+            | jq '{id:.id, name:.name, size:.size}'
+          echo "Done ✅"
