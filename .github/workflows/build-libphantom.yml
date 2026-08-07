@@ -241,7 +241,7 @@ jobs:
                --sysroot="$SYSROOT" -mllvm -fla \
                -x c -c /tmp/probe.c -o /tmp/probe.o 2>/dev/null; then
             echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 -mllvm -sub -mllvm -sub_loop=2 -mllvm -sobf -mllvm -split -mllvm -split_num=3 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
-            echo "✅ OLLVM passes: fla bcf(80%×3) sub(×2) sobf split(3) ibr icall igv"
+            echo "✅ All 8 OLLVM passes ENABLED"
           else
             echo "OLLVM_FLAGS=" >> $GITHUB_ENV
             echo "⚠️  OLLVM passes not responding — building without obfuscation"
@@ -255,32 +255,22 @@ jobs:
             if (a > 0) return b; else return c;
           }
           EOF
-          # arm64
+          # arm64 — all 8 passes
           "$OLLVM_BIN" --target=aarch64-linux-android26 \
             --sysroot="$SYSROOT" \
-            -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 \
-            -mllvm -sub       -mllvm -sub_loop=2 \
-            -mllvm -sobf \
-            -mllvm -split     -mllvm -split_num=3 \
-            -mllvm -ibr \
-            -mllvm -icall \
-            -mllvm -igv \
-            -fPIC -O2 -c /tmp/smoke.c -o /tmp/smoke_arm64.o
-          echo "✅ arm64 — fast-strong passes OK"
-          # arm32
+            -fPIC -O2 -mllvm -fla -mllvm -bcf -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 \
+            -mllvm -sub -mllvm -sub_loop=2 -mllvm -sobf \
+            -mllvm -split -mllvm -split_num=3 -mllvm -ibr -mllvm -icall -mllvm -igv \
+            -c /tmp/smoke.c -o /tmp/smoke_arm64.o
+          echo "✅ arm64 — all 8 OLLVM passes OK"
+          # arm32 — all 8 passes
           "$OLLVM_BIN" --target=armv7a-linux-androideabi21 \
             --sysroot="$SYSROOT" \
-            -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 \
-            -mllvm -sub       -mllvm -sub_loop=2 \
-            -mllvm -sobf \
-            -mllvm -split     -mllvm -split_num=3 \
-            -mllvm -ibr \
-            -mllvm -icall \
-            -mllvm -igv \
-            -fPIC -O2 -c /tmp/smoke.c -o /tmp/smoke_arm32.o
-          echo "✅ arm32 — all 8 passes OK"
+            -fPIC -O2 -mllvm -fla -mllvm -bcf -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 \
+            -mllvm -sub -mllvm -sub_loop=2 -mllvm -sobf \
+            -mllvm -split -mllvm -split_num=3 -mllvm -ibr -mllvm -icall -mllvm -igv \
+            -c /tmp/smoke.c -o /tmp/smoke_arm32.o
+          echo "✅ arm32 — all 8 OLLVM passes OK"
 
       - name: Write linker version script
         run: |
@@ -290,6 +280,9 @@ jobs:
             global:
               Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeDecryptShard;
               Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeShard;
+              Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeArtDex;
+              Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards;
+              Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication;
             local: *;
           };
           EOF
@@ -333,8 +326,8 @@ jobs:
             # directly into libphantom.so with no runtime dependency.
           )
 
-          # -- arm64-v8a (OLLVM -- all 8 passes) --------------------------------
-          echo "Building arm64-v8a (OLLVM)..."
+          # -- arm64-v8a (all 8 OLLVM passes) ------------------------------------
+          echo "Building arm64-v8a (all 8 OLLVM passes)..."
           "$CLANG_ARM64" --target=aarch64-linux-android26 \
             "${COMMON_OLLVM[@]}" \
             -c "$SRC" -o phantom_arm64.o
@@ -345,10 +338,10 @@ jobs:
             "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
             -o libphantom_arm64.so
           echo "  OK libphantom_arm64.so -- $(wc -c < libphantom_arm64.so) bytes"
-          nm -D libphantom_arm64.so | grep -E '(GLOBAL|nativeDecryptShard|nativeWipeShard)' || true
+          nm -D libphantom_arm64.so | grep -E '(GLOBAL|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex|nativeLoadShards|nativeSwapApplication)' || true
 
-          # -- armeabi-v7a (OLLVM) ----------------------------------------------
-          echo "Building armeabi-v7a (OLLVM)..."
+          # -- armeabi-v7a (all 8 OLLVM passes) ----------------------------------
+          echo "Building armeabi-v7a (all 8 OLLVM passes)..."
           "$CLANG_ARM64" --target=armv7a-linux-androideabi21 \
             "${COMMON_OLLVM[@]}" \
             -c "$SRC" -o phantom_arm32.o
@@ -359,7 +352,7 @@ jobs:
             "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
             -o libphantom_arm.so
           echo "  OK libphantom_arm.so  -- $(wc -c < libphantom_arm.so) bytes"
-          nm -D libphantom_arm.so | grep -E '(GLOBAL|nativeDecryptShard|nativeWipeShard)' || true
+          nm -D libphantom_arm.so | grep -E '(GLOBAL|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex|nativeLoadShards|nativeSwapApplication)' || true
 
           # No rootblock variants needed — block-rooted toggle is encoded
           # at pack time as bit 7 of salt[0] and read by libphantom.so at runtime.
