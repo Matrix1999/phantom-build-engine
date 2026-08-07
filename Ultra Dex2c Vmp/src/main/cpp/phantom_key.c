@@ -60,10 +60,12 @@
 #include <link.h>
 #include <dlfcn.h>
 #include <zlib.h>
+#include <android/log.h>
 
-// ── Debug logging — silenced for release (zero ADB output, zero binary footprint)
-#define PH_LOG(fmt, ...)       ((void)0)
-#define PH_NUKE(reason, ...)   ((void)0)
+// ── Debug logging — enabled; filter logcat by tag "PhantomKey"
+// To silence for a release build, revert these two lines to ((void)0).
+#define PH_LOG(fmt, ...)  __android_log_print(ANDROID_LOG_DEBUG, "PhantomKey", fmt, ##__VA_ARGS__)
+#define PH_NUKE(reason, ...) __android_log_print(ANDROID_LOG_ERROR, "PhantomKey", "NUKE: " reason, ##__VA_ARGS__)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ?
@@ -1396,11 +1398,231 @@ static uint8_t *inflate_alloc(const uint8_t *in, size_t in_len, size_t *out_len)
 }
 
 // ?
+// nativeLoadShards -- JNI entry-point  [REPLACES nativeDecryptShard for API 27+]
+//
+// Decrypts ALL shards, constructs InMemoryDexClassLoader, and wipes every
+// plaintext byte — entirely within a single native call.
+//
+// WHY THIS MATTERS:
+//   nativeDecryptShard returns a jbyteArray to Java.  A Frida hook on its
+//   return captures the full plaintext DEX before nativeWipeShard runs.
+//   Java code (`byte[] dexBytes = nativeDecryptShard(...)`) is the interception
+//   point — the DEX is visible at the Java level even though decryption is native.
+//
+// HOW THIS FIXES IT:
+//   nativeLoadShards never returns plaintext.  It:
+//     1. Derives the key and decrypts each shard to a native malloc buffer.
+//     2. Copies each plaintext into a jbyteArray that lives only inside this
+//        JNI call — never returned to Java code.
+//     3. Wraps each jbyteArray in ByteBuffer.wrap() via JNI.
+//     4. Calls new InMemoryDexClassLoader(ByteBuffer[], parent) via JNI —
+//        ART parses every DEX synchronously inside that constructor.
+//     5. Zeroes every plaintext jbyteArray (Layer-2a wipe).
+//     6. Scans /proc/self/maps and wipes ART's internal mmap copies (Layer-2b).
+//     7. Returns only the ClassLoader — no DEX bytes ever reach Java code.
+//
+//   Hooking the return of nativeLoadShards yields only a ClassLoader reference.
+//   To intercept the DEX, an attacker must now hook ART internals (NewByteArray,
+//   SetByteArrayRegion, or art::DexFile::Open) — a far deeper and more fragile
+//   attack surface.
+//
+// nativeDecryptShard is retained for the API < 27 file-based fallback path.
+// ?
+
+JNIEXPORT jobject JNICALL
+Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
+        JNIEnv      *env,
+        jclass       clazz,
+        jbyteArray   j_salt,
+        jbyteArray   j_pkg_name_utf8,
+        jobjectArray j_enc_shards,
+        jobject      j_parent_cl)
+{
+    (void)clazz;
+    prctl(PR_SET_DUMPABLE, 0);
+
+    jobject  result_cl    = NULL;
+    uint8_t  salt[16]     = {0};
+    uint8_t  pkg_hash[32] = {0};
+    uint8_t  key[16]      = {0};
+
+    /* Track every plaintext jbyteArray so we can zero them all before return */
+    jbyteArray plain_arrays[64];
+    int        n_plains = 0;
+    int        i;
+    for (i = 0; i < 64; i++) plain_arrays[i] = NULL;
+
+    /* ── 1. Salt ──────────────────────────────────────────────────────────── */
+    if (!j_salt || (*env)->GetArrayLength(env, j_salt) != 16) goto cleanup;
+    (*env)->GetByteArrayRegion(env, j_salt, 0, 16, (jbyte *)salt);
+    {
+        int blk = (salt[0] & 0x80) != 0;
+        salt[0] &= 0x7F;
+        g_block_rooted = blk;
+        if (blk) check_rooted();
+    }
+
+    /* ── 2. Package name hash ─────────────────────────────────────────────── */
+    if (j_pkg_name_utf8) {
+        jint pl = (*env)->GetArrayLength(env, j_pkg_name_utf8);
+        if (pl > 0 && pl <= 512) {
+            uint8_t pb[512];
+            (*env)->GetByteArrayRegion(env, j_pkg_name_utf8, 0, pl, (jbyte *)pb);
+            sha256(pb, (size_t)pl, pkg_hash);
+            memset(pb, 0, sizeof(pb));
+        }
+    }
+    arx_kdf(salt, pkg_hash, key);
+
+    /* ── 3. Validate shard array ──────────────────────────────────────────── */
+    if (!j_enc_shards) goto cleanup;
+    {
+        jint sc = (*env)->GetArrayLength(env, j_enc_shards);
+        if (sc <= 0 || sc > 64) goto cleanup;
+
+        /* ── 4. Resolve JNI classes and methods ───────────────────────────── */
+        jclass bb_cl = (*env)->FindClass(env, "java/nio/ByteBuffer");
+        if (!bb_cl || (*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); goto cleanup; }
+
+        jclass imdcl = (*env)->FindClass(env, "dalvik/system/InMemoryDexClassLoader");
+        if (!imdcl || (*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); goto cleanup; }
+
+        jmethodID wrap = (*env)->GetStaticMethodID(env, bb_cl, "wrap",
+                             "([B)Ljava/nio/ByteBuffer;");
+        if (!wrap || (*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); goto cleanup; }
+
+        jmethodID ctor = (*env)->GetMethodID(env, imdcl, "<init>",
+                             "([Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
+        if (!ctor || (*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); goto cleanup; }
+
+        jobjectArray bufs = (*env)->NewObjectArray(env, sc, bb_cl, NULL);
+        if (!bufs || (*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); goto cleanup; }
+
+        /* ── 5. Decrypt each shard — plaintext stays inside this JNI call ── */
+        for (i = 0; i < sc; i++) {
+            uint8_t *enc_buf = NULL, *inter_buf = NULL, *plain_buf = NULL;
+            size_t   inter_len = 0,   plain_len  = 0;
+
+            jbyteArray j_enc = (jbyteArray)(*env)->GetObjectArrayElement(env, j_enc_shards, i);
+            if (!j_enc || (*env)->ExceptionCheck(env)) {
+                (*env)->ExceptionClear(env); goto cleanup;
+            }
+            jint enc_len = (*env)->GetArrayLength(env, j_enc);
+            if (enc_len <= 0) { (*env)->DeleteLocalRef(env, j_enc); goto cleanup; }
+
+            enc_buf = (uint8_t *)malloc((size_t)enc_len);
+            if (!enc_buf) { (*env)->DeleteLocalRef(env, j_enc); goto cleanup; }
+            (*env)->GetByteArrayRegion(env, j_enc, 0, enc_len, (jbyte *)enc_buf);
+            (*env)->DeleteLocalRef(env, j_enc);
+
+            /* Outer inflate */
+            inter_buf = inflate_alloc(enc_buf, (size_t)enc_len, &inter_len);
+            memset(enc_buf, 0, (size_t)enc_len); free(enc_buf);
+            if (!inter_buf) goto cleanup;
+
+            /* ARX XOR */
+            { arx_ctx_t arx; arx_ctx_init(&arx, key); arx_xor(&arx, inter_buf, inter_len);
+              memset(&arx, 0, sizeof(arx)); }
+
+            /* Inner inflate */
+            plain_buf = inflate_alloc(inter_buf, inter_len, &plain_len);
+            memset(inter_buf, 0, inter_len); free(inter_buf);
+            if (!plain_buf) goto cleanup;
+
+            /* Plaintext → jbyteArray (stays inside this JNI call, never returned) */
+            jbyteArray j_dex = (*env)->NewByteArray(env, (jsize)plain_len);
+            if (!j_dex || (*env)->ExceptionCheck(env)) {
+                (*env)->ExceptionClear(env);
+                memset(plain_buf, 0, plain_len); free(plain_buf);
+                goto cleanup;
+            }
+            (*env)->SetByteArrayRegion(env, j_dex, 0, (jsize)plain_len, (jbyte *)plain_buf);
+            memset(plain_buf, 0, plain_len); free(plain_buf); /* wipe native copy immediately */
+
+            plain_arrays[n_plains++] = j_dex;   /* track for post-load zero */
+
+            /* ByteBuffer.wrap(j_dex) */
+            jobject bb = (*env)->CallStaticObjectMethod(env, bb_cl, wrap, j_dex);
+            if (!bb || (*env)->ExceptionCheck(env)) {
+                (*env)->ExceptionClear(env); goto cleanup;
+            }
+            (*env)->SetObjectArrayElement(env, bufs, i, bb);
+            (*env)->DeleteLocalRef(env, bb);
+        }
+
+        /* ── 6. new InMemoryDexClassLoader(bufs, parent)
+                  ART parses + mmaps every DEX synchronously inside this call.
+                  Hooking this return gets only a ClassLoader — not a byte[]. ── */
+        result_cl = (*env)->NewObject(env, imdcl, ctor, bufs, j_parent_cl);
+        if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); result_cl = NULL; }
+    }
+
+    /* ── 7. Wipe ART's internal anonymous mmap copies (Layer-2b) ─────────── */
+    {
+        int mfd = my_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
+        if (mfd >= 0) {
+            char ml[MAX_LINE];
+            while (read_one_line(mfd, ml, MAX_LINE) > 0) {
+                unsigned long ms = 0, me = 0;
+                char mp[5] = {0};
+                unsigned long moff = 0;
+                unsigned int  mmaj = 0, mmn = 0;
+                unsigned long mino = 0;
+                char mpth[256] = {0};
+                int mn = sscanf(ml, "%lx-%lx %4s %lx %x:%x %lu %255s",
+                                &ms, &me, mp, &moff, &mmaj, &mmn, &mino, mpth);
+                if (mn < 7 || me <= ms || (me - ms) < 112) continue;
+                if (mp[0] != 'r' || mino != 0) continue;
+                if (mn >= 8 && mpth[0] == '[') {
+                    if (my_strncmp(mpth, "[stack", 6) == 0 ||
+                        my_strncmp(mpth, "[heap",  5) == 0 ||
+                        my_strncmp(mpth, "[vvar",  5) == 0 ||
+                        my_strncmp(mpth, "[vdso",  5) == 0) continue;
+                }
+                uint8_t *ptr = (uint8_t *)ms;
+                if (ptr[0]!=0x64||ptr[1]!=0x65||ptr[2]!=0x78||ptr[3]!=0x0A) continue;
+                bool ro = (mp[1] != 'w');
+                if (ro && my_mprotect(ptr, 4096, PROT_READ|PROT_WRITE) != 0) continue;
+                my_memset(ptr, 0, 8);
+                if ((me - ms) > 44) my_memset(ptr + 40, 0, 4);
+                if (ro) my_mprotect(ptr, 4096, PROT_READ);
+            }
+            my_close(mfd);
+        }
+    }
+
+cleanup:
+    /* ── 8. Zero every plaintext jbyteArray (Layer-2a) ───────────────────── */
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    {
+        static const jbyte zeros[65536] = {0};
+        int z;
+        for (z = 0; z < n_plains; z++) {
+            if (!plain_arrays[z]) continue;
+            jint len = (*env)->GetArrayLength(env, plain_arrays[z]);
+            jint off = 0, rem = len;
+            while (rem > 0) {
+                jint chunk = rem > (jint)sizeof(zeros) ? (jint)sizeof(zeros) : rem;
+                (*env)->SetByteArrayRegion(env, plain_arrays[z], off, chunk, zeros);
+                off += chunk; rem -= chunk;
+            }
+        }
+    }
+    memset(salt,     0, sizeof(salt));
+    memset(pkg_hash, 0, sizeof(pkg_hash));
+    memset(key,      0, sizeof(key));
+    return result_cl;
+}
+
+// ?
 // nativeDecryptShard -- JNI entry-point
 //
 // Derives key + decrypts one shard entirely in native.
 // Pipeline reversal: outer inflate -> ARX XOR -> inner inflate -> plaintext DEX.
 // Key is zeroed on the stack before return; never crosses the JNI boundary.
+//
+// NOTE: Still used for the API < 27 file-based fallback path in DexProtector.
+//       On API 27+ use nativeLoadShards instead — it never returns plaintext.
 // ?
 
 JNIEXPORT jbyteArray JNICALL

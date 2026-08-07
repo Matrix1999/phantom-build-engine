@@ -67,6 +67,38 @@ public class DexCrypto {
     public static native void nativeWipeShard(byte[] dexBytes);
 
     /**
+     * Decrypt all shards + load InMemoryDexClassLoader — entirely in native.
+     *
+     * This replaces the old pattern of calling nativeDecryptShard() per shard
+     * from Java and then passing the returned byte[] to InMemoryDexClassLoader.
+     * That pattern exposed the plaintext DEX at the Java level: a Frida hook
+     * on the return of nativeDecryptShard() captured the full byte[] before
+     * nativeWipeShard() ran.
+     *
+     * nativeLoadShards() closes that gap:
+     *  1. Decrypts every shard to a native malloc buffer (key never leaves C stack).
+     *  2. Copies each plaintext into a jbyteArray that exists only inside this
+     *     JNI call — it is NEVER returned to Java code.
+     *  3. Wraps each jbyteArray in ByteBuffer.wrap() via JNI.
+     *  4. Calls new InMemoryDexClassLoader(ByteBuffer[], parent) via JNI —
+     *     ART parses all DEX files synchronously inside that constructor.
+     *  5. Zeroes every plaintext jbyteArray (Layer-2a wipe).
+     *  6. Scans /proc/self/maps and zeroes ART's internal anonymous mmap
+     *     copies via mprotect + direct write (Layer-2b wipe).
+     *  7. Returns only the ClassLoader — no DEX bytes cross the JNI boundary.
+     *
+     * Hooking the return of this function yields only a ClassLoader reference.
+     *
+     * @param salt          16-byte raw salt (with block-rooted flag in bit 7 of byte 0)
+     * @param pkgNameUtf8   Package name encoded as UTF-8 bytes
+     * @param encShards     Ciphertext shards (byte[][])
+     * @param parent        Existing PathClassLoader to delegate non-app classes
+     * @return              The constructed InMemoryDexClassLoader
+     */
+    public static native ClassLoader nativeLoadShards(
+            byte[] salt, byte[] pkgNameUtf8, byte[][] encShards, ClassLoader parent);
+
+    /**
      * Layer-2b anti-dump — wipe DEX magic from ART's internal mmap copy.
      *
      * When InMemoryDexClassLoader parses a DEX, ART mmaps the bytes into its

@@ -137,58 +137,35 @@ public class DexProtector {
                               int shardCount, int[] sizes,
                               byte[] salt, byte[] pkgNameUtf8) throws Exception {
 
-        ByteBuffer[] buffers    = new ByteBuffer[shardCount];
-        byte[][]     rawShards  = new byte[shardCount][];   // keep refs for Layer-2a wipe
-
+        // Read ciphertext shards — plaintext never exists in Java
+        byte[][] encShards = new byte[shardCount][];
         for (int i = 0; i < shardCount; i++) {
-            byte[] encrypted = new byte[sizes[i]];
-            dis.readFully(encrypted);
-            byte[] dexBytes  = DexCrypto.nativeDecryptShard(salt, pkgNameUtf8, encrypted);
-            rawShards[i]     = dexBytes;
-            buffers[i]       = ByteBuffer.wrap(dexBytes);
+            encShards[i] = new byte[sizes[i]];
+            dis.readFully(encShards[i]);
         }
 
-        // Create InMemoryDexClassLoader — parent is the existing PathClassLoader
-        // so system-class delegation still works.
-        // DO NOT inject dexElements into parent: doing so registers the same
-        // DexFile with two class loaders, which causes:
-        //   InternalError: Attempt to register dex file … with multiple class loaders
-        // on any app that uses AppComponentFactory / CoreComponentFactory.
-        // Instead we patch LoadedApk.mClassLoader so Android resolves all app
-        // classes through inMemory (which already delegates to parent).
-        ClassLoader parent   = context.getClassLoader();
-        ClassLoader inMemory = new dalvik.system.InMemoryDexClassLoader(buffers, parent);
+        ClassLoader parent = context.getClassLoader();
 
-        // InMemoryDexClassLoader builds its DexPathList with only system native
-        // lib dirs (/system/lib64 etc.).  The APK's own lib dir
-        // (/data/app/<pkg>/lib/arm64) is missing, so any System.loadLibrary()
-        // call from the protected DEX throws UnsatisfiedLinkError.
-        // Copy nativeLibraryPathElements + nativeLibraryDirectories from parent.
+        // ── Single native call does everything ────────────────────────────
+        // nativeLoadShards() decrypts all shards, constructs
+        // InMemoryDexClassLoader via JNI, zeroes every plaintext byte[]
+        // (Layer-2a), and wipes ART's internal mmap copies (Layer-2b) —
+        // all inside one JNI call.
+        //
+        // WHY: The old pattern (nativeDecryptShard → Java byte[] →
+        // InMemoryDexClassLoader → nativeWipeShard) exposed the full
+        // plaintext DEX at the Java level between steps 1 and 3.
+        // A Frida hook on nativeDecryptShard's return captured the byte[]
+        // before nativeWipeShard ran.  nativeLoadShards closes that gap:
+        // hooking its return yields only a ClassLoader, not a byte[].
+        ClassLoader inMemory = DexCrypto.nativeLoadShards(
+                salt, pkgNameUtf8, encShards, parent);
+        if (inMemory == null)
+            throw new RuntimeException("nativeLoadShards failed");
+
+        // Copy APK native lib dirs into the new loader and install it.
         copyNativeLibDirs(parent, inMemory);
-
         patchLoadedApkClassLoader(context, inMemory);
-
-        // ── Layer-2a anti-dump ────────────────────────────────────────────
-        // ART has fully parsed each DEX from its ByteBuffer by the time
-        // InMemoryDexClassLoader returns.  We now wipe the dex\n magic and
-        // endian_tag from each source byte[] so /proc/PID/mem scanners
-        // (dump_dex_mem.py and equivalents) find no valid DEX headers on
-        // the Java heap.
-        for (byte[] shard : rawShards) {
-            DexCrypto.nativeWipeShard(shard);
-        }
-
-        // ── Layer-2b anti-dump ────────────────────────────────────────────
-        // nativeWipeShard() zeroed the Java byte[] sources above, but ART
-        // internally mmaps each DEX into its own anonymous read-only region
-        // when InMemoryDexClassLoader parses it.  That ART-internal copy
-        // survives with a valid "dex\n" magic header readable via
-        // /proc/self/mem without root.  nativeWipeArtDex() scans
-        // /proc/self/maps for those anonymous regions and zeros their magic
-        // + endian_tag using mprotect (raw syscall — bypasses Frida libc
-        // hooks) so no memory scanner can locate them.
-        DexCrypto.nativeWipeArtDex();
-
     }
 
     // ── File-based path (API 21-26 fallback) ──────────────────────────────────
