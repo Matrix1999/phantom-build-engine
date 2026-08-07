@@ -77,37 +77,109 @@
 #define MAX_SZ     (80 * 1024 * 1024)
 
 
-static const char *APPNAME                    = "YahyaVM_AntiFrida";
-static const char *FRIDA_THREAD_GUM_JS_LOOP   = "gum-js-loop";
-static const char *FRIDA_THREAD_GMAIN         = "gmain";
-static const char *FRIDA_NAMEDPIPE_LINJECTOR  = "linjector";
+// ── Advanced string hiding ────────────────────────────────────────────────────
+// Technique: per-string unique 4-byte rotating XOR key — no shared decrypt fn.
+// OLLVM obfuscates each inlined PH_DECRYPT_N callsite independently.
+// strings(1) / IDA string window / Ghidra mass-emulation all yield nothing.
+//
+// PH_DECRYPT_N(out, enc, enc_len, key_init) — inline, expands at callsite.
+// PH_ZERO(buf, sz) — volatile wipe; compiler cannot optimize away.
+#define PH_DECRYPT_N(out, enc, enc_len, key_init) do {      \
+    const uint8_t _k[] = key_init;                          \
+    int _kl = (int)sizeof(_k);                              \
+    for (int _i = 0; _i < (enc_len); _i++)                  \
+        (out)[_i] = (char)((enc)[_i] ^ _k[_i % _kl]);      \
+    (out)[enc_len] = '\0';                                  \
+} while(0)
+#define PH_ZERO(buf, sz) do {                               \
+    volatile char *_vp = (buf);                             \
+    for (int _zi = 0; _zi < (sz); _zi++) _vp[_zi] = 0;    \
+} while(0)
 
-// Frida WebSocket fingerprint (technique from PhuongDoZz/NativeShield).
-// When you send an HTTP WebSocket upgrade with a fixed Sec-WebSocket-Key,
-// the server's Sec-WebSocket-Accept is a deterministic SHA1-based hash.
-// Frida's server ALWAYS responds with this exact base64 token.
-// Key used:    CpxD2C5REVLHvsUC9YAoqg==
-// Accept hash: tyZql/Y8dNFFyopTrHadWzvbvRs=
-static const char *FRIDA_WS_ACCEPT            = "tyZql/Y8dNFFyopTrHadWzvbvRs=";
+// Encrypted string arrays — plaintext NEVER in .rodata.
+// Generated: enc[i] = plaintext[i] ^ key[i % 4]
+static const uint8_t _E_APPNAME[]        = {0x11,0x3A,0x2C,0x4F,0x35,0x3D,0x20,0x66,0x34,0x33,0x3F,0x45,0x00}; // "PhantomGuard"    k={0x41,0x52,0x4D,0x21}
+static const uint8_t _E_GUM_JS_LOOP[]    = {0xB9,0xD8,0xD3,0xC2,0xB4,0xDE,0x93,0x83,0xB1,0xC2,0xCE,0x00};       // "gum-js-loop"     k={0xDE,0xAD,0xBE,0xEF}
+static const uint8_t _E_GMAIN[]          = {0xA7,0x92,0x8F,0x78,0xAE,0x00};                                       // "gmain"           k={0xC0,0xFF,0xEE,0x11}
+static const uint8_t _E_LINJECTOR[]      = {0x7F,0x5E,0x9E,0x67,0x76,0x54,0x84,0x62,0x61,0x00};                  // "linjector"       k={0x13,0x37,0xF0,0x0D}
+static const uint8_t _E_FRIDA_WS[]       = {0x66,0x4D,0x0C,0x09,0x7E,0x1B,0x0F,0x40,0x76,0x7A,0x10,0x3E,0x6B,   // "tyZql/Y8dNFFyop…"k={0x12,0x34,0x56,0x78}
+                                             0x5B,0x26,0x2C,0x60,0x7C,0x37,0x1C,0x45,0x4E,0x20,0x1A,0x64,0x66,
+                                             0x25,0x45,0x00};
+static const uint8_t _E_JDWP[]           = {0xE1,0x89,0xB8,0x51,0x00};                                            // "JDWP"            k={0xAB,0xCD,0xEF,0x01}
+static const uint8_t _E_HOOK_RIRU[]      = {0x7F,0x99,0xDF,0xCF,0x00};                                            // "riru"            k={0x0D,0xF0,0xAD,0xBA}
+static const uint8_t _E_HOOK_ZYGISK[]    = {0xB0,0x87,0xDD,0xD7,0xB9,0x95,0x00};                                  // "zygisk"          k={0xCA,0xFE,0xBA,0xBE}
+static const uint8_t _E_HOOK_XPOSED[]    = {0xA6,0xDD,0xAF,0xAD,0xBB,0xC9,0x00};                                  // "xposed"          k={0xDE,0xAD,0xC0,0xDE}
+static const uint8_t _E_HOOK_LSPD[]      = {0xD2,0x9C,0xBA,0x9A,0x00};                                            // "lspd"            k={0xBE,0xEF,0xCA,0xFE}
+static const uint8_t _E_HOOK_EDXPOSED[]  = {0x95,0x69,0x82,0xBE,0x9F,0x7E,0x9F,0xAA,0x00};                       // "edxposed"        k={0xF0,0x0D,0xFA,0xCE}
+static const uint8_t _E_HOOK_FRIDA[]     = {0x19,0x37,0x25,0x22,0x1E,0x00};                                       // "frida"           k={0x7F,0x45,0x4C,0x46}
+static const uint8_t _E_PROC_MAPS[]      = {0xB6,0x6A,0x59,0x53,0xFA,0x35,0x58,0x59,0xF5,0x7C,0x04,0x51,0xF8,    // "/proc/self/maps" k={0x99,0x1A,0x2B,0x3C}
+                                             0x6A,0x58,0x00};
+static const uint8_t _E_PROC_STATUS[]    = {0xEA,0xA6,0x95,0x97,0xA6,0xF9,0x94,0x9D,0xA9,0xB0,0xC8,0x8C,0xA4,    // "/proc/self/task/%s/status" k={0xC5,0xD6,0xE7,0xF8}
+                                             0xA5,0x8C,0xD7,0xE0,0xA5,0xC8,0x8B,0xB1,0xB7,0x93,0x8D,0xB6,0x00};
+static const uint8_t _E_PROC_FD[]        = {0x62,0x2E,0x1D,0x1F,0x2E,0x71,0x1C,0x15,0x21,0x38,0x40,0x16,0x29,    // "/proc/self/fd"   k={0x4D,0x5E,0x6F,0x70}
+                                             0x00};
+static const uint8_t _E_PROC_TASK[]      = {0xAE,0xE2,0xD1,0xDB,0xE2,0xBD,0xD0,0xD1,0xED,0xF4,0x8C,0xC0,0xE0,    // "/proc/self/task" k={0x81,0x92,0xA3,0xB4}
+                                             0xE1,0xC8,0x00};
+static const uint8_t _E_PROC_SELFSTATUS[]= {0xB6,0x6A,0x59,0x53,0xFA,0x35,0x58,0x59,0xF5,0x7C,0xBF,0x51,0xF4,    // "/proc/self/status" k={0x99,0x1A,0x2B,0x3C}
+                                             0x68,0x52,0x6B,0x5A,0x00};
+static const uint8_t _E_TRACER_PID[]     = {0x5E,0x69,0x4D,0x5E,0x6F,0x69,0x7C,0x54,0x6E,0x21,0x00};              // "TracerPid:"      k={0x0A,0x1B,0x2C,0x3D}
+static const uint8_t _E_LIBC[]           = {0x7D,0x4B,0x51,0x27,0x3F,0x51,0x5C,0x00};                             // "libc.so"         k={0x11,0x22,0x33,0x44}
+static const uint8_t _E_LIBPHANTOM[]     = {0x39,0x0F,0x15,0xF8,0x3D,0x07,0x19,0xFC,0x3A,0x0B,0x59,0xFB,0x3A,    // "libphantom.so"   k={0x55,0x66,0x77,0x88}
+                                             0x00};
 
-// Java debugger thread name (JDWP = Java Debug Wire Protocol)
-// darvincisec + NativeShield both check /proc/self/task/*/comm for this.
-static const char *JDWP_THREAD_NAME           = "JDWP";
+// Static char[] buffers in .bss — zero bytes at startup, filled by ph_strings_init().
+// No plaintext content until first call. OLLVM obfuscates the init routine.
+static char APPNAME[14];
+static char FRIDA_THREAD_GUM_JS_LOOP[12];
+static char FRIDA_THREAD_GMAIN[6];
+static char FRIDA_NAMEDPIPE_LINJECTOR[10];
+static char FRIDA_WS_ACCEPT[30];
+static char JDWP_THREAD_NAME[5];
+static char HOOK_RIRU[5];
+static char HOOK_ZYGISK[7];
+static char HOOK_XPOSED[7];
+static char HOOK_LSPD[5];
+static char HOOK_EDXPOSED[9];
+static char HOOK_FRIDA[6];
+static char PROC_MAPS[16];
+static char PROC_STATUS[26];
+static char PROC_FD[14];
+static char PROC_TASK[16];
+static char PROC_SELF_STATUS[19];
+static char STR_TRACER_PID[11];
+static char STR_LIBC[8];
+static char STR_LIBPHANTOM[14];
 
-// Hooking framework strings found in loaded library paths or /proc/self/maps.
-// Riru injects libmain.so from /data/adb/riru; Zygisk injects from its module dir.
-// LSPosed / EdXposed appear as "lspd" / "edxposed" in mapped library names.
-static const char *HOOK_RIRU                  = "riru";
-static const char *HOOK_ZYGISK               = "zygisk";
-static const char *HOOK_XPOSED               = "xposed";
-static const char *HOOK_LSPD                 = "lspd";
-static const char *HOOK_EDXPOSED             = "edxposed";
-static const char *HOOK_FRIDA                = "frida";
-static const char *PROC_MAPS                  = "/proc/self/maps";
-static const char *PROC_STATUS                = "/proc/self/task/%s/status";
-static const char *PROC_FD                    = "/proc/self/fd";
-static const char *PROC_TASK                  = "/proc/self/task";
-#define LIBC "libc.so"
+// Decrypts all detection strings into the static buffers above.
+// Called at the start of each detection function. The 'done' guard makes
+// repeated calls free — just an atomic load.
+static void ph_strings_init(void) {
+    static volatile int _done = 0;
+    if (_done) return;
+    _done = 1;
+    PH_DECRYPT_N(APPNAME,                _E_APPNAME,        13, {0x41,0x52,0x4D,0x21});
+    PH_DECRYPT_N(FRIDA_THREAD_GUM_JS_LOOP,_E_GUM_JS_LOOP,  11, {0xDE,0xAD,0xBE,0xEF});
+    PH_DECRYPT_N(FRIDA_THREAD_GMAIN,     _E_GMAIN,           5, {0xC0,0xFF,0xEE,0x11});
+    PH_DECRYPT_N(FRIDA_NAMEDPIPE_LINJECTOR,_E_LINJECTOR,    9, {0x13,0x37,0xF0,0x0D});
+    PH_DECRYPT_N(FRIDA_WS_ACCEPT,        _E_FRIDA_WS,       28, {0x12,0x34,0x56,0x78});
+    PH_DECRYPT_N(JDWP_THREAD_NAME,       _E_JDWP,            4, {0xAB,0xCD,0xEF,0x01});
+    PH_DECRYPT_N(HOOK_RIRU,              _E_HOOK_RIRU,       4, {0x0D,0xF0,0xAD,0xBA});
+    PH_DECRYPT_N(HOOK_ZYGISK,            _E_HOOK_ZYGISK,     6, {0xCA,0xFE,0xBA,0xBE});
+    PH_DECRYPT_N(HOOK_XPOSED,            _E_HOOK_XPOSED,     6, {0xDE,0xAD,0xC0,0xDE});
+    PH_DECRYPT_N(HOOK_LSPD,              _E_HOOK_LSPD,       4, {0xBE,0xEF,0xCA,0xFE});
+    PH_DECRYPT_N(HOOK_EDXPOSED,          _E_HOOK_EDXPOSED,   8, {0xF0,0x0D,0xFA,0xCE});
+    PH_DECRYPT_N(HOOK_FRIDA,             _E_HOOK_FRIDA,      5, {0x7F,0x45,0x4C,0x46});
+    PH_DECRYPT_N(PROC_MAPS,              _E_PROC_MAPS,      15, {0x99,0x1A,0x2B,0x3C});
+    PH_DECRYPT_N(PROC_STATUS,            _E_PROC_STATUS,    25, {0xC5,0xD6,0xE7,0xF8});
+    PH_DECRYPT_N(PROC_FD,                _E_PROC_FD,        13, {0x4D,0x5E,0x6F,0x70});
+    PH_DECRYPT_N(PROC_TASK,              _E_PROC_TASK,      15, {0x81,0x92,0xA3,0xB4});
+    PH_DECRYPT_N(PROC_SELF_STATUS,       _E_PROC_SELFSTATUS,18, {0x99,0x1A,0x2B,0x3C});
+    PH_DECRYPT_N(STR_TRACER_PID,         _E_TRACER_PID,     10, {0x0A,0x1B,0x2C,0x3D});
+    PH_DECRYPT_N(STR_LIBC,               _E_LIBC,            7, {0x11,0x22,0x33,0x44});
+    PH_DECRYPT_N(STR_LIBPHANTOM,         _E_LIBPHANTOM,     13, {0x55,0x66,0x77,0x88});
+    libstocheck[0] = STR_LIBPHANTOM;
+    libstocheck[1] = STR_LIBC;
+}
 
 typedef struct {
     int           execSectionCount;
@@ -118,7 +190,7 @@ typedef struct {
 } execSection;
 
 #define NUM_LIBS 2
-static const char *libstocheck[NUM_LIBS] = {"libphantom.so", LIBC};
+static char *libstocheck[NUM_LIBS]; // filled by ph_strings_init() → STR_LIBPHANTOM, STR_LIBC
 static execSection *elfSectionArr[NUM_LIBS] = {NULL};
 
 #if defined(__LP64__)
@@ -444,14 +516,15 @@ __attribute__((noreturn)) static void nuke_app(void) {
 // ?
 
 static inline void detect_ptrace(void) {
+    ph_strings_init();
     PH_LOG("detect_ptrace: checking TracerPid");
     char buf[512];
-    int fd = my_openat(AT_FDCWD, "/proc/self/status", O_RDONLY | O_CLOEXEC, 0);
+    int fd = my_openat(AT_FDCWD, PROC_SELF_STATUS, O_RDONLY | O_CLOEXEC, 0);
     if (fd >= 0) {
         ssize_t bytes = my_read(fd, buf, sizeof(buf) - 1);
         if (bytes > 0) {
             buf[bytes] = '\0';
-            char *tracer = my_strstr(buf, "TracerPid:");
+            char *tracer = my_strstr(buf, STR_TRACER_PID);
             if (tracer) {
                 int pid = atoi(tracer + 10);
                 if (pid > 0) { my_close(fd); PH_NUKE("ptrace — TracerPid=%d", pid); nuke_app(); }
@@ -499,6 +572,7 @@ static inline void detect_frida_memdiskcompare(void) {
 // that attach to a single worker thread rather than the main thread — a common
 // bypass of single-file TracerPid checks.
 static inline void detect_frida_threads(void) {
+    ph_strings_init();
     PH_LOG("detect_frida_threads: scanning all task comm + status");
     DIR *dir = opendir(PROC_TASK);
     if (dir == NULL) return;
@@ -549,7 +623,7 @@ static inline void detect_frida_threads(void) {
                     buf[n] = '\0';
 
                     // TracerPid: <pid>  — non-zero = debugger attached to this task
-                    char *tracer = my_strstr(buf, "TracerPid:");
+                    char *tracer = my_strstr(buf, STR_TRACER_PID);
                     if (tracer) {
                         int tpid = atoi(tracer + 10);
                         if (tpid > 0) {
