@@ -82,7 +82,14 @@ jobs:
 
       # ── Install amice shared-lib dependencies ──────────────────────────────
       - name: Install amice runtime dependencies
-        run: sudo apt-get install -y --no-install-recommends libedit2 libncurses6 libtinfo6
+        run: |
+          sudo apt-get install -y --no-install-recommends libedit2
+          # libamice.so was built against libedit.so.0 but Ubuntu ships libedit.so.2 —
+          # create a versioned symlink so the dynamic linker finds it
+          LIBEDIT=$(find /usr/lib -name "libedit.so.2*" -not -name "*.a" | head -1)
+          echo "Found libedit: $LIBEDIT"
+          sudo ln -sf "$LIBEDIT" /usr/lib/x86_64-linux-gnu/libedit.so.0
+          echo "✅ symlink: libedit.so.0 -> $LIBEDIT"
 
       # ── Smoke-test amice plugin ─────────────────────────────────────────────
       - name: Smoke-test amice plugin
