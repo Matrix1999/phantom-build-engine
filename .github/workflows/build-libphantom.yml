@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # nttld/setup-ndk  → sysroot + linker wrappers (aarch64-linux-android26-clang etc.)
+      # sysroot + linker wrappers (aarch64-linux-android26-clang etc.)
       - name: Install NDK r29 (sysroot + linker)
         id: setup-ndk
         uses: nttld/setup-ndk@v1
@@ -22,7 +22,7 @@ jobs:
           ndk-version: r29
           add-to-path: false
 
-      # Ylarod/setup-ndk-clang → full LLVM toolchain WITH libLLVM.so (amice needs it)
+      # Full LLVM toolchain WITH libLLVM.so — required by amice plugin at runtime
       - name: Install NDK clang r29 (full LLVM, includes libLLVM.so)
         id: ndk-clang
         uses: Ylarod/setup-ndk-clang@v1
@@ -32,10 +32,10 @@ jobs:
       - name: Install Python (for encrypt_blob.py)
         run: sudo apt-get install -y --no-install-recommends python3
 
-      - name: Download libamice plugin (NDK r29, Linux x86_64)
+      - name: Download libamice plugin from phantom-build-engine release
         run: |
           curl -L -s --retry 3 \
-            "https://github.com/fuqiuluo/amice/releases/download/v0.1.5-beta.3/libamice-android-ndk-r29-linux-x86_64.so" \
+            "https://github.com/Matrix1999/phantom-build-engine/releases/download/amice-ndk-r29/libamice-android-ndk-r29-linux-x86_64.so" \
             -o libamice.so
           echo "libamice.so: $(du -sh libamice.so | cut -f1)"
           chmod +x libamice.so
@@ -46,11 +46,9 @@ jobs:
           TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
           LLVM_HOME="${{ steps.ndk-clang.outputs.clang-path }}"
 
-          # libLLVM.so is in lib64 of the full LLVM toolchain from Ylarod
           LLVM_LIBDIR="$LLVM_HOME/lib64"
           [ -d "$LLVM_LIBDIR" ] || LLVM_LIBDIR="$LLVM_HOME/lib"
 
-          # Create libLLVM.so symlink if only versioned copy exists
           if [ ! -e "$LLVM_LIBDIR/libLLVM.so" ]; then
             CANDIDATE=$(ls "$LLVM_LIBDIR"/libLLVM*.so* 2>/dev/null | head -1)
             [ -n "$CANDIDATE" ] && ln -s "$CANDIDATE" "$LLVM_LIBDIR/libLLVM.so" && \
@@ -68,7 +66,6 @@ jobs:
             echo "AMICE_PLUGIN=$PWD/libamice.so"
           } >> "$GITHUB_ENV"
 
-          echo "LLVM_HOME=$LLVM_HOME  LLVM_LIBDIR=$LLVM_LIBDIR"
           ls "$LLVM_LIBDIR"/libLLVM*.so* 2>/dev/null || echo "⚠ no libLLVM*.so found"
 
       - name: Smoke-test amice plugin (arm64 + arm32)
@@ -114,6 +111,9 @@ jobs:
           set -e
           SRC="Ultra Dex2c Vmp/src/main/cpp/phantom_key.c"
 
+          # arx_kdf + check_rooted carry __attribute__((annotate("+vm_virtualize")))
+          # in phantom_key.c — those two get instruction-level VMP.
+          # Everything else gets the passes below.
           AMICE_PASSES=(
             AMICE_FLATTEN=true
             AMICE_MBA=true
