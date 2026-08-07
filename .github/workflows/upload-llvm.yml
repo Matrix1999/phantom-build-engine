@@ -1,4 +1,4 @@
-name: Upload libLLVM.so to release (one-shot)
+name: Build libLLVM.so for aarch64-android (one-shot)
 
 on:
   workflow_dispatch:
@@ -7,45 +7,102 @@ permissions:
   contents: write
 
 jobs:
-  upload-llvm:
+  build-llvm-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Download + extract libLLVM.so
-        run: |
-          set -e
-          sudo apt-get install -y --no-install-recommends zstd
-          curl -L --retry 3 --progress-bar \
-            "https://github.com/Ylarod/setup-ndk-clang/releases/download/prebuilt/clang-linux-x86-ndk-r29-r563880c.tar.zst" \
-            -o /tmp/clang.tar.zst
-          echo "Downloaded: $(du -sh /tmp/clang.tar.zst | cut -f1)"
-          zstd -d /tmp/clang.tar.zst -o /tmp/clang.tar --force
-          rm /tmp/clang.tar.zst
-          tar -xf /tmp/clang.tar -C /tmp/ ./lib/libLLVM.so ./lib/libLLVM-21.so 2>/dev/null \
-            || tar -xf /tmp/clang.tar -C /tmp/ lib/libLLVM.so lib/libLLVM-21.so
-          rm /tmp/clang.tar
-          ls -lh /tmp/lib/
-          cp -L /tmp/lib/libLLVM.so /tmp/libLLVM.so
-          echo "libLLVM.so: $(du -sh /tmp/libLLVM.so | cut -f1)"
+    timeout-minutes: 120
 
-      - name: Upload to amice-ndk-r29 release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Install build tools
         run: |
-          API="https://api.github.com/repos/${{ github.repository }}"
-          OLD=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
-            "$API/releases/tags/amice-ndk-r29" \
-            | jq -r '.assets[]? | select(.name=="libLLVM.so") | .id // empty')
-          [ -n "$OLD" ] && curl -s -X DELETE \
-            -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$OLD" \
-            && echo "Deleted old asset"
-          RELEASE_ID=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
-            "$API/releases/tags/amice-ndk-r29" | jq -r '.id')
-          echo "Uploading 130M to release $RELEASE_ID..."
-          RESP=$(curl -s -X POST \
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build python3 git
+
+      - name: Set up Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r29
+          add-to-path: true
+
+      - name: Clone LLVM 19 source (shallow)
+        run: |
+          git clone --depth=1 --branch llvmorg-19.1.7 \
+            https://github.com/llvm/llvm-project.git /tmp/llvm-project
+          echo "Cloned LLVM 19.1.7"
+
+      - name: Configure LLVM for aarch64-android
+        run: |
+          NDK="${{ steps.setup-ndk.outputs.ndk-path }}"
+          cmake -G Ninja \
+            -S /tmp/llvm-project/llvm \
+            -B /tmp/llvm-build \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-26 \
+            -DANDROID_STL=c++_static \
+            -DLLVM_TARGETS_TO_BUILD="AArch64" \
+            -DLLVM_BUILD_LLVM_DYLIB=ON \
+            -DLLVM_DYLIB_EXPORT_ALL=ON \
+            -DLLVM_LINK_LLVM_DYLIB=OFF \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_ENABLE_PROJECTS="" \
+            -DLLVM_ENABLE_RUNTIMES="" \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_DYLIB_COMPONENTS="all"
+          echo "CMake configured ✅"
+
+      - name: Build libLLVM.so
+        run: |
+          ninja -C /tmp/llvm-build -j2 LLVM
+          SO=$(find /tmp/llvm-build/lib -name "libLLVM*.so" | head -1)
+          echo "Built: $SO ($(du -sh "$SO" | cut -f1))"
+          file "$SO"
+          if ! file "$SO" | grep -q "ARM aarch64"; then
+            echo "❌ Not aarch64 — aborting"; exit 1
+          fi
+          cp "$SO" /tmp/libLLVM.android.arm64.so
+          echo "✅ libLLVM.android.arm64.so ready"
+
+      - name: Publish to amice-arm64 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: amice-arm64
+        run: |
+          ASSET="libLLVM.android.arm64.so"
+
+          RELEASE_JSON=$(curl -sf \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/releases/tags/$TAG" 2>/dev/null || true)
+          if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":"Not Found"'; then
+            RELEASE_JSON=$(curl -sf -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/$REPO/releases" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"VMP Plugin arm64-android\",\"draft\":false,\"prerelease\":false}")
+          fi
+          RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
+
+          OLD_ID=$(curl -sf \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/$RELEASE_ID/assets" \
+            | jq -r ".[] | select(.name==\"$ASSET\") | .id")
+          [ -n "$OLD_ID" ] && curl -sf -X DELETE \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/assets/$OLD_ID"
+
+          curl -sf -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Content-Type: application/octet-stream" \
-            "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=libLLVM.so" \
-            --data-binary @/tmp/libLLVM.so)
-          echo "$RESP" | jq '{id:.id, name:.name, size:.size, state:.state}'
-          echo "$RESP" | jq -e '.id != null' && echo "✅ Done" || (echo "❌ Upload failed"; echo "$RESP"; exit 1)
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$ASSET" \
+            --data-binary "@/tmp/$ASSET"
+          echo "✅ Published: https://github.com/$REPO/releases/download/$TAG/$ASSET"
