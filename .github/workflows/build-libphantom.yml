@@ -84,6 +84,7 @@ jobs:
           SRC="Ultra Dex2c Vmp/src/main/cpp/phantom_key.c"
 
           AMICE_PASSES=(
+             AMICE_VMP=true
             AMICE_FLATTEN=true
             AMICE_MBA=true
             AMICE_BOGUS_CONTROL_FLOW=true
