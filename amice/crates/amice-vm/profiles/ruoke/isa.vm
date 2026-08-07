@@ -1,0 +1,1661 @@
+instr mov_imm(dst: vreg<i64>, imm: imm<u64>, width: imm<u7>) { # 将立即数物化到 VM 的 x 寄存器
+  opcode alias [0x001] # mov_imm 保留入口主操作码，把更多操作码预算让给浮点处理器
+  opcode alias [0x2b9] # mov_imm 的 ruoke 操作码别名第 2 组
+  opcode alias [0x189] # mov_imm 的 ruoke 操作码别名第 3 组
+  opcode alias [0x059] # mov_imm 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(imm, width) # 立即数字段按请求的整数宽度截断或掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 mov_imm 指令
+
+instr const_load(dst: vreg<i64>, index: const_pool_index, width: imm<u7>) { # 从加密常量池按索引物化常量
+  opcode alias [0x311, 0x07a, 0x1cb, 0x31c, 0x085, 0x1d6, 0x327, 0x090] # const_load 保留 8 个别名，把预算让给浮点转换处理器
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = const_pool[index] # runtime 先解密常量池，再按 index 读取对应常量
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 const_load 指令
+
+instr mov(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 将一个 VM x 寄存器复制到另一个寄存器
+  opcode alias [0x12a, 0x27b, 0x3cc, 0x135, 0x286] # mov 的 ruoke 操作码别名第 1 组，继续挪出别名给 tls_addr/global_addr
+  opcode alias [0x3e2, 0x14b, 0x29c, 0x005, 0x156, 0x2a7] # mov 的 ruoke 操作码别名第 2 组，继续挪出别名给乘法溢出 intrinsic
+  decoded_width = 8 # mov 的 opcode 和三个短操作数固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[src], width) # 源寄存器低位复制到目标寄存器并按 width 掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 mov 指令
+
+instr tls_addr(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 线程本地地址包装处理器，保留运行时指针值
+  opcode alias [0x140] # tls_addr 使用从 mov 挪出的独立 opcode，保持 ruoke 总 opcode 数为 1000
+  decoded_width = 8 # tls_addr 的 opcode 和三个短操作数固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[src], width) # threadlocal.address 返回同一运行时指针 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 tls_addr 指令
+
+instr global_addr(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 普通全局符号地址包装处理器，保留运行时指针值
+  opcode alias [0x3d7] # global_addr 使用从 mov 挪出的独立 opcode，保持 ruoke 总 opcode 数为 1000
+  decoded_width = 8 # global_addr 的 opcode 和三个短操作数固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[src], width) # native thunk 返回的全局地址 bit 复制到 VM x 寄存器
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 global_addr 指令
+
+instr iadd(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数加法处理器
+  opcode alias [0x161, 0x2b2, 0x01b, 0x16c, 0x2bd, 0x026, 0x177, 0x2c8] # iadd 的 ruoke 操作码别名第 1 组
+  opcode alias [0x031, 0x182, 0x2d3, 0x03c, 0x18d, 0x2de, 0x047, 0x198] # iadd 的 ruoke 操作码别名第 2 组
+  opcode alias [0x2e9, 0x052, 0x1a3, 0x2f4, 0x05d, 0x1ae, 0x2ff, 0x068] # iadd 的 ruoke 操作码别名第 3 组
+  opcode alias [0x1b9, 0x30a, 0x073, 0x1c4, 0x315, 0x07e, 0x1cf] # iadd 的 ruoke 操作码别名第 4 组，挪出 0x320 给 FP 状态处理器
+  decoded_width = 16 # iadd 使用 16 字节 record，给 ruoke 多字节 opcode alias 留出余量
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] + reg[rhs], width) # 加法结果按目标宽度掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iadd 指令
+
+instr iadd_xor(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, xor_rhs: vreg<i64>, width: imm<u7>) { # 超级指令：整数加法后立即异或
+  opcode alias [0x2a6] # iadd_xor 从 fake_nop 干扰预算中挪用 1 个 ruoke opcode
+  decoded_width = 48 # iadd_xor 有四个寄存器操作数和位宽操作数，因此使用 48 字节 record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] + reg[rhs] xor reg[xor_rhs], width) # 组合加法和 xor，避免产生可见中间寄存器
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iadd_xor 超级指令
+
+instr isub(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数减法处理器
+  opcode alias [0x089, 0x1da, 0x32b, 0x094, 0x1e5, 0x336, 0x09f, 0x1f0] # isub 的 ruoke 操作码别名第 1 组
+  opcode alias [0x0aa, 0x1fb, 0x34c, 0x0b5, 0x206, 0x357, 0x0c0] # isub 的 ruoke 操作码别名第 2 组，挪出 0x341 给 FP 状态处理器
+  opcode alias [0x211, 0x0cb, 0x21c, 0x36d, 0x0d6, 0x227, 0x378] # isub 的 ruoke 操作码别名第 3 组，挪出 0x362 给 FP 状态处理器
+  opcode alias [0x0e1, 0x232, 0x383, 0x0ec, 0x23d, 0x38e, 0x0f7, 0x248] # isub 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] - reg[rhs], width) # 减法结果按目标宽度掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 isub 指令
+
+instr imul(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数乘法处理器
+  opcode alias [0x102, 0x253, 0x3a4, 0x10d, 0x25e, 0x3af, 0x118] # imul 的 ruoke 操作码别名第 1 组，挪出 0x399 给 FP 状态处理器
+  opcode alias [0x269, 0x123, 0x274, 0x3c5, 0x12e, 0x27f, 0x3d0] # imul 的 ruoke 操作码别名第 2 组，挪出 0x3ba 给 FP 状态处理器
+  opcode alias [0x139, 0x28a, 0x144, 0x295, 0x3e6, 0x14f, 0x2a0] # imul 的 ruoke 操作码别名第 3 组，挪出 0x3db 给 FP 状态处理器
+  opcode alias [0x009, 0x15a, 0x2ab, 0x014, 0x165, 0x2b6, 0x01f, 0x170] # imul 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] * reg[rhs], width) # 乘法结果按目标宽度掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 imul 指令
+
+instr iudiv(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 无符号整数除法处理器
+  opcode alias [0x02a, 0x17b, 0x2cc, 0x035, 0x186, 0x2d7, 0x040] # iudiv 的 ruoke 操作码别名第 1 组，挪出 0x2c1 给 FP 状态处理器
+  opcode alias [0x191, 0x2e2, 0x04b, 0x19c, 0x2ed, 0x056, 0x1a7, 0x2f8] # iudiv 的 ruoke 操作码别名第 2 组
+  opcode alias [0x061, 0x1b2, 0x303, 0x06c, 0x1bd, 0x30e, 0x077, 0x1c8] # iudiv 的 ruoke 操作码别名第 3 组
+  opcode alias [0x319, 0x082, 0x1d3, 0x324, 0x08d, 0x1de, 0x32f, 0x098] # iudiv 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] /u reg[rhs], width) # 无符号除法结果按目标宽度掩码，除数为零沿用 LLVM 未定义行为
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iudiv 指令
+
+instr isdiv(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 有符号整数除法处理器
+  opcode alias [0x1e9, 0x33a, 0x0a3, 0x1f4, 0x345, 0x0ae, 0x1ff, 0x350] # isdiv 的 ruoke 操作码别名第 1 组
+  opcode alias [0x0b9, 0x20a, 0x35b, 0x0c4, 0x215, 0x366, 0x0cf, 0x220] # isdiv 的 ruoke 操作码别名第 2 组
+  opcode alias [0x371, 0x0da, 0x22b, 0x37c, 0x0e5, 0x236, 0x387, 0x0f0] # isdiv 的 ruoke 操作码别名第 3 组
+  opcode alias [0x39d, 0x106, 0x257] # isdiv 的 ruoke 操作码别名第 4 组，继续挪出 1 个别名给 thread.pointer 查询
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] /s reg[rhs], width) # 有符号除法按 width 解释符号，未定义输入沿用 LLVM 语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 isdiv 指令
+
+instr iurem(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 无符号整数取余处理器
+  opcode alias [0x111, 0x262, 0x3b3, 0x11c, 0x26d, 0x3be, 0x127, 0x278] # iurem 的 ruoke 操作码别名第 1 组
+  opcode alias [0x3c9, 0x132, 0x283, 0x3d4, 0x13d, 0x28e, 0x3df, 0x148] # iurem 的 ruoke 操作码别名第 2 组
+  opcode alias [0x299, 0x002, 0x153, 0x2a4, 0x00d, 0x15e, 0x2af, 0x018] # iurem 的 ruoke 操作码别名第 3 组
+  opcode alias [0x169, 0x2ba, 0x023, 0x174, 0x2c5, 0x02e, 0x17f] # iurem 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] %u reg[rhs], width) # 无符号取余结果按目标宽度掩码，除数为零沿用 LLVM 未定义行为
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iurem 指令
+
+instr isrem(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 有符号整数取余处理器
+  opcode alias [0x2d0, 0x039, 0x18a, 0x2db, 0x044, 0x195, 0x2e6, 0x04f] # isrem 的 ruoke 操作码别名第 1 组
+  opcode alias [0x1a0, 0x2f1, 0x05a, 0x1ab, 0x2fc, 0x065, 0x1b6, 0x307] # isrem 的 ruoke 操作码别名第 2 组
+  opcode alias [0x070, 0x1c1, 0x312, 0x07b, 0x1cc, 0x31d, 0x086, 0x1d7] # isrem 的 ruoke 操作码别名第 3 组
+  opcode alias [0x328, 0x091, 0x1e2, 0x333, 0x09c, 0x1ed, 0x33e] # isrem 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] %s reg[rhs], width) # 有符号取余按 width 解释符号，未定义输入沿用 LLVM 语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 isrem 指令
+
+instr ixor(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数 xor 处理器
+  opcode alias [0x0a7, 0x1f8, 0x349, 0x0b2, 0x203, 0x354, 0x0bd, 0x20e] # ixor 的 ruoke 操作码别名第 1 组
+  opcode alias [0x35f, 0x0c8, 0x219, 0x36a, 0x0d3, 0x224, 0x375, 0x0de] # ixor 的 ruoke 操作码别名第 2 组
+  opcode alias [0x22f, 0x380, 0x0e9, 0x23a, 0x38b, 0x0f4, 0x245, 0x396] # ixor 的 ruoke 操作码别名第 3 组
+  opcode alias [0x0ff, 0x250, 0x3a1, 0x10a, 0x25b, 0x3ac] # ixor 的 ruoke 操作码别名第 4 组，0x115 已挪给 load_ixor 超级指令
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] xor reg[rhs], width) # xor 结果按目标宽度掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ixor 指令
+
+instr iand(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数 and 处理器
+  opcode alias [0x266, 0x3b7, 0x120, 0x271, 0x3c2, 0x12b, 0x27c, 0x3cd] # iand 的 ruoke 操作码别名第 1 组
+  opcode alias [0x136, 0x287, 0x3d8, 0x141, 0x292, 0x3e3, 0x14c, 0x29d] # iand 的 ruoke 操作码别名第 2 组
+  opcode alias [0x006, 0x157, 0x2a8, 0x011, 0x162, 0x2b3, 0x01c, 0x16d] # iand 的 ruoke 操作码别名第 3 组
+  opcode alias [0x2be, 0x027, 0x178, 0x2c9, 0x032, 0x183] # iand 的 ruoke 操作码别名第 4 组，挪出一个 opcode 给 ptrmask
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] and reg[rhs], width) # and 结果按目标宽度掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iand 指令
+
+instr ptrmask(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # ruoke 指针 mask 处理器，按 64 位地址 bit 做 and
+  opcode alias [0x2d4] # ptrmask 使用从 iand 挪出的独立 opcode，保持 ruoke 总 opcode 数为 1000
+  decoded_width = 16 # ptrmask 包含三个寄存器操作数和位宽操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] and reg[rhs], width) # 指针地址 bit 与 mask 相与后仍按指针 bit 写回 x 寄存器
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ptrmask 指令
+
+instr ior(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数 or 处理器
+  opcode alias [0x03d, 0x18e, 0x2df, 0x048, 0x199, 0x2ea, 0x053, 0x1a4] # ior 的 ruoke 操作码别名第 1 组
+  opcode alias [0x2f5, 0x05e, 0x1af, 0x300, 0x069, 0x1ba, 0x30b, 0x074] # ior 的 ruoke 操作码别名第 2 组
+  opcode alias [0x1c5, 0x316, 0x07f, 0x1d0, 0x321, 0x08a, 0x1db, 0x32c] # ior 的 ruoke 操作码别名第 3 组
+  opcode alias [0x095, 0x1e6, 0x337, 0x0a0, 0x1f1, 0x342, 0x0ab] # ior 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] or reg[rhs], width) # or 结果按目标宽度掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ior 指令
+
+instr ishl(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数逻辑左移处理器
+  opcode alias [0x1fc, 0x34d, 0x0b6, 0x207, 0x358, 0x0c1, 0x212, 0x363] # ishl 的 ruoke 操作码别名第 1 组
+  opcode alias [0x0cc, 0x21d, 0x36e, 0x0d7, 0x228, 0x379, 0x0e2, 0x233] # ishl 的 ruoke 操作码别名第 2 组
+  opcode alias [0x384, 0x0ed, 0x23e, 0x38f, 0x0f8, 0x249, 0x39a, 0x103] # ishl 的 ruoke 操作码别名第 3 组
+  opcode alias [0x254, 0x3a5, 0x10e, 0x25f, 0x3b0, 0x119, 0x26a] # ishl 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] << reg[rhs], width) # 移位结果按目标宽度掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ishl 指令
+
+instr ilshr(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数逻辑右移处理器
+  opcode alias [0x3bb, 0x124, 0x275, 0x3c6, 0x12f, 0x280, 0x3d1, 0x13a] # ilshr 的 ruoke 操作码别名第 1 组
+  opcode alias [0x28b, 0x3dc, 0x145, 0x296, 0x3e7, 0x150, 0x2a1, 0x00a] # ilshr 的 ruoke 操作码别名第 2 组
+  opcode alias [0x15b, 0x2ac, 0x015, 0x166, 0x2b7, 0x020, 0x171, 0x2c2] # ilshr 的 ruoke 操作码别名第 3 组
+  opcode alias [0x02b, 0x17c, 0x2cd, 0x036, 0x187, 0x2d8, 0x041] # ilshr 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] >>u reg[rhs], width) # 无符号右移结果按目标宽度掩码
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ilshr 指令
+
+instr iashr(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数算术右移处理器
+  opcode alias [0x192, 0x2e3, 0x04c, 0x19d, 0x2ee, 0x057, 0x1a8, 0x2f9] # iashr 的 ruoke 操作码别名第 1 组
+  opcode alias [0x062, 0x1b3, 0x304, 0x06d, 0x1be, 0x30f, 0x078, 0x1c9] # iashr 的 ruoke 操作码别名第 2 组
+  opcode alias [0x31a, 0x083, 0x1d4, 0x325, 0x08e, 0x1df, 0x330, 0x099] # iashr 的 ruoke 操作码别名第 3 组
+  opcode alias [0x1ea, 0x33b, 0x0a4, 0x1f5, 0x346, 0x0af, 0x200] # iashr 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(sign_extend(reg[lhs], width) >>s reg[rhs], width) # lhs 先按 width 符号扩展再做有符号右移
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iashr 指令
+
+instr ismax(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数有符号最大值处理器
+  opcode alias [0x114] # ismax 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(smax, reg[lhs], reg[rhs]), width) # 运行时按 width 解释符号并选择较大值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ismax 指令
+
+instr ismin(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数有符号最小值处理器
+  opcode alias [0x265] # ismin 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(smin, reg[lhs], reg[rhs]), width) # 运行时按 width 解释符号并选择较小值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ismin 指令
+
+instr iumax(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数无符号最大值处理器
+  opcode alias [0x3b6] # iumax 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(umax, reg[lhs], reg[rhs]), width) # 运行时按 width 解释无符号值并选择较大值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iumax 指令
+
+instr iumin(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数无符号最小值处理器
+  opcode alias [0x11f] # iumin 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(umin, reg[lhs], reg[rhs]), width) # 运行时按 width 解释无符号值并选择较小值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iumin 指令
+
+instr iuadd_sat(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数无符号饱和加法处理器
+  opcode alias [0x239] # iuadd_sat 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(uadd_sat, reg[lhs], reg[rhs]), width) # 运行时按 width 的无符号上限钳制加法结果
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iuadd_sat 指令
+
+instr iusub_sat(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数无符号饱和减法处理器
+  opcode alias [0x38a] # iusub_sat 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(usub_sat, reg[lhs], reg[rhs]), width) # 运行时在无符号下溢时把结果钳制为 0
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iusub_sat 指令
+
+instr isadd_sat(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数有符号饱和加法处理器
+  opcode alias [0x0f3] # isadd_sat 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(sadd_sat, reg[lhs], reg[rhs]), width) # 运行时按 width 的有符号范围钳制加法结果
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 isadd_sat 指令
+
+instr issub_sat(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数有符号饱和减法处理器
+  opcode alias [0x244] # issub_sat 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(ssub_sat, reg[lhs], reg[rhs]), width) # 运行时按 width 的有符号范围钳制减法结果
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 issub_sat 指令
+
+instr iushl_sat(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数无符号饱和左移处理器
+  opcode alias [0x395] # iushl_sat 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(ushl_sat, reg[lhs], reg[rhs]), width) # 运行时按 width 的无符号上限钳制左移结果
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iushl_sat 指令
+
+instr isshl_sat(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数有符号饱和左移处理器
+  opcode alias [0x0fe] # isshl_sat 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(int_bin(sshl_sat, reg[lhs], reg[rhs]), width) # 运行时按 width 的有符号范围钳制左移结果
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 isshl_sat 指令
+
+instr iuadd_overflow(dst: vreg<i64>, overflow: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 无符号加法并产出溢出标志
+  opcode alias [0x24f] # iuadd_overflow 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] + reg[rhs], width) # 第一个结果字段是按 width 回绕后的加法结果
+    reg[overflow] = int_overflow(uadd, reg[lhs], reg[rhs], width) # 第二个结果字段在无符号进位或超出 width 上限时为 1
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iuadd_overflow 指令
+
+instr isadd_overflow(dst: vreg<i64>, overflow: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 有符号加法并产出溢出标志
+  opcode alias [0x3a0] # isadd_overflow 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] + reg[rhs], width) # 第一个结果字段是按 width 回绕后的加法结果
+    reg[overflow] = int_overflow(sadd, reg[lhs], reg[rhs], width) # 第二个结果字段在有符号加法越界时为 1
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 isadd_overflow 指令
+
+instr iusub_overflow(dst: vreg<i64>, overflow: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 无符号减法并产出溢出标志
+  opcode alias [0x270] # iusub_overflow 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] - reg[rhs], width) # 第一个结果字段是按 width 回绕后的减法结果
+    reg[overflow] = int_overflow(usub, reg[lhs], reg[rhs], width) # 第二个结果字段在无符号借位时为 1
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iusub_overflow 指令
+
+instr issub_overflow(dst: vreg<i64>, overflow: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 有符号减法并产出溢出标志
+  opcode alias [0x3c1] # issub_overflow 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] - reg[rhs], width) # 第一个结果字段是按 width 回绕后的减法结果
+    reg[overflow] = int_overflow(ssub, reg[lhs], reg[rhs], width) # 第二个结果字段在有符号减法越界时为 1
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 issub_overflow 指令
+
+instr iumul_overflow(dst: vreg<i64>, overflow: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 无符号乘法并产出溢出标志
+  opcode alias [0x291] # iumul_overflow 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] * reg[rhs], width) # 第一个结果字段是按 width 回绕后的乘法结果
+    reg[overflow] = int_overflow(umul, reg[lhs], reg[rhs], width) # 第二个结果字段在无符号乘积超出 width 上限时为 1
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iumul_overflow 指令
+
+instr ismul_overflow(dst: vreg<i64>, overflow: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 有符号乘法并产出溢出标志
+  opcode alias [0x010] # ismul_overflow 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[lhs] * reg[rhs], width) # 第一个结果字段是按 width 回绕后的乘法结果
+    reg[overflow] = int_overflow(smul, reg[lhs], reg[rhs], width) # 第二个结果字段在有符号乘积越界时为 1
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ismul_overflow 指令
+
+instr ctpop(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 整数 bit 计数处理器
+  opcode alias [0x2c7] # ctpop 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = int_unary(ctpop, reg[src], width) # 运行时统计 src 在 width 范围内置位 bit 的数量
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ctpop 指令
+
+instr ctlz(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 整数前导零计数处理器
+  opcode alias [0x109] # ctlz 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = int_unary(ctlz, reg[src], width) # 运行时统计 src 在 width 范围内的前导零 bit 数
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ctlz 指令
+
+instr cttz(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 整数尾随零计数处理器
+  opcode alias [0x25a] # cttz 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = int_unary(cttz, reg[src], width) # 运行时统计 src 在 width 范围内的尾随零 bit 数
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 cttz 指令
+
+instr iabs(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 整数有符号绝对值处理器
+  opcode alias [0x3ab] # iabs 复用从 mov 挪出的 ruoke 别名，保持总 opcode 数不变
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = int_unary(abs, reg[src], width) # 运行时按 width 解释 src 符号并计算绝对值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 iabs 指令
+
+instr bswap(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 整数字节序反转处理器
+  opcode alias [0x030] # bswap 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = int_unary(bswap, reg[src], width) # 运行时按 width 对 src 做字节序反转
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 bswap 指令
+
+instr bitreverse(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 整数 bit 顺序反转处理器
+  opcode alias [0x181] # bitreverse 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = int_unary(bitreverse, reg[src], width) # 运行时按 width 对 src 做 bit 顺序反转
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 bitreverse 指令
+
+instr fshl(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, third: vreg<i64>, width: imm<u7>) { # 整数 funnel 左移处理器
+  opcode alias [0x2d2] # fshl 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  decoded_width = 48 # fshl 故意使用 48 字节 record，覆盖中等宽度 decoded instruction
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = int_ternary(fshl, reg[lhs], reg[rhs], reg[third], width) # 拼接 lhs/rhs 后执行 LLVM fshl 语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fshl 指令
+
+instr fshr(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, third: vreg<i64>, width: imm<u7>) { # 整数 funnel 右移处理器
+  opcode alias [0x03b] # fshr 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  decoded_width = 48 # fshr 同样使用 48 字节 record，避免所有长整数 intrinsic 共用默认布局
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = int_ternary(fshr, reg[lhs], reg[rhs], reg[third], width) # 拼接 lhs/rhs 后执行 LLVM fshr 语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fshr 指令
+
+instr fadd(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 标量浮点加法处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x401] # fadd 挪出 0x402 给 fpow、0x403 给 fpowi、0x404 给 fpclass，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fadd, reg[lhs], reg[rhs], width) # 按 width 解释 lhs/rhs 的浮点 bit 并写回结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fadd 指令
+
+instr fsub(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 标量浮点减法处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x405, 0x406, 0x407] # fsub 挪出 0x408 给 fcopysign，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fsub, reg[lhs], reg[rhs], width) # 按 width 解释 lhs/rhs 的浮点 bit 并写回结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fsub 指令
+
+instr fmul(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 标量浮点乘法处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x409, 0x40a, 0x40b] # fmul 挪出 0x40c 给 ffma，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fmul, reg[lhs], reg[rhs], width) # 按 width 解释 lhs/rhs 的浮点 bit 并写回结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fmul 指令
+
+instr fdiv(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 标量浮点除法处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x40d, 0x40e] # fdiv 挪出 0x40f/0x410 给 fminnum/fmaxnum，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fdiv, reg[lhs], reg[rhs], width) # 按 width 解释 lhs/rhs 的浮点 bit 并写回结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fdiv 指令
+
+instr frem(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 标量浮点余数处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x411, 0x412, 0x413] # frem 挪出 0x414 给 fsqrt，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(frem, reg[lhs], reg[rhs], width) # 按 width 解释 lhs/rhs 的浮点 bit 并写回结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 frem 指令
+
+instr fcopysign(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 标量浮点符号位复制处理器
+  opcode alias [0x408] # fcopysign 使用从 fsub 挪出的 ruoke opcode，避免增加总 opcode 数
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fcopysign, reg[lhs], reg[rhs], width) # 保留 lhs 的数值位并复制 rhs 的 IEEE 符号位
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fcopysign 指令
+
+instr fpow(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点幂函数处理器
+  opcode alias [0x402] # fpow 使用从 fadd 挪出的 ruoke opcode，避免增加总 opcode 数
+  decoded_width = 16 # fpow 包含三个寄存器操作数和一个 width 操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fpow, reg[lhs], reg[rhs], width) # 执行 LLVM llvm.pow 的浮点幂函数语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fpow 指令
+
+instr fpowi(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点底数和整数指数幂函数处理器
+  opcode alias [0x403] # fpowi 使用从 fadd 挪出的 ruoke opcode，避免增加总 opcode 数
+  decoded_width = 16 # fpowi 包含三个寄存器操作数和一个 width 操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_int_bin(fpowi, reg[lhs], reg[rhs], width) # 执行 LLVM llvm.powi 的浮点底数和 i32 指数语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fpowi 指令
+
+instr fminnum(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 minnum 处理器
+  opcode alias [0x40f] # fminnum 使用从 fdiv 挪出的 ruoke opcode，避免增加总 opcode 数
+  decoded_width = 16 # fminnum 包含三个寄存器操作数和一个 width 操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fminnum, reg[lhs], reg[rhs], width) # 执行 LLVM llvm.minnum 的 NaN 感知最小值语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fminnum 指令
+
+instr fmaxnum(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 maxnum 处理器
+  opcode alias [0x410] # fmaxnum 使用从 fdiv 挪出的 ruoke opcode，避免增加总 opcode 数
+  decoded_width = 16 # fmaxnum 包含三个寄存器操作数和一个 width 操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fmaxnum, reg[lhs], reg[rhs], width) # 执行 LLVM llvm.maxnum 的 NaN 感知最大值语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fmaxnum 指令
+
+instr fminimum(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 minimum 处理器
+  opcode alias [0x502] # fminimum 使用从 sitofp 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  decoded_width = 16 # fminimum 包含三个寄存器操作数和一个 width 操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fminimum, reg[lhs], reg[rhs], width) # 执行 LLVM llvm.minimum 的 IEEE minimum 语义，区别于 minnum
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fminimum 指令
+
+instr fmaximum(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 maximum 处理器
+  opcode alias [0x503] # fmaximum 使用从 sitofp 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  decoded_width = 16 # fmaximum 包含三个寄存器操作数和一个 width 操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_bin(fmaximum, reg[lhs], reg[rhs], width) # 执行 LLVM llvm.maximum 的 IEEE maximum 语义，区别于 maxnum
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fmaximum 指令
+
+instr fneg(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 标量浮点取反处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x419, 0x41a, 0x41b] # fneg 挪出 0x41c 给 fabs，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fneg, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回取反后的 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fneg 指令
+
+instr fabs(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 标量浮点绝对值处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x41c] # fabs 使用从 fneg 挪出的 ruoke opcode，避免增加总 opcode 数
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fabs, reg[src], width) # 清除 src 的浮点符号位并保留其它 IEEE bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fabs 指令
+
+instr fsqrt(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # 标量浮点平方根处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x414] # fsqrt 使用从 frem 挪出的 ruoke opcode，避免增加总 opcode 数
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fsqrt, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.sqrt 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fsqrt 指令
+
+instr fcanonicalize(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 canonicalize 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x50b] # fcanonicalize 使用从 fptosi 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fcanonicalize, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.canonicalize 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fcanonicalize 指令
+
+instr ffloor(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 floor 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x50d] # ffloor 使用从 fptoui 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(ffloor, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.floor 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ffloor 指令
+
+instr fceil(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 ceil 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x50e] # fceil 使用从 fptoui 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fceil, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.ceil 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fceil 指令
+
+instr ftrunc(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 trunc 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x50f] # ftrunc 使用从 fptoui 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(ftrunc, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.trunc 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ftrunc 指令
+
+instr frint(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 rint 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x511] # frint 使用从 fptrunc 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(frint, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.rint 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 frint 指令
+
+instr fnearbyint(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 nearbyint 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x512] # fnearbyint 使用从 fptrunc 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fnearbyint, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.nearbyint 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fnearbyint 指令
+
+instr fround(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 round 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x515] # fround 使用从 fpext 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fround, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.round 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fround 指令
+
+instr froundeven(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 roundeven 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x516] # froundeven 使用从 fpext 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(froundeven, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.roundeven 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 froundeven 指令
+
+instr fsin(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 sin 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x37b] # fsin 使用从 ret 别名预算挪出的 ruoke opcode，保持总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fsin, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.sin 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fsin 指令
+
+instr fcos(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 cos 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x0e4] # fcos 使用从 ret 别名预算挪出的 ruoke opcode，保持总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fcos, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.cos 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fcos 指令
+
+instr fexp(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 exp 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x235] # fexp 使用从 ret 别名预算挪出的 ruoke opcode，保持总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fexp, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.exp 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fexp 指令
+
+instr fexp2(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 exp2 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x386] # fexp2 使用从 ret 别名预算挪出的 ruoke opcode，保持总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(fexp2, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.exp2 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fexp2 指令
+
+instr flog(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 log 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x0ef] # flog 使用从 ret 别名预算挪出的 ruoke opcode，保持总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(flog, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.log 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 flog 指令
+
+instr flog10(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 log10 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x240] # flog10 使用从 ret 别名预算挪出的 ruoke opcode，保持总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(flog10, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.log10 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 flog10 指令
+
+instr flog2(dst: vreg<i64>, src: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 log2 处理器，x 寄存器保存 f16/f32/f64 原始 bit
+  opcode alias [0x391] # flog2 使用从 ret 别名预算挪出的 ruoke opcode，保持总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_unary(flog2, reg[src], width) # 按 width 解释 src 的浮点 bit 并写回 llvm.log2 结果 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 flog2 指令
+
+instr ffma(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, third: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 fused multiply-add 处理器
+  opcode alias [0x40c] # ffma 使用从 fmul 挪出的 ruoke opcode，避免增加总 opcode 数
+  decoded_width = 48 # ffma 有三个输入寄存器和一个 width 操作数，使用 48 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_ternary(fma, reg[lhs], reg[rhs], reg[third], width) # 执行 LLVM llvm.fma 的 fused multiply-add 语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ffma 指令
+
+instr ffmuladd(dst: vreg<i64>, lhs: vreg<i64>, rhs: vreg<i64>, third: vreg<i64>, width: imm<u7>) { # ruoke 标量浮点 fmuladd 处理器
+  opcode alias [0x507] # ffmuladd 使用从 uitofp 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  decoded_width = 48 # ffmuladd 有三个输入寄存器和一个 width 操作数，使用 48 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_ternary(fmuladd, reg[lhs], reg[rhs], reg[third], width) # 执行 LLVM llvm.fmuladd 的可融合乘加语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 ffmuladd 指令
+
+instr sitofp(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 有符号整数转标量浮点处理器
+  opcode alias [0x500, 0x501] # sitofp 挪出 0x502/0x503 给 fminimum/fmaximum，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_cast(sitofp, reg[src], from_width, to_width) # 按 from_width 解释有符号整数并写回目标浮点 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 sitofp 指令
+
+instr uitofp(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 无符号整数转标量浮点处理器
+  opcode alias [0x504, 0x505] # uitofp 挪出 0x506 给 fptoui_sat、0x507 给 ffmuladd，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_cast(uitofp, reg[src], from_width, to_width) # 按 from_width 解释无符号整数并写回目标浮点 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 uitofp 指令
+
+instr fptosi(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 标量浮点转有符号整数处理器
+  opcode alias [0x508, 0x509] # fptosi 挪出 0x50a 给 fptosi_sat、0x50b 给 fcanonicalize，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_cast(fptosi, reg[src], from_width, to_width) # 按 from_width 解释浮点 bit 并写回有符号整数低位
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fptosi 指令
+
+instr fptoui(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 标量浮点转无符号整数处理器
+  opcode alias [0x50c] # fptoui 挪出 0x50d/0x50e/0x50f 给浮点 unary intrinsic，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_cast(fptoui, reg[src], from_width, to_width) # 按 from_width 解释浮点 bit 并写回无符号整数低位
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fptoui 指令
+
+instr fptosi_sat(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # ruoke 标量浮点饱和转有符号整数处理器
+  opcode alias [0x50a] # fptosi_sat 复用从 fptosi 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  decoded_width = 16 # fptosi_sat 有四个短操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_cast(fptosi_sat, reg[src], from_width, to_width) # 超出目标有符号整数范围或 NaN 时按 LLVM fptosi.sat 夹紧
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fptosi_sat 指令
+
+instr fptoui_sat(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # ruoke 标量浮点饱和转无符号整数处理器
+  opcode alias [0x506] # fptoui_sat 复用从 uitofp 挪出的 ruoke opcode，保持 ruoke 总 opcode 数为 1000
+  decoded_width = 16 # fptoui_sat 有四个短操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_cast(fptoui_sat, reg[src], from_width, to_width) # 负数、过大值或 NaN 按 LLVM fptoui.sat 夹紧到目标无符号范围
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fptoui_sat 指令
+
+instr fptrunc(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 标量浮点截断处理器
+  opcode alias [0x510, 0x513] # fptrunc 挪出 0x511/0x512 给浮点 unary intrinsic，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_cast(fptrunc, reg[src], from_width, to_width) # 将 f64 bit 截断为 f32 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fptrunc 指令
+
+instr fpext(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 标量浮点扩展处理器
+  opcode alias [0x514, 0x517] # fpext 挪出 0x515/0x516 给浮点 unary intrinsic，保持 ruoke 总 opcode 数为 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_cast(fpext, reg[src], from_width, to_width) # 将 f32 bit 扩展为 f64 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fpext 指令
+
+instr flrint(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # ruoke 标量 llvm.lrint 处理器
+  opcode alias [0x241] # flrint 使用从 isdiv 挪出的 ruoke opcode，保持总 opcode 数为 1000
+  decoded_width = 16 # flrint 有源/目标寄存器和两个宽度操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_round_to_int(lrint, reg[src], from_width, to_width) # 按当前舍入模式把 f16/f32/f64 转成 i32/i64 整数
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 flrint 指令
+
+instr fllrint(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # ruoke 标量 llvm.llrint 处理器
+  opcode alias [0x392] # fllrint 使用从 isdiv 挪出的 ruoke opcode，保持总 opcode 数为 1000
+  decoded_width = 16 # fllrint 有源/目标寄存器和两个宽度操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_round_to_int(llrint, reg[src], from_width, to_width) # 按当前舍入模式把 f16/f32/f64 转成 i32/i64 整数
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fllrint 指令
+
+instr flround(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # ruoke 标量 llvm.lround 处理器
+  opcode alias [0x0fb] # flround 使用从 isdiv 挪出的 ruoke opcode，保持总 opcode 数为 1000
+  decoded_width = 16 # flround 有源/目标寄存器和两个宽度操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_round_to_int(lround, reg[src], from_width, to_width) # 按远离零规则把 f16/f32/f64 转成 i32/i64 整数
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 flround 指令
+
+instr fllround(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # ruoke 标量 llvm.llround 处理器
+  opcode alias [0x24c] # fllround 使用从 isdiv 挪出的 ruoke opcode，保持总 opcode 数为 1000
+  decoded_width = 16 # fllround 有源/目标寄存器和两个宽度操作数，使用 16 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_round_to_int(llround, reg[src], from_width, to_width) # 按远离零规则把 f16/f32/f64 转成 i32/i64 整数
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fllround 指令
+
+instr icmp(pred: imm<u7>, dst: vreg<i1>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 整数比较处理器
+  opcode alias [0x351, 0x0ba, 0x20b, 0x35c, 0x0c5, 0x216, 0x367, 0x0d0] # icmp 的 ruoke 操作码别名第 1 组
+  opcode alias [0x221, 0x372, 0x0db, 0x22c, 0x37d, 0x0e6, 0x237, 0x388] # icmp 的 ruoke 操作码别名第 2 组
+  opcode alias [0x0f1, 0x242, 0x393, 0x0fc, 0x24d, 0x39e, 0x107, 0x258] # icmp 的 ruoke 操作码别名第 3 组
+  opcode alias [0x3a9, 0x112, 0x263, 0x3b4, 0x11d, 0x26e, 0x3bf] # icmp 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = compare(pred, reg[lhs], reg[rhs], width) # pred 决定使用有符号或无符号比较
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 icmp 指令
+
+instr icmp_br_if(pred: imm<u7>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>, then_pc: label, else_pc: label) { # 超级指令：整数比较后直接条件跳转
+  opcode alias [0x046] # icmp_br_if 从 fake_nop 干扰预算中挪用 1 个 ruoke opcode
+  decoded_width = 32 # 两个 label PC 最坏各占 64 位 bitpacked operand，因此使用 32 字节 record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    pc = select(compare(pred, reg[lhs], reg[rhs], width), then_pc, else_pc) # 直接用比较结果选择两个字节码目标，不写临时 cond 寄存器
+  } # 结束语义块
+} # 结束 icmp_br_if 超级指令
+
+instr fcmp(pred: imm<u7>, dst: vreg<i1>, lhs: vreg<i64>, rhs: vreg<i64>, width: imm<u7>) { # 标量浮点比较处理器
+  opcode alias [0x415, 0x416, 0x417, 0x418] # fcmp 的 ruoke 浮点操作码别名组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_compare(pred, reg[lhs], reg[rhs], width) # pred 按 LLVM fcmp ordered/unordered 语义解释
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fcmp 指令
+
+instr fpclass(dst: vreg<i1>, src: vreg<i64>, mask: imm<u16>, width: imm<u7>) { # 标量浮点分类处理器，覆盖 LLVM is.fpclass intrinsic
+  opcode alias [0x404] # fpclass 使用从 fadd 挪出的 ruoke opcode，避免增加总 opcode 数
+  decoded_width = 16 # mask 是 u16，record 需要给 opcode、寄存器和两个立即数留足空间
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = float_class(reg[src], mask, width) # 按 LLVM FPClassTest mask 检查 f16/f32/f64 的 NaN/Inf/Zero 等类别
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fpclass 指令
+
+instr zext(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 零扩展处理器
+  opcode alias [0x128, 0x279, 0x3ca, 0x133, 0x284, 0x3d5, 0x13e, 0x28f] # zext 的 ruoke 操作码别名第 1 组
+  opcode alias [0x3e0, 0x149, 0x29a, 0x003, 0x154, 0x2a5, 0x00e, 0x15f] # zext 的 ruoke 操作码别名第 2 组
+  opcode alias [0x2b0, 0x019, 0x16a, 0x2bb, 0x024, 0x175, 0x2c6, 0x02f] # zext 的 ruoke 操作码别名第 3 组
+  opcode alias [0x180, 0x2d1, 0x03a, 0x18b, 0x2dc, 0x045, 0x196] # zext 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = zero_extend(reg[src], from_width, to_width) # 源值按 from_width 零扩展到 to_width
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 zext 指令
+
+instr sext(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 符号扩展处理器
+  opcode alias [0x2e7, 0x050, 0x1a1, 0x2f2, 0x05b, 0x1ac, 0x2fd, 0x066] # sext 的 ruoke 操作码别名第 1 组
+  opcode alias [0x1b7, 0x308, 0x071, 0x1c2, 0x313, 0x07c, 0x1cd, 0x31e] # sext 的 ruoke 操作码别名第 2 组
+  opcode alias [0x087, 0x1d8, 0x329, 0x092, 0x1e3, 0x334, 0x09d, 0x1ee] # sext 的 ruoke 操作码别名第 3 组
+  opcode alias [0x33f, 0x0a8, 0x1f9, 0x34a, 0x0b3, 0x204, 0x355] # sext 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = sign_extend(reg[src], from_width, to_width) # 源值按 from_width 符号扩展到 to_width
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 sext 指令
+
+instr trunc(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 整数截断处理器
+  opcode alias [0x0be, 0x20f, 0x360, 0x0c9, 0x21a, 0x36b, 0x0d4, 0x225] # trunc 的 ruoke 操作码别名第 1 组
+  opcode alias [0x376, 0x0df, 0x230, 0x381, 0x0ea, 0x23b, 0x38c, 0x0f5] # trunc 的 ruoke 操作码别名第 2 组
+  opcode alias [0x246, 0x397, 0x100, 0x251, 0x3a2, 0x10b, 0x25c, 0x3ad] # trunc 的 ruoke 操作码别名第 3 组
+  opcode alias [0x116, 0x267, 0x3b8, 0x121, 0x272, 0x3c3, 0x12c] # trunc 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(reg[src], to_width) # 源值高位被丢弃，仅保留 to_width 位
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 trunc 指令
+
+instr bitcast(dst: vreg<i64>, src: vreg<i64>, from_width: imm<u7>, to_width: imm<u7>) { # 整数 bitcast 处理器
+  opcode alias [0x27d, 0x3ce, 0x137, 0x288, 0x3d9, 0x142, 0x293, 0x3e4] # bitcast 的 ruoke 操作码别名第 1 组
+  opcode alias [0x14d, 0x29e, 0x007, 0x158, 0x2a9, 0x012, 0x163, 0x2b4] # bitcast 的 ruoke 操作码别名第 2 组
+  opcode alias [0x01d, 0x16e, 0x2bf, 0x028, 0x179, 0x2ca, 0x033, 0x184] # bitcast 的 ruoke 操作码别名第 3 组
+  opcode alias [0x2d5, 0x03e, 0x18f, 0x2e0, 0x049, 0x19a, 0x2eb] # bitcast 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = bitcast_width(reg[src], from_width, to_width) # 整数 bitcast 保留低位比特
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 bitcast 指令
+
+instr alloca(dst: vreg<ptr>, bytes: imm<u64>, align: imm<u8>) { # 栈分配处理器
+  opcode alias [0x054, 0x1a5, 0x2f6, 0x05f, 0x1b0, 0x301, 0x06a, 0x1bb] # alloca 的 ruoke 操作码别名第 1 组
+  opcode alias [0x30c, 0x075, 0x1c6, 0x317, 0x080, 0x1d1, 0x322, 0x08b] # alloca 的 ruoke 操作码别名第 2 组
+  opcode alias [0x1dc, 0x32d, 0x096, 0x1e7, 0x338, 0x0a1, 0x1f2, 0x343] # alloca 的 ruoke 操作码别名第 3 组
+  opcode alias [0x0ac, 0x1fd, 0x34e] # alloca 的 ruoke 操作码别名第 4 组，继续挪出 opcode 给动态内存复制指令
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = stack_alloc(bytes, align) # 运行时创建按字节寻址的栈槽
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 alloca 指令
+
+instr alloca_dyn(dst: vreg<ptr>, count: vreg<i64>, elem_size: imm<u64>, align: imm<u8>) { # 动态元素个数栈分配处理器
+  opcode alias [0x0c2] # alloca_dyn 复用从固定 alloca 挪出的 ruoke 别名，保持总 opcode 数为 1000
+  decoded_width = 32 # alloca_dyn 包含 u64 元素大小，使用 32 字节 record 覆盖最坏 varint 长度
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = stack_alloc_dynamic(reg[count], elem_size, align) # 运行时按 count * elem_size 计算栈槽字节数
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 alloca_dyn 指令
+
+instr load(dst: vreg<i64>, ptr: vreg<ptr>, width: imm<u7>) { # 标量 load 处理器
+  opcode alias [0x213, 0x364, 0x0cd, 0x21e, 0x36f, 0x0d8, 0x229, 0x37a] # load 的 ruoke 操作码别名第 1 组
+  opcode alias [0x0e3, 0x234, 0x385, 0x0ee, 0x23f, 0x390, 0x0f9, 0x24a] # load 的 ruoke 操作码别名第 2 组
+  opcode alias [0x39b, 0x104, 0x255, 0x3a6, 0x10f, 0x260, 0x3b1, 0x11a] # load 的 ruoke 操作码别名第 3 组
+  opcode alias [0x26b, 0x3bc, 0x125, 0x276, 0x3c7, 0x130] # load 的 ruoke 操作码别名第 4 组，末尾预算留给 volatile_load
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = load_width(reg[ptr], width) # 运行时从地址寄存器读取 width 位
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 load 指令
+
+instr volatile_load(dst: vreg<i64>, ptr: vreg<ptr>, width: imm<u7>) { # volatile 标量 load 处理器
+  opcode alias [0x281] # volatile_load 使用从 load 挪出的 ruoke opcode，总 opcode 数仍为 1000
+  decoded_width = 16 # volatile_load 的三个 operand 都是 varint，预留 16 字节覆盖最长编码
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_load_width(reg[ptr], width) # 运行时按 LLVM volatile 语义逐字节读取 width 位
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_load 指令
+
+instr store(src: vreg<i64>, ptr: vreg<ptr>, width: imm<u7>) { # 标量 store 处理器
+  opcode alias [0x3d2, 0x13b, 0x28c, 0x3dd, 0x146, 0x297, 0x3e8, 0x151] # store 的 ruoke 操作码别名第 1 组
+  opcode alias [0x2a2, 0x00b, 0x15c, 0x2ad, 0x016, 0x167, 0x2b8, 0x021] # store 的 ruoke 操作码别名第 2 组
+  opcode alias [0x172, 0x2c3, 0x02c, 0x17d, 0x2ce, 0x037, 0x188, 0x2d9] # store 的 ruoke 操作码别名第 3 组
+  opcode alias [0x042, 0x193, 0x2e4, 0x04d, 0x19e, 0x2ef] # store 的 ruoke 操作码别名第 4 组，末尾预算留给 volatile_store
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    store_width(reg[ptr], reg[src], width) # 运行时将 width 位写入地址寄存器指向的位置
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 store 指令
+
+instr volatile_store(src: vreg<i64>, ptr: vreg<ptr>, width: imm<u7>) { # volatile 标量 store 处理器
+  opcode alias [0x058] # volatile_store 使用从 store 挪出的 ruoke opcode，总 opcode 数仍为 1000
+  decoded_width = 16 # volatile_store 的三个 operand 都是 varint，预留 16 字节覆盖最长编码
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    volatile_store_width(reg[ptr], reg[src], width) # 运行时按 LLVM volatile 语义逐字节写入 width 位
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_store 指令
+
+instr memcpy_dyn(dst: vreg<ptr>, src: vreg<ptr>, len: vreg<i64>) { # 动态长度 memcpy 处理器
+  opcode alias [0x0b7] # memcpy_dyn 使用从 alloca 预算挪出的 ruoke opcode，保持总 opcode 数为 1000
+  decoded_width = 8 # memcpy_dyn 只有三个寄存器 operand，8 字节 record 足够覆盖编码后布局
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    memcpy_dynamic(reg[dst], reg[src], reg[len]) # 运行时从 src 起始地址向 dst 起始地址复制 len 个字节
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 memcpy_dyn 指令
+
+instr memmove_dyn(dst: vreg<ptr>, src: vreg<ptr>, len: vreg<i64>) { # 动态长度 memmove 处理器
+  opcode alias [0x208] # memmove_dyn 使用从 alloca 预算挪出的 ruoke opcode，覆盖重叠内存复制
+  decoded_width = 8 # memmove_dyn 只有三个寄存器 operand，8 字节 record 足够覆盖编码后布局
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    memmove_dynamic(reg[dst], reg[src], reg[len]) # 运行时按安全方向复制 len 个字节，保持重叠内存语义
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 memmove_dyn 指令
+
+instr memset_dyn(dst: vreg<ptr>, value: vreg<i64>, len: vreg<i64>) { # 动态长度 memset 处理器
+  opcode alias [0x359] # memset_dyn 复用从固定 alloca 挪出的 ruoke 别名，保持总 opcode 数为 1000
+  decoded_width = 8 # memset_dyn 只有三个寄存器 operand，8 字节 record 足够覆盖编码后布局
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    memset_dynamic(reg[dst], reg[value], reg[len]) # 运行时把 value 低 8 位写入 dst 起始的 len 个字节
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 memset_dyn 指令
+
+instr volatile_memcpy_dyn(dst: vreg<ptr>, src: vreg<ptr>, len: vreg<i64>) { # volatile 动态长度 memcpy 处理器
+  opcode alias [0x134] # volatile_memcpy_dyn 从 call_native 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  decoded_width = 8 # volatile_memcpy_dyn 的三个寄存器 operand 保持紧凑 record 布局
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    volatile_memcpy_dynamic(reg[dst], reg[src], reg[len]) # 运行时按逐字节 volatile load/store 复制 len 个字节
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_memcpy_dyn 指令
+
+instr volatile_memmove_dyn(dst: vreg<ptr>, src: vreg<ptr>, len: vreg<i64>) { # volatile 动态长度 memmove 处理器
+  opcode alias [0x285] # volatile_memmove_dyn 从 call_native 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  decoded_width = 8 # volatile_memmove_dyn 的三个寄存器 operand 保持紧凑 record 布局
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    volatile_memmove_dynamic(reg[dst], reg[src], reg[len]) # 运行时按地址方向选择逐字节 volatile 复制顺序
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_memmove_dyn 指令
+
+instr volatile_memset_dyn(dst: vreg<ptr>, value: vreg<i64>, len: vreg<i64>) { # volatile 动态长度 memset 处理器
+  opcode alias [0x3d6] # volatile_memset_dyn 从 call_native 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  decoded_width = 8 # volatile_memset_dyn 的三个寄存器 operand 保持紧凑 record 布局
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    volatile_memset_dynamic(reg[dst], reg[value], reg[len]) # 运行时把 value 低 8 位逐字节 volatile 写入目标区域
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_memset_dyn 指令
+
+instr atomic_load(dst: vreg<i64>, ptr: vreg<ptr>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 整数、指针、f16/f32/f64 标量 atomic load 处理器
+  opcode alias [0x197, 0x2e8, 0x051, 0x1a2] # atomic_load 从干扰指令预算中挪用 4 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_load_width(reg[ptr], width, ordering, sync_scope) # 运行时按 width、ordering 和 syncscope 生成真正的 LLVM atomic load
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_load 指令
+
+instr atomic_store(src: vreg<i64>, ptr: vreg<ptr>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 整数、指针、f16/f32/f64 标量 atomic store 处理器
+  opcode alias [0x2f3, 0x05c, 0x1ad, 0x13f] # atomic_store 从干扰指令预算中挪用 4 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    atomic_store_width(reg[ptr], reg[src], width, ordering, sync_scope) # 运行时按 width、ordering 和 syncscope 生成真正的 LLVM atomic store
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_store 指令
+
+instr volatile_atomic_load(dst: vreg<i64>, ptr: vreg<ptr>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 整数、指针、f16/f32/f64 标量 volatile atomic load 处理器
+  opcode alias [0x2ec] # volatile_atomic_load 从 vm_call 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_load_width(reg[ptr], width, ordering, sync_scope) # 运行时生成同时带 atomic ordering、syncscope 和 volatile 标记的 LLVM load
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_load 指令
+
+instr volatile_atomic_store(src: vreg<i64>, ptr: vreg<ptr>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 整数、指针、f16/f32/f64 标量 volatile atomic store 处理器
+  opcode alias [0x055] # volatile_atomic_store 从 vm_call 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    volatile_atomic_store_width(reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成同时带 atomic ordering、syncscope 和 volatile 标记的 LLVM store
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_store 指令
+
+instr atomic_rmw_xchg(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw xchg 处理器
+  opcode alias [0x290] # atomic_rmw_xchg 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(xchg, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw xchg 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_xchg 指令
+
+instr atomic_rmw_add(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw add 处理器
+  opcode alias [0x3e1] # atomic_rmw_add 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(add, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw add 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_add 指令
+
+instr atomic_rmw_sub(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw sub 处理器
+  opcode alias [0x14a] # atomic_rmw_sub 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(sub, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw sub 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_sub 指令
+
+instr atomic_rmw_and(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw and 处理器
+  opcode alias [0x29b] # atomic_rmw_and 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(and, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw and 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_and 指令
+
+instr atomic_rmw_or(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw or 处理器
+  opcode alias [0x004] # atomic_rmw_or 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(or, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw or 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_or 指令
+
+instr atomic_rmw_xor(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw xor 处理器
+  opcode alias [0x155] # atomic_rmw_xor 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(xor, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw xor 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_xor 指令
+
+instr atomic_rmw_nand(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw nand 处理器
+  opcode alias [0x160] # atomic_rmw_nand 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(nand, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw nand 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_nand 指令
+
+instr atomic_rmw_max(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw 有符号最大值处理器
+  opcode alias [0x01a] # atomic_rmw_max 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(max, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw max 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_max 指令
+
+instr atomic_rmw_min(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw 有符号最小值处理器
+  opcode alias [0x16b] # atomic_rmw_min 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(min, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw min 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_min 指令
+
+instr atomic_rmw_umax(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw 无符号最大值处理器
+  opcode alias [0x2bc] # atomic_rmw_umax 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(umax, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw umax 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_umax 指令
+
+instr atomic_rmw_umin(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw 无符号最小值处理器
+  opcode alias [0x025] # atomic_rmw_umin 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(umin, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw umin 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_umin 指令
+
+instr atomic_rmw_uinc_wrap(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw uinc_wrap 处理器
+  opcode alias [0x2f7] # atomic_rmw_uinc_wrap 从 vm_call 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(uinc_wrap, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw uinc_wrap 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_uinc_wrap 指令
+
+instr atomic_rmw_udec_wrap(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw udec_wrap 处理器
+  opcode alias [0x060] # atomic_rmw_udec_wrap 从 vm_call 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(udec_wrap, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw udec_wrap 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_udec_wrap 指令
+
+instr atomic_rmw_usub_cond(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw usub_cond 处理器
+  opcode alias [0x1b1] # atomic_rmw_usub_cond 从 vm_call 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(usub_cond, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw usub_cond 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_usub_cond 指令
+
+instr atomic_rmw_usub_sat(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 atomicrmw usub_sat 处理器
+  opcode alias [0x302] # atomic_rmw_usub_sat 从 vm_call 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(usub_sat, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw usub_sat 并返回内存旧值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_usub_sat 指令
+
+instr atomic_rmw_fadd(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量浮点 atomicrmw fadd 处理器
+  opcode alias [0x282] # atomic_rmw_fadd 从 ret 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(fadd, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时按 width 还原 half/float/double 后生成带 syncscope 的 LLVM atomicrmw fadd
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_fadd 指令
+
+instr atomic_rmw_fsub(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量浮点 atomicrmw fsub 处理器
+  opcode alias [0x3d3] # atomic_rmw_fsub 从 ret 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(fsub, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时按 width 还原 half/float/double 后生成带 syncscope 的 LLVM atomicrmw fsub
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_fsub 指令
+
+instr atomic_rmw_fmax(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量浮点 atomicrmw fmax 处理器
+  opcode alias [0x13c] # atomic_rmw_fmax 从 ret 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(fmax, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw fmax 并返回内存旧值 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_fmax 指令
+
+instr atomic_rmw_fmin(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量浮点 atomicrmw fmin 处理器
+  opcode alias [0x28d] # atomic_rmw_fmin 从 ret 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(fmin, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw fmin 并返回内存旧值 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_fmin 指令
+
+instr atomic_rmw_fmaximum(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量浮点 atomicrmw fmaximum 处理器
+  opcode alias [0x3de] # atomic_rmw_fmaximum 从 ret 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(fmaximum, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw fmaximum 并返回内存旧值 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_fmaximum 指令
+
+instr atomic_rmw_fminimum(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量浮点 atomicrmw fminimum 处理器
+  opcode alias [0x36c] # atomic_rmw_fminimum 从 br 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = atomic_rmw(fminimum, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM atomicrmw fminimum 并返回内存旧值 bit
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 atomic_rmw_fminimum 指令
+
+instr volatile_atomic_rmw_xchg(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw xchg 处理器
+  opcode alias [0x12d] # volatile_atomic_rmw_xchg 从 br_if 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(xchg, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw xchg
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_xchg 指令
+
+instr volatile_atomic_rmw_add(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw add 处理器
+  opcode alias [0x27e] # volatile_atomic_rmw_add 从 br_if 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(add, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw add
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_add 指令
+
+instr volatile_atomic_rmw_sub(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw sub 处理器
+  opcode alias [0x3cf] # volatile_atomic_rmw_sub 从 br_if 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(sub, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw sub
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_sub 指令
+
+instr volatile_atomic_rmw_and(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw and 处理器
+  opcode alias [0x138] # volatile_atomic_rmw_and 从 br_if 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(and, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw and
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_and 指令
+
+instr volatile_atomic_rmw_or(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw or 处理器
+  opcode alias [0x289] # volatile_atomic_rmw_or 从 br_if 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(or, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw or
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_or 指令
+
+instr volatile_atomic_rmw_xor(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw xor 处理器
+  opcode alias [0x3da] # volatile_atomic_rmw_xor 从 br_if 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(xor, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw xor
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_xor 指令
+
+instr volatile_atomic_rmw_nand(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw nand 处理器
+  opcode alias [0x143] # volatile_atomic_rmw_nand 从 br_if 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(nand, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw nand
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_nand 指令
+
+instr volatile_atomic_rmw_max(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw 有符号最大值处理器
+  opcode alias [0x0c3] # volatile_atomic_rmw_max 从 vm_ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(max, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw max
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_max 指令
+
+instr volatile_atomic_rmw_min(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw 有符号最小值处理器
+  opcode alias [0x214] # volatile_atomic_rmw_min 从 vm_ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(min, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw min
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_min 指令
+
+instr volatile_atomic_rmw_umax(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw 无符号最大值处理器
+  opcode alias [0x365] # volatile_atomic_rmw_umax 从 vm_ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(umax, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw umax
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_umax 指令
+
+instr volatile_atomic_rmw_umin(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw 无符号最小值处理器
+  opcode alias [0x0ce] # volatile_atomic_rmw_umin 从 vm_ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(umin, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw umin
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_umin 指令
+
+instr volatile_atomic_rmw_uinc_wrap(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw uinc_wrap 处理器
+  opcode alias [0x21f] # volatile_atomic_rmw_uinc_wrap 从 vm_ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(uinc_wrap, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw uinc_wrap
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_uinc_wrap 指令
+
+instr volatile_atomic_rmw_udec_wrap(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw udec_wrap 处理器
+  opcode alias [0x370] # volatile_atomic_rmw_udec_wrap 从 vm_ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(udec_wrap, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw udec_wrap
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_udec_wrap 指令
+
+instr volatile_atomic_rmw_usub_cond(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw usub_cond 处理器
+  opcode alias [0x0d9] # volatile_atomic_rmw_usub_cond 从 vm_ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(usub_cond, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw usub_cond
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_usub_cond 指令
+
+instr volatile_atomic_rmw_usub_sat(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile atomicrmw usub_sat 处理器
+  opcode alias [0x3b2] # volatile_atomic_rmw_usub_sat 从 ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(usub_sat, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM atomicrmw usub_sat
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_usub_sat 指令
+
+instr volatile_atomic_rmw_fadd(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile 浮点 atomicrmw fadd 处理器
+  opcode alias [0x11b] # volatile_atomic_rmw_fadd 从 ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(fadd, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM 浮点 atomicrmw fadd
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_fadd 指令
+
+instr volatile_atomic_rmw_fsub(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile 浮点 atomicrmw fsub 处理器
+  opcode alias [0x26c] # volatile_atomic_rmw_fsub 从 ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(fsub, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM 浮点 atomicrmw fsub
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_fsub 指令
+
+instr volatile_atomic_rmw_fmax(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile 浮点 atomicrmw fmax 处理器
+  opcode alias [0x3bd] # volatile_atomic_rmw_fmax 从 ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(fmax, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM 浮点 atomicrmw fmax
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_fmax 指令
+
+instr volatile_atomic_rmw_fmin(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile 浮点 atomicrmw fmin 处理器
+  opcode alias [0x126] # volatile_atomic_rmw_fmin 从 ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(fmin, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM 浮点 atomicrmw fmin
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_fmin 指令
+
+instr volatile_atomic_rmw_fmaximum(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile 浮点 atomicrmw fmaximum 处理器
+  opcode alias [0x277] # volatile_atomic_rmw_fmaximum 从 ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(fmaximum, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM 浮点 atomicrmw fmaximum
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_fmaximum 指令
+
+instr volatile_atomic_rmw_fminimum(dst: vreg<i64>, ptr: vreg<ptr>, src: vreg<i64>, width: imm<u7>, ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile 浮点 atomicrmw fminimum 处理器
+  opcode alias [0x3c8] # volatile_atomic_rmw_fminimum 从 ret 尾部别名预算挪用 1 个 ruoke opcode
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = volatile_atomic_rmw(fminimum, reg[ptr], reg[src], width, ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM 浮点 atomicrmw fminimum
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_atomic_rmw_fminimum 指令
+
+instr cmpxchg(old: vreg<i64>, success: vreg<i1>, ptr: vreg<ptr>, cmp: vreg<i64>, new: vreg<i64>, width: imm<u7>, success_ordering: imm<u7>, failure_ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 compare-exchange 处理器
+  opcode alias [0x2b1] # cmpxchg 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    cmpxchg(reg[old], reg[success], reg[ptr], reg[cmp], reg[new], width, success_ordering, failure_ordering, sync_scope) # 运行时生成带 syncscope 的 LLVM cmpxchg 并写回旧值和成功标志
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 cmpxchg 指令
+
+instr volatile_cmpxchg(old: vreg<i64>, success: vreg<i1>, ptr: vreg<ptr>, cmp: vreg<i64>, new: vreg<i64>, width: imm<u7>, success_ordering: imm<u7>, failure_ordering: imm<u7>, sync_scope: imm<u7>) { # 标量 volatile compare-exchange 处理器
+  opcode alias [0x3cb] # volatile_cmpxchg 从 call_native 高预算别名中挪用 1 个 ruoke opcode，保持总数 1000
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    volatile_cmpxchg(reg[old], reg[success], reg[ptr], reg[cmp], reg[new], width, success_ordering, failure_ordering, sync_scope) # 运行时生成带 volatile 标记和 syncscope 的 LLVM cmpxchg
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 volatile_cmpxchg 指令
+
+instr fence(ordering: imm<u7>, sync_scope: imm<u7>) { # LLVM atomic fence 处理器
+  opcode alias [0x00f] # fence 从 fake_nop 干扰预算中挪用 1 个 ruoke 别名
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    fence(ordering, sync_scope) # 运行时生成真正的 LLVM fence 指令，并保留 system 或 singlethread syncscope
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fence 指令
+
+instr gep(dst: vreg<ptr>, base: vreg<ptr>, offset: imm<u64>) { # 常量字节偏移 GEP 处理器
+  opcode alias [0x1a9, 0x2fa, 0x063, 0x1b4, 0x305, 0x06e, 0x1bf, 0x310] # gep 的 ruoke 操作码别名第 1 组
+  opcode alias [0x079, 0x1ca, 0x31b, 0x084, 0x1d5, 0x326, 0x08f, 0x1e0] # gep 的 ruoke 操作码别名第 2 组
+  opcode alias [0x331, 0x09a, 0x1eb, 0x33c, 0x0a5, 0x1f6, 0x347, 0x0b0] # gep 的 ruoke 操作码别名第 3 组
+  opcode alias [0x201, 0x352, 0x0bb, 0x20c, 0x35d, 0x0c6, 0x217] # gep 的 ruoke 操作码别名第 4 组
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = reg[base] + offset # 运行时计算按字节寻址的指针算术
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 gep 指令
+
+instr gep_load(dst: vreg<i64>, base: vreg<ptr>, offset: imm<u64>, width: imm<u7>) { # 超级指令：常量字节偏移 GEP 后立即读取标量
+  opcode alias [0x2dd] # gep_load 从 fake_nop 干扰预算中挪用 1 个 ruoke opcode
+  decoded_width = 32 # gep_load 包含 64 位 offset 操作数，因此使用 32 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = load_width(reg[base] + offset, width) # 先计算 base+offset，再按 width 从该地址读取标量
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 gep_load 超级指令
+
+instr load_iadd(dst: vreg<i64>, ptr: vreg<ptr>, addend: vreg<i64>, width: imm<u7>) { # 超级指令：标量 load 后立即执行整数加法
+  opcode alias [0x18c] # load_iadd 从 fake_nop 干扰预算中挪用 1 个 ruoke opcode
+  decoded_width = 32 # load_iadd 包含三个寄存器操作数和位宽操作数，使用 32 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(load_width(reg[ptr], width) + reg[addend], width) # 先从 ptr 读取标量，再与 addend 做整数加法
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 load_iadd 超级指令
+
+instr load_ixor(dst: vreg<i64>, ptr: vreg<ptr>, xor_rhs: vreg<i64>, width: imm<u7>) { # 超级指令：标量 load 后立即执行整数异或
+  opcode alias [0x115] # load_ixor 复用从 ixor 挪出的 ruoke opcode，总唯一 opcode 数保持 1000
+  decoded_width = 32 # load_ixor 包含三个寄存器操作数和位宽操作数，使用 32 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = trunc_width(load_width(reg[ptr], width) xor reg[xor_rhs], width) # 先从 ptr 读取标量，再与 xor_rhs 做整数异或
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 load_ixor 超级指令
+
+instr call_native(callee: imm<u16>, argc: imm<u7>, arg0: vreg<i64>, arg1: vreg<i64>, arg2: vreg<i64>, arg3: vreg<i64>, arg4: vreg<i64>, arg5: vreg<i64>, arg6: vreg<i64>, arg7: vreg<i64>, ret_count: imm<u7>, ret0: vreg<i64>, ret0_width: imm<u7>, ret1: vreg<i64>, ret1_width: imm<u7>, ret2: vreg<i64>, ret2_width: imm<u7>, ret3: vreg<i64>, ret3_width: imm<u7>, ret4: vreg<i64>, ret4_width: imm<u7>, ret5: vreg<i64>, ret5_width: imm<u7>, ret6: vreg<i64>, ret6_width: imm<u7>, ret7: vreg<i64>, ret7_width: imm<u7>) { # 直接原生调用桥接处理器，record 固定容纳八个返回槽
+  opcode alias [0x368, 0x0d1, 0x222, 0x373, 0x0dc, 0x22d, 0x37e, 0x0e7] # call_native 的 ruoke 操作码别名第 1 组
+  opcode alias [0x238, 0x389, 0x0f2, 0x243, 0x394, 0x0fd, 0x24e, 0x39f] # call_native 的 ruoke 操作码别名第 2 组
+  opcode alias [0x108, 0x259, 0x3aa, 0x113, 0x264, 0x3b5, 0x11e, 0x26f] # call_native 的 ruoke 操作码别名第 3 组
+  opcode alias [0x3c0, 0x129, 0x27a] # call_native 的 ruoke 操作码别名第 4 组，3 个别名已挪给 volatile 动态内存 handler，1 个别名已挪给 volatile_cmpxchg
+  decoded_width = 64 # call_native 操作数字段最多，使用最大 64 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[ret0] = call_table[callee].ret0(reg[arg0], reg[arg1], reg[arg2], reg[arg3], reg[arg4], reg[arg5], reg[arg6], reg[arg7], argc, ret_count, ret0_width) # 运行时通过生成的原生调用桥表写回第 0 个返回槽
+    reg[ret1] = call_table[callee].ret1(ret_count, ret1_width) # 若 ret_count 大于 1，运行时写回第 1 个返回槽
+    reg[ret2] = call_table[callee].ret2(ret_count, ret2_width) # 若 ret_count 大于 2，运行时写回第 2 个返回槽
+    reg[ret3] = call_table[callee].ret3(ret_count, ret3_width) # 若 ret_count 大于 3，运行时写回第 3 个返回槽
+    reg[ret4] = call_table[callee].ret4(ret_count, ret4_width) # 若 ret_count 大于 4，运行时写回第 4 个返回槽
+    reg[ret5] = call_table[callee].ret5(ret_count, ret5_width) # 若 ret_count 大于 5，运行时写回第 5 个返回槽
+    reg[ret6] = call_table[callee].ret6(ret_count, ret6_width) # 若 ret_count 大于 6，运行时写回第 6 个返回槽
+    reg[ret7] = call_table[callee].ret7(ret_count, ret7_width) # 若 ret_count 大于 7，运行时写回第 7 个返回槽
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 call_native 指令
+
+instr read_cycle(dst: vreg<i64>, width: imm<u7>) { # 读取 LLVM readcyclecounter 计数器并写入 VM x 寄存器
+  opcode alias [0x261] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # read_cycle 的 opcode、目标寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = read_counter(cycle) # runtime 调用 llvm.readcyclecounter 并取得 i64 计数值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 read_cycle 指令
+
+instr read_steady(dst: vreg<i64>, width: imm<u7>) { # 读取 LLVM readsteadycounter 计数器并写入 VM x 寄存器
+  opcode alias [0x131] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # read_steady 的 opcode、目标寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = read_counter(steady) # runtime 调用 llvm.readsteadycounter 并取得 i64 计数值
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 read_steady 指令
+
+instr read_vscale(dst: vreg<i64>, width: imm<u7>) { # 读取 LLVM vscale 目标运行时常量并写入 VM x 寄存器
+  opcode alias [0x24b] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # read_vscale 的 opcode、目标寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = read_vscale() # runtime 调用 llvm.vscale.i64 并按 width 截断到 LLVM 结果位宽
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 read_vscale 指令
+
+instr read_rounding(dst: vreg<i64>, width: imm<u7>) { # 读取 LLVM 当前浮点 rounding mode 并写入 VM x 寄存器
+  opcode alias [0x0fa] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # read_rounding 的 opcode、目标寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = read_rounding() # runtime 调用 llvm.get.rounding 并取得 i32 rounding mode
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 read_rounding 指令
+
+instr read_flt_rounds(dst: vreg<i64>, width: imm<u7>) { # 读取 C/LLVM FLT_ROUNDS 当前舍入方向并写入 VM x 寄存器
+  opcode alias [0x21b] # 从 br 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # read_flt_rounds 的 opcode、目标寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = read_flt_rounds() # runtime 调用 llvm.flt.rounds 并取得 C FLT_ROUNDS 风格的 i32 结果
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 read_flt_rounds 指令
+
+instr write_rounding(src: vreg<i64>, width: imm<u7>) { # 设置 LLVM 当前浮点 rounding mode
+  opcode alias [0x320] # 从 iadd 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # write_rounding 的 opcode、源寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    write_rounding(reg[src], width) # runtime 调用 llvm.set.rounding，当前只接受 i32 rounding mode
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 write_rounding 指令
+
+instr read_fpenv(dst: vreg<i64>, width: imm<u7>) { # 读取 LLVM 浮点环境状态并写入 VM x 寄存器
+  opcode alias [0x341] # 从 isub 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # read_fpenv 的 opcode、目标寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = read_fpenv() # runtime 调用 llvm.get.fpenv.i32/i64 并按 width 写回
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 read_fpenv 指令
+
+instr write_fpenv(src: vreg<i64>, width: imm<u7>) { # 写回 LLVM 浮点环境状态
+  opcode alias [0x362] # 从 isub 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # write_fpenv 的 opcode、源寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    write_fpenv(reg[src], width) # runtime 调用 llvm.set.fpenv.i32/i64 恢复环境状态
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 write_fpenv 指令
+
+instr reset_fpenv() { # 重置 LLVM 浮点环境状态
+  opcode alias [0x399] # 从 imul 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 4 # reset_fpenv 没有操作数，使用最小 4 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reset_fpenv() # runtime 调用 llvm.reset.fpenv
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 reset_fpenv 指令
+
+instr read_fpmode(dst: vreg<i64>, width: imm<u7>) { # 读取 LLVM 浮点模式状态并写入 VM x 寄存器
+  opcode alias [0x3ba] # 从 imul 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # read_fpmode 的 opcode、目标寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = read_fpmode() # runtime 调用 llvm.get.fpmode.i32/i64 并按 width 写回
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 read_fpmode 指令
+
+instr write_fpmode(src: vreg<i64>, width: imm<u7>) { # 写回 LLVM 浮点模式状态
+  opcode alias [0x3db] # 从 imul 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # write_fpmode 的 opcode、源寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    write_fpmode(reg[src], width) # runtime 调用 llvm.set.fpmode.i32/i64 恢复模式状态
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 write_fpmode 指令
+
+instr reset_fpmode() { # 重置 LLVM 浮点模式状态
+  opcode alias [0x2c1] # 从 iudiv 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 4 # reset_fpmode 没有操作数，使用最小 4 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reset_fpmode() # runtime 调用 llvm.reset.fpmode
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 reset_fpmode 指令
+
+instr read_thread_pointer(dst: vreg<i64>, width: imm<u7>) { # 读取 LLVM thread.pointer 并把线程指针 bit 写入 VM x 寄存器
+  opcode alias [0x3a8] # 从 isdiv 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # read_thread_pointer 的 opcode、目标寄存器和位宽固定放入 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = read_thread_pointer() # runtime 调用 llvm.thread.pointer.p0 并取得当前线程指针地址
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 read_thread_pointer 指令
+
+instr sideeffect() { # LLVM sideeffect 处理器，用于保留优化器必须看到的副作用屏障
+  opcode alias [0x110] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 4 # sideeffect 没有操作数，使用最小 4 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    side_effect() # runtime 调用 llvm.sideeffect intrinsic，保留可见副作用
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 sideeffect 指令
+
+instr stacksave(dst: vreg<ptr>) { # LLVM stacksave 处理器，用于保存当前栈恢复点
+  opcode alias [0x256] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # stacksave 只有目标寄存器 operand，使用 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[dst] = stack_save() # runtime 调用 llvm.stacksave 并把返回指针写入 VM x 寄存器
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 stacksave 指令
+
+instr stackrestore(ptr: vreg<ptr>) { # LLVM stackrestore 处理器，用于恢复到此前保存的栈状态
+  opcode alias [0x3a7] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # stackrestore 只有一个指针寄存器 operand，使用 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    stack_restore(reg[ptr]) # runtime 调用 llvm.stackrestore，恢复 stacksave 返回的栈状态
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 stackrestore 指令
+
+instr clear_cache(start: vreg<ptr>, end: vreg<ptr>) { # LLVM clear_cache 处理器，用于刷新一段代码地址区间的指令缓存
+  opcode alias [0x105] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 8 # clear_cache 包含两个指针寄存器 operand，使用 8 字节 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    clear_cache(reg[start], reg[end]) # runtime 调用 llvm.clear_cache，刷新 start 到 end 的地址区间
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 clear_cache 指令
+
+instr pseudoprobe(guid: imm<u64>, index: imm<u64>, probe_type: imm<u32>, attributes: imm<u64>) { # LLVM pseudoprobe 处理器，用于保留 PGO 伪探针副作用
+  opcode alias [0x39c] # 从 ret 的 ruoke 高预算别名挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 48 # pseudoprobe 包含三个 u64 和一个 u32 immediate，使用 48 字节 record 覆盖最坏编码长度
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    pseudo_probe(guid, index, probe_type, attributes) # runtime 调用 llvm.pseudoprobe，保留 profile-guided 伪探针标记
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 pseudoprobe 指令
+
+instr prefetch(ptr: vreg<ptr>, rw: imm<u7>, locality: imm<u7>, cache: imm<u7>) { # LLVM prefetch 处理器，用于保留源 IR 的显式预取提示
+  opcode alias [0x3c4] # 从 br_if 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 16 # prefetch 包含一个指针寄存器和三个 immarg，使用 16 字节 record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    prefetch(reg[ptr], rw, locality, cache) # runtime 调用 llvm.prefetch.p0，rw/locality/cache 保持为 LLVM immarg 常量
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 prefetch 指令
+
+instr fake_nop() { # 假指令处理器，用于插入不改变 VM 状态的干扰字节码
+  opcode alias [0x176] # fake_nop 第 1 组剩余别名，其余 22 个已挪给 atomicrmw、整数 intrinsic、funnel shift、cmpxchg、fence 和超级 handler
+  decoded_width = 4 # fake_nop 只有 opcode，使用最小 4 字节 record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    state = unchanged # 该指令不读取或写入任何 VM 数据寄存器
+    pc = next # 执行继续到下一条字节码指令
+  } # 结束语义块
+} # 结束 fake_nop 指令
+
+instr br(target: label) { # 无条件分支处理器
+  opcode alias [0x2fe, 0x067, 0x1b8, 0x309, 0x072, 0x1c3, 0x314, 0x07d] # br 的 ruoke 操作码别名第 1 组
+  opcode alias [0x1ce, 0x31f, 0x088, 0x1d9, 0x32a, 0x093, 0x1e4, 0x335] # br 的 ruoke 操作码别名第 2 组
+  opcode alias [0x09e, 0x1ef, 0x340, 0x0a9, 0x1fa, 0x34b, 0x0b4, 0x205] # br 的 ruoke 操作码别名第 3 组
+  opcode alias [0x356, 0x0bf, 0x210, 0x361, 0x0ca] # br 的 ruoke 操作码别名第 4 组，0x21b 已挪给 read_flt_rounds，0x36c 已挪给 atomic_rmw_fminimum
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    pc = target # 执行跳转到目标字节码标签
+  } # 结束语义块
+} # 结束 br 指令
+
+instr br_if(cond: vreg<i1>, then_pc: label, else_pc: label) { # 条件分支处理器
+  opcode alias [0x0d5, 0x226, 0x377, 0x0e0, 0x231, 0x382, 0x0eb, 0x23c] # br_if 的 ruoke 操作码别名第 1 组
+  opcode alias [0x38d, 0x0f6, 0x247, 0x398, 0x101, 0x252, 0x3a3, 0x10c] # br_if 的 ruoke 操作码别名第 2 组
+  opcode alias [0x25d, 0x3ae, 0x117, 0x268, 0x3b9, 0x122, 0x273] # br_if 的 ruoke 操作码别名第 3 组，尾部 7 个别名已挪给 volatile atomicrmw，0x3c4 已挪给 prefetch
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    pc = select(reg[cond], then_pc, else_pc) # 条件寄存器选择下一条字节码标签
+  } # 结束语义块
+} # 结束 br_if 指令
+
+instr vm_call(target: label) { # VM 内部调用处理器
+  opcode alias [0x294, 0x3e5, 0x14e, 0x29f, 0x008, 0x159, 0x2aa, 0x013] # vm_call 的 ruoke 操作码别名第 1 组
+  opcode alias [0x164, 0x2b5, 0x01e, 0x16f, 0x2c0, 0x029, 0x17a, 0x2cb] # vm_call 的 ruoke 操作码别名第 2 组
+  opcode alias [0x034, 0x185, 0x2d6, 0x03f, 0x190, 0x2e1, 0x04a, 0x19b] # vm_call 的 ruoke 操作码别名第 3 组
+  opcode alias [0x1a6] # vm_call 的 ruoke 操作码别名第 4 组，4 个别名已挪给扩展 atomicrmw，2 个别名已挪给 volatile atomic
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[lr] = next # 调用前把返回字节码 PC 写入 runtime.vm 定义的 lr 别名
+    pc = target # 执行跳转到目标字节码标签
+  } # 结束语义块
+} # 结束 vm_call 指令
+
+instr vm_ret() { # VM 内部返回处理器
+  opcode alias [0x06b, 0x1bc, 0x30d, 0x076, 0x1c7, 0x318, 0x081, 0x1d2] # vm_ret 的 ruoke 操作码别名第 1 组
+  opcode alias [0x323, 0x08c, 0x1dd, 0x32e, 0x097, 0x1e8, 0x339, 0x0a2] # vm_ret 的 ruoke 操作码别名第 2 组
+  opcode alias [0x1f3, 0x344, 0x0ad, 0x1fe, 0x34f, 0x0b8, 0x209, 0x35a] # vm_ret 的 ruoke 操作码别名第 3 组，尾部 7 个别名已挪给 volatile atomicrmw
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    pc = reg[lr] # 从 lr 恢复调用点之后的字节码 PC
+  } # 结束语义块
+} # 结束 vm_ret 指令
+
+instr unreachable() { # LLVM unreachable 终结处理器
+  opcode alias [0x298] # 从 ret 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 4 # 无操作数指令仍占用最小 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    unreachable # 执行到这里时生成 LLVM unreachable，保留源 IR 的未定义行为路径
+  } # 结束语义块
+} # 结束 unreachable 指令
+
+instr trap() { # LLVM trap intrinsic 终结处理器
+  opcode alias [0x147] # 从 ret 的 ruoke 别名预算挪用 1 个 opcode，总唯一 opcode 数保持 1000
+  decoded_width = 4 # 无操作数 trap 指令仍占用最小 decoded record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    trap # 执行到这里时 runtime 调用 LLVM trap intrinsic 并终止控制流
+  } # 结束语义块
+} # 结束 trap 指令
+
+instr ret(src: vreg<i64>) { # 函数返回处理器
+  opcode alias [0x22a] # ret 保留一个 ruoke opcode，其余别名预算挪给浮点数学 intrinsic
+  decoded_width = 4 # ret 只需要 opcode 和一个寄存器操作数，使用 4 字节 record
+  semantic { # 处理语义由 AMICE 校验器静态识别
+    reg[ret0] = reg[src] # 返回值归一化写入 abi.vm 声明的第 0 个返回槽
+    pc = return # 分派循环在该指令后退出
+  } # 结束语义块
+} # 结束 ret 指令

@@ -1,0 +1,37 @@
+[package]
+name = "amice-llvm"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["llvm21-1"]
+
+android-ndk = []
+
+# On Windows, llvm plugins require linking with either opt.lib,
+# or lld.lib.
+win-link-opt = []
+win-link-lld = []
+
+llvm11-0 = ["inkwell/llvm11-0-no-llvm-linking"]
+llvm12-0 = ["inkwell/llvm12-0-no-llvm-linking"]
+llvm13-0 = ["inkwell/llvm13-0-no-llvm-linking"]
+llvm14-0 = ["inkwell/llvm14-0-no-llvm-linking"]
+llvm15-0 = ["inkwell/llvm15-0-no-llvm-linking"]
+llvm16-0 = ["inkwell/llvm16-0-no-llvm-linking"]
+llvm17-0 = ["inkwell/llvm17-0-no-llvm-linking"]
+llvm18-1 = ["inkwell/llvm18-1-no-llvm-linking"]
+llvm19-1 = ["inkwell/llvm19-1-no-llvm-linking"]
+llvm20-1 = ["inkwell/llvm20-1-no-llvm-linking"]
+llvm21-1 = ["inkwell/llvm21-1-no-llvm-linking"]
+llvm22-1 = ["inkwell/llvm22-1-no-llvm-linking"]
+
+[dependencies]
+lazy_static = "1.5.0"
+inkwell = { version = "0.9", default-features = false }
+strum = "0.27"
+strum_macros = "0.27"
+
+[build-dependencies]
+amice-build-support.workspace = true
+cc = "1"
