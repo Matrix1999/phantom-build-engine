@@ -1,4 +1,4 @@
-name: Build libamice (arm64-android)
+name: Build libvmp_plugin (arm64-android)
 
 on:
   workflow_dispatch:
@@ -52,14 +52,24 @@ jobs:
           NDK_BIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
           CLANG="$NDK_BIN/aarch64-linux-android26-clang"
           ln -sf "$NDK_BIN/llvm-ar" "$NDK_BIN/aarch64-linux-android-ar"
+
           mkdir -p /tmp/android-stubs
           echo "void __stub(void){}" > /tmp/stub.c
           "$CLANG" -shared -fPIC /tmp/stub.c -o /tmp/android-stubs/libLLVM.so
           "$CLANG" -shared -fPIC /tmp/stub.c -o /tmp/android-stubs/libffi.so
-          echo "NDK_BIN=$NDK_BIN" >> $GITHUB_ENV
-          echo "RUSTFLAGS=-L /tmp/android-stubs -C link-arg=-Wl,--allow-shlib-undefined" >> $GITHUB_ENV
 
-      - name: Build libamice-arm64.so
+          # Locate libc++_static.a in NDK sysroot — links C++ runtime statically
+          # so the plugin has NO libc++_shared.so dependency at runtime on device.
+          NDK_SYSROOT="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          LIBCPP_DIR="$NDK_SYSROOT/usr/lib/aarch64-linux-android"
+          echo "libc++_static.a: $(ls -lh $LIBCPP_DIR/libc++_static.a 2>/dev/null || echo 'not found')"
+
+          echo "NDK_BIN=$NDK_BIN" >> $GITHUB_ENV
+          echo "LIBCPP_DIR=$LIBCPP_DIR" >> $GITHUB_ENV
+          # Static libc++ + no libc++_shared.so NEEDED entry in the final .so
+          echo "RUSTFLAGS=-L /tmp/android-stubs -C link-arg=-Wl,--allow-shlib-undefined -C link-arg=-L$LIBCPP_DIR -C link-arg=-l:libc++_static.a -C link-arg=-Wl,--exclude-libs,libc++_shared.so" >> $GITHUB_ENV
+
+      - name: Build libvmp_plugin.arm64.so
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
@@ -80,27 +90,29 @@ jobs:
           if ! file "$SO" | grep -q "ARM aarch64"; then
             echo "❌ Output is not aarch64 — aborting"; exit 1
           fi
-          cp "$SO" ../libamice-arm64.so
-          echo "✅ libamice-arm64.so ready"
+          cp "$SO" ../libvmp_plugin.arm64.so
+          echo "✅ libvmp_plugin.arm64.so ready"
 
-      - name: Verify exported symbols
+      - name: Verify — confirm libc++_shared.so is NOT needed
         run: |
-          SO="libamice-arm64.so"
-          readelf -d "$SO" | grep NEEDED || true
+          SO="libvmp_plugin.arm64.so"
+          echo "=== NEEDED libs ==="
+          readelf -d "$SO" | grep NEEDED || echo "(none)"
+          if readelf -d "$SO" | grep -q "libc++_shared"; then
+            echo "❌ FAIL: libc++_shared.so still in NEEDED — static link failed"; exit 1
+          fi
+          echo "✅ No libc++_shared.so dependency"
           nm -D "$SO" 2>/dev/null | grep -iE "amice|llvm_plugin|passPlugin" | head -20 || true
           echo "Size: $(du -sh "$SO" | cut -f1)"
 
-      # Publish to THIS repo (phantom-build-engine) using the built-in github.token
-      # No external secret needed. AmiceManager downloads from ollvm-19 — see README.
       - name: Publish to phantom-build-engine / amice-arm64 release
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           TAG: amice-arm64
         run: |
-          ASSET="libamice-arm64.so"
+          ASSET="libvmp_plugin.arm64.so"
 
-          # Create or fetch release
           RELEASE_JSON=$(curl -sf \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
@@ -112,13 +124,12 @@ jobs:
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Content-Type: application/json" \
               "https://api.github.com/repos/$REPO/releases" \
-              -d "{\"tag_name\":\"$TAG\",\"name\":\"amice arm64-android plugin\",\"body\":\"libamice-arm64.so built from amice-vmp/ source.\",\"draft\":false,\"prerelease\":false}")
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"VMP Plugin arm64-android\",\"body\":\"libvmp_plugin.arm64.so — LLVM pass plugin, no libc++_shared.so dependency.\",\"draft\":false,\"prerelease\":false}")
           fi
 
           RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
           echo "Release ID: $RELEASE_ID"
 
-          # Delete old asset if present
           OLD_ID=$(curl -sf \
             -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/$REPO/releases/$RELEASE_ID/assets" \
@@ -127,9 +138,9 @@ jobs:
             curl -sf -X DELETE \
               -H "Authorization: Bearer $GH_TOKEN" \
               "https://api.github.com/repos/$REPO/releases/assets/$OLD_ID"
+            echo "Deleted old asset $OLD_ID"
           fi
 
-          # Upload
           curl -sf -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Content-Type: application/octet-stream" \
