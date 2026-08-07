@@ -907,8 +907,8 @@ static void *detect_frida_loop(void *args) {
         detect_frida_memdiskcompare();
         detect_ptrace();
         detect_ebpf_uprobe();
-        detect_riru_zygisk();                     // Riru/Zygisk/Xposed: maps + phdr + paths
-        detect_root();                            // su binaries + Magisk mounts
+        if (g_block_rooted) detect_riru_zygisk();  // Riru/Zygisk/Xposed: maps + phdr + paths — only if toggle ON
+        if (g_block_rooted) detect_root();        // su binaries + Magisk mounts — only if toggle ON
         my_nanosleep(&timereq, NULL);
     }
     return NULL;
@@ -923,6 +923,13 @@ static void *detect_frida_loop(void *args) {
 // Optional (compile-time -DBLOCK_ROOTED_DEVICES):
 //   SELinux permissive → immediate nuke (rooted phone detected on launch).
 // ?
+
+/* g_block_rooted — set to 1 the first time nativeDecryptShard reads
+   salt[0] bit-7 == 1 (block-rooted toggle ON).  Starts at 0 so that
+   detect_root() in the background loop is suppressed until the salt is
+   read and the flag is known.  Declared volatile so the compiler does
+   not cache it across the loop iteration. */
+static volatile int g_block_rooted = 0;
 
 /* Root checks — always compiled in, always present in every blob.
    Triggered at runtime by a flag bit DexPacker hides in salt[0] bit-7.
@@ -1338,9 +1345,12 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeDecryptShard(
     // Java sees only an opaque 16-byte array — it cannot patch or hook this.
     // We read the flag, strip the bit from salt before KDF so the derived key
     // is identical regardless of whether the flag is set.
+    // g_block_rooted is published here so detect_frida_loop() (background
+    // thread) knows whether to run detect_root() on each 5-second cycle.
     {
         int block_rooted = (salt[0] & 0x80) != 0;
-        salt[0] &= 0x7F;   /* clear flag bit — KDF uses clean salt */
+        salt[0] &= 0x7F;          /* clear flag bit — KDF uses clean salt */
+        g_block_rooted = block_rooted;  /* tell background loop */
         if (block_rooted) check_rooted();
     }
 
