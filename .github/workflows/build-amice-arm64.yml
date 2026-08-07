@@ -15,9 +15,6 @@ jobs:
         uses: actions/checkout@v4
 
       # ── Install LLVM 19 dev headers (needed by llvm-sys at compile time) ──────
-      # llvm-sys links against LLVM headers at build time even though the final
-      # .so resolves LLVM symbols at runtime from clang-19. LLVM_SYS_191_PREFIX
-      # tells llvm-sys where to find them on this runner.
       - name: Install LLVM 19 dev
         run: |
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
@@ -51,19 +48,24 @@ jobs:
           ndk-version: r29
           add-to-path: true
 
+      # ── Symlink missing AR tool expected by cc-rs ──────────────────────────────
+      # cc-rs looks for "aarch64-linux-android-ar" by name. NDK only ships llvm-ar.
+      # Creating a symlink so both names resolve to the same tool.
+      - name: Patch NDK AR symlink for cc-rs
+        run: |
+          NDK_BIN="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ln -sf "$NDK_BIN/llvm-ar" "$NDK_BIN/aarch64-linux-android-ar"
+          echo "NDK_BIN=$NDK_BIN" >> $GITHUB_ENV
+          ls "$NDK_BIN/aarch64-linux-android-ar"
+
       # ── Cross-compile amice for aarch64-linux-android ─────────────────────────
-      # Features:
-      #   android-ndk  — adjusts linking flags for Android (no libc++ static, etc.)
-      #   llvm19-1     — matches clang-19 in the OLLVM NDK the app uses on-device
-      #
-      # LLVM symbols resolve at runtime from the statically-linked clang-19 binary.
-      # No separate libLLVM.so is needed or shipped.
       - name: Build libamice-arm64.so
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           NDK_TC: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
           CARGO_TARGET_AARCH64_LINUX_ANDROID_AR: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          AR_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
           CC_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
           CXX_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++
         run: |
@@ -80,7 +82,6 @@ jobs:
           ls -lh "$SO"
           file "$SO"
 
-          # Verify: must be AArch64 ELF
           if ! file "$SO" | grep -q "ARM aarch64"; then
             echo "❌ Output is not aarch64 — aborting"
             exit 1
@@ -89,18 +90,15 @@ jobs:
           cp "$SO" ../libamice-arm64.so
           echo "✅ libamice-arm64.so ready"
 
-      # ── Smoke-test: check AMICE_* symbols are exported ────────────────────────
+      # ── Smoke-test: check exported symbols ────────────────────────────────────
       - name: Verify exported symbols
         run: |
           SO="libamice-arm64.so"
-          echo "── nm / readelf check ──"
           readelf -d "$SO" | grep NEEDED || true
           nm -D "$SO" 2>/dev/null | grep -iE "amice|llvm_plugin|passPlugin" | head -20 || true
           echo "Size: $(du -sh "$SO" | cut -f1)"
 
       # ── Upload to Matrix1999/ollvm-19 as public release asset ─────────────────
-      # AmiceManager.java downloads from:
-      #   https://github.com/Matrix1999/ollvm-19/releases/download/amice-arm64/libamice-arm64.so
       - name: Publish to ollvm-19 / amice-arm64 release
         env:
           OLLVM_PAT: ${{ secrets.GITHUB_PAT }}
@@ -109,7 +107,6 @@ jobs:
         run: |
           ASSET="libamice-arm64.so"
 
-          # Create release if it doesn't exist
           RELEASE_JSON=$(curl -sf \
             -H "Authorization: Bearer $OLLVM_PAT" \
             -H "Accept: application/vnd.github+json" \
@@ -121,13 +118,12 @@ jobs:
               -H "Authorization: Bearer $OLLVM_PAT" \
               -H "Content-Type: application/json" \
               "https://api.github.com/repos/$TARGET_REPO/releases" \
-              -d "{\"tag_name\":\"$RELEASE_TAG\",\"name\":\"amice arm64-android plugin\",\"body\":\"libamice-arm64.so — amice LLVM pass plugin compiled for aarch64-linux-android.\\n\\nUsed by Ultra Dex2c VMP for on-device compilation with amice obfuscation.\",\"draft\":false,\"prerelease\":false}")
+              -d "{\"tag_name\":\"$RELEASE_TAG\",\"name\":\"amice arm64-android plugin\",\"body\":\"libamice-arm64.so — amice LLVM pass plugin for aarch64-linux-android.\",\"draft\":false,\"prerelease\":false}")
           fi
 
           RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
           echo "Release ID: $RELEASE_ID"
 
-          # Delete existing asset if present
           ASSET_ID=$(curl -sf \
             -H "Authorization: Bearer $OLLVM_PAT" \
             -H "Accept: application/vnd.github+json" \
@@ -135,14 +131,11 @@ jobs:
             | jq -r ".[] | select(.name==\"$ASSET\") | .id")
 
           if [ -n "$ASSET_ID" ]; then
-            echo "Deleting old asset $ASSET_ID ..."
             curl -sf -X DELETE \
               -H "Authorization: Bearer $OLLVM_PAT" \
               "https://api.github.com/repos/$TARGET_REPO/releases/assets/$ASSET_ID"
           fi
 
-          # Upload new asset
-          echo "Uploading $ASSET ..."
           curl -sf -X POST \
             -H "Authorization: Bearer $OLLVM_PAT" \
             -H "Content-Type: application/octet-stream" \
