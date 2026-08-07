@@ -1,0 +1,1 @@
+- [Stub-loader & phantom_key.c architecture](stub-loader-phantom.md) — full structural map of all stub-loader Java files and phantom_key.c JNI/crypto/anti-tamper code; read before editing any of these components.
