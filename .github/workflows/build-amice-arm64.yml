@@ -58,16 +58,27 @@ jobs:
           "$CLANG" -shared -fPIC /tmp/stub.c -o /tmp/android-stubs/libLLVM.so
           "$CLANG" -shared -fPIC /tmp/stub.c -o /tmp/android-stubs/libffi.so
 
-          # Locate libc++_static.a in NDK sysroot — links C++ runtime statically
-          # so the plugin has NO libc++_shared.so dependency at runtime on device.
+          # Locate libc++_static.a + libc++abi.a in NDK sysroot
           NDK_SYSROOT="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           LIBCPP_DIR="$NDK_SYSROOT/usr/lib/aarch64-linux-android"
-          echo "libc++_static.a: $(ls -lh $LIBCPP_DIR/libc++_static.a 2>/dev/null || echo 'not found')"
+          echo "libc++_static.a: $(ls -lh $LIBCPP_DIR/libc++_static.a 2>/dev/null || echo NOT FOUND)"
+          echo "libc++abi.a:     $(ls -lh $LIBCPP_DIR/libc++abi.a     2>/dev/null || echo NOT FOUND)"
 
-          echo "NDK_BIN=$NDK_BIN" >> $GITHUB_ENV
-          echo "LIBCPP_DIR=$LIBCPP_DIR" >> $GITHUB_ENV
-          # Static libc++ + no libc++_shared.so NEEDED entry in the final .so
-          echo "RUSTFLAGS=-L /tmp/android-stubs -C link-arg=-Wl,--allow-shlib-undefined -C link-arg=-L$LIBCPP_DIR -C link-arg=-l:libc++_static.a -C link-arg=-Wl,--exclude-libs,libc++_shared.so" >> $GITHUB_ENV
+          echo "NDK_BIN=$NDK_BIN"           >> $GITHUB_ENV
+          echo "LIBCPP_DIR=$LIBCPP_DIR"     >> $GITHUB_ENV
+
+          # --push-state,-Bstatic forces static resolution of libc++/libc++abi
+          # ONLY for those two libs, then restores dynamic mode (--pop-state).
+          # This fires at link time before cargo appends its own -lc++ flag,
+          # ensuring libc++_shared.so never ends up in the NEEDED section.
+          echo "RUSTFLAGS=-L /tmp/android-stubs \
+            -C link-arg=-Wl,--allow-shlib-undefined \
+            -C link-arg=-L$LIBCPP_DIR \
+            -C link-arg=-Wl,--push-state \
+            -C link-arg=-Wl,-Bstatic \
+            -C link-arg=-lc++ \
+            -C link-arg=-lc++abi \
+            -C link-arg=-Wl,--pop-state" >> $GITHUB_ENV
 
       - name: Build libvmp_plugin.arm64.so
         env:
@@ -99,10 +110,9 @@ jobs:
           echo "=== NEEDED libs ==="
           readelf -d "$SO" | grep NEEDED || echo "(none)"
           if readelf -d "$SO" | grep -q "libc++_shared"; then
-            echo "❌ FAIL: libc++_shared.so still in NEEDED — static link failed"; exit 1
+            echo "❌ FAIL: libc++_shared.so still in NEEDED"; exit 1
           fi
           echo "✅ No libc++_shared.so dependency"
-          nm -D "$SO" 2>/dev/null | grep -iE "amice|llvm_plugin|passPlugin" | head -20 || true
           echo "Size: $(du -sh "$SO" | cut -f1)"
 
       - name: Publish to phantom-build-engine / amice-arm64 release
@@ -112,24 +122,18 @@ jobs:
           TAG: amice-arm64
         run: |
           ASSET="libvmp_plugin.arm64.so"
-
           RELEASE_JSON=$(curl -sf \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/releases/tags/$TAG" 2>/dev/null || true)
-
           if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":"Not Found"'; then
-            echo "Creating release $TAG ..."
             RELEASE_JSON=$(curl -sf -X POST \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Content-Type: application/json" \
               "https://api.github.com/repos/$REPO/releases" \
-              -d "{\"tag_name\":\"$TAG\",\"name\":\"VMP Plugin arm64-android\",\"body\":\"libvmp_plugin.arm64.so — LLVM pass plugin, no libc++_shared.so dependency.\",\"draft\":false,\"prerelease\":false}")
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"VMP Plugin arm64-android\",\"draft\":false,\"prerelease\":false}")
           fi
-
           RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
-          echo "Release ID: $RELEASE_ID"
-
           OLD_ID=$(curl -sf \
             -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/$REPO/releases/$RELEASE_ID/assets" \
@@ -138,13 +142,10 @@ jobs:
             curl -sf -X DELETE \
               -H "Authorization: Bearer $GH_TOKEN" \
               "https://api.github.com/repos/$REPO/releases/assets/$OLD_ID"
-            echo "Deleted old asset $OLD_ID"
           fi
-
           curl -sf -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Content-Type: application/octet-stream" \
             "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$ASSET" \
             --data-binary "@$ASSET"
-
-          echo "✅ Done: https://github.com/$REPO/releases/download/$TAG/$ASSET"
+          echo "✅ Published: https://github.com/$REPO/releases/download/$TAG/$ASSET"
