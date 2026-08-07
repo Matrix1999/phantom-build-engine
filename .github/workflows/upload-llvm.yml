@@ -78,9 +78,17 @@ jobs:
 
       - name: Build libLLVM.so
         run: |
-          ninja -C /tmp/llvm-build -j2 LLVM
-          SO=$(find /tmp/llvm-build/lib -name "libLLVM*.so" | head -1)
-          echo "Built: $SO ($(du -sh "$SO" | cut -f1))"
+          # If the .so already exists in the build cache, skip ninja entirely
+          SO=$(find /tmp/llvm-build/lib -name "libLLVM*.so" 2>/dev/null | head -1)
+          if [ -n "$SO" ] && [ -f "$SO" ]; then
+            echo "✅ libLLVM.so found in build cache — skipping ninja"
+            echo "   $SO ($(du -sh "$SO" | cut -f1))"
+          else
+            echo "🔨 No cached .so found — running ninja build"
+            ninja -C /tmp/llvm-build -j$(nproc) LLVM
+            SO=$(find /tmp/llvm-build/lib -name "libLLVM*.so" | head -1)
+            echo "Built: $SO ($(du -sh "$SO" | cut -f1))"
+          fi
           file "$SO"
           if ! file "$SO" | grep -q "ARM aarch64"; then
             echo "❌ Not aarch64 — aborting"; exit 1
