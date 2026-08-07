@@ -58,23 +58,41 @@ jobs:
           "$CLANG" -shared -fPIC /tmp/stub.c -o /tmp/android-stubs/libLLVM.so
           "$CLANG" -shared -fPIC /tmp/stub.c -o /tmp/android-stubs/libffi.so
 
-          # Hide every libc++_shared.so in the NDK sysroot so the linker is
-          # physically unable to link the shared version — it will fall back to
-          # libc++_static.a automatically. This is the only reliable way to
-          # prevent cargo / NDK clang from adding libc++_shared.so to NEEDED.
           NDK_SYSROOT="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-          find "$NDK_SYSROOT" -name "libc++_shared.so" | while read f; do
-            mv "$f" "${f}.hidden"
-            echo "Hidden: $f"
+          LIBCPP_DIR="$NDK_SYSROOT/usr/lib/aarch64-linux-android"
+          LIBCPP_STATIC="$LIBCPP_DIR/libc++_static.a"
+          LIBCPP_ABI="$LIBCPP_DIR/libc++abi.a"
+
+          # The amice build.rs files explicitly emit cargo:rustc-link-lib=c++_shared
+          # which forces -lc++_shared into the linker command — we cannot suppress
+          # this via RUSTFLAGS alone. Solution: a linker wrapper that intercepts
+          # every -lc++_shared argument and replaces it with the static .a files
+          # before the real linker ever sees it.
+          cat > /usr/local/bin/ndk-linker-wrap << WRAPPER
+          #!/bin/bash
+          REAL_LINKER="$CLANG"
+          LIBCPP_STATIC_PATH="$LIBCPP_STATIC"
+          LIBCPP_ABI_PATH="$LIBCPP_ABI"
+          ARGS=()
+          for arg in "\$@"; do
+            if [ "\$arg" = "-lc++_shared" ]; then
+              ARGS+=("\$LIBCPP_STATIC_PATH" "\$LIBCPP_ABI_PATH")
+            else
+              ARGS+=("\$arg")
+            fi
           done
+          exec "\$REAL_LINKER" "\${ARGS[@]}"
+          WRAPPER
+          chmod +x /usr/local/bin/ndk-linker-wrap
 
           echo "NDK_BIN=$NDK_BIN" >> $GITHUB_ENV
+          echo "LIBCPP_DIR=$LIBCPP_DIR" >> $GITHUB_ENV
           echo "RUSTFLAGS=-L /tmp/android-stubs -C link-arg=-Wl,--allow-shlib-undefined" >> $GITHUB_ENV
 
       - name: Build libvmp_plugin.arm64.so
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: /usr/local/bin/ndk-linker-wrap
           CARGO_TARGET_AARCH64_LINUX_ANDROID_AR: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
           AR_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
           CC_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang
