@@ -1033,6 +1033,7 @@ static void *detect_frida_loop(void *args) {
    Triggered at runtime by a flag bit DexPacker hides in salt[0] bit-7.
    Java sees only an opaque 16-byte salt and cannot distinguish the variants.
    OLLVM -fla flattens this separately from the tiny constructor. */
+__attribute__((annotate("+vm_virtualize")))
 static void check_rooted(void) {
     /* 1. SELinux permissive */
     static const char * const SE[] = {
@@ -1378,6 +1379,7 @@ static inline void put_le32(uint8_t *b, int off, uint32_t v) {
     b[off+3] = (uint8_t)(v >> 24);
 }
 
+__attribute__((annotate("+vm_virtualize")))
 static void arx_kdf(const uint8_t salt[16], const uint8_t pkg_hash[32], uint8_t out[16]) {
     uint32_t s0 = le32(salt,  0), s1 = le32(salt,  4);
     uint32_t s2 = le32(salt,  8), s3 = le32(salt, 12);
