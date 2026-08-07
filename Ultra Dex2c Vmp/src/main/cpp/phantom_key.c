@@ -175,6 +175,9 @@ static char STR_TRACER_PID[11];
 static char STR_LIBC[8];
 static char STR_LIBPHANTOM[14];
 
+#define NUM_LIBS 2
+static char *libstocheck[NUM_LIBS]; // filled by ph_strings_init() → STR_LIBPHANTOM, STR_LIBC
+
 // Decrypts all detection strings into the static buffers above on first call.
 static void ph_strings_init(void) {
     static volatile int _done = 0;
@@ -212,8 +215,6 @@ typedef struct {
     unsigned long startAddrinMem;
 } execSection;
 
-#define NUM_LIBS 2
-static char *libstocheck[NUM_LIBS]; // filled by ph_strings_init() → STR_LIBPHANTOM, STR_LIBC
 static execSection *elfSectionArr[NUM_LIBS] = {NULL};
 
 #if defined(__LP64__)
