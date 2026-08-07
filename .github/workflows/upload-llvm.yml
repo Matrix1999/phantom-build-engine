@@ -3,6 +3,9 @@ name: Upload libLLVM.so to release (one-shot)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   upload-llvm:
     runs-on: ubuntu-latest
@@ -12,23 +15,16 @@ jobs:
         run: |
           set -e
           sudo apt-get install -y --no-install-recommends zstd
-
           curl -L --retry 3 --progress-bar \
             "https://github.com/Ylarod/setup-ndk-clang/releases/download/prebuilt/clang-linux-x86-ndk-r29-r563880c.tar.zst" \
             -o /tmp/clang.tar.zst
           echo "Downloaded: $(du -sh /tmp/clang.tar.zst | cut -f1)"
-
           zstd -d /tmp/clang.tar.zst -o /tmp/clang.tar --force
           rm /tmp/clang.tar.zst
-          echo "Decompressed: $(du -sh /tmp/clang.tar | cut -f1)"
-
-          # Extract exact known paths (no wildcards)
           tar -xf /tmp/clang.tar -C /tmp/ ./lib/libLLVM.so ./lib/libLLVM-21.so 2>/dev/null \
             || tar -xf /tmp/clang.tar -C /tmp/ lib/libLLVM.so lib/libLLVM-21.so
           rm /tmp/clang.tar
-
           ls -lh /tmp/lib/
-          # Follow symlink and copy real file
           cp -L /tmp/lib/libLLVM.so /tmp/libLLVM.so
           echo "libLLVM.so: $(du -sh /tmp/libLLVM.so | cut -f1)"
 
@@ -39,18 +35,17 @@ jobs:
           API="https://api.github.com/repos/${{ github.repository }}"
           OLD=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
             "$API/releases/tags/amice-ndk-r29" \
-            | jq -r '.assets[]? | select(.name=="libLLVM.so") | .id')
+            | jq -r '.assets[]? | select(.name=="libLLVM.so") | .id // empty')
           [ -n "$OLD" ] && curl -s -X DELETE \
             -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$OLD" \
             && echo "Deleted old asset"
-
           RELEASE_ID=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
             "$API/releases/tags/amice-ndk-r29" | jq -r '.id')
-
-          curl -s -X POST \
+          echo "Uploading 130M to release $RELEASE_ID..."
+          RESP=$(curl -s -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Content-Type: application/octet-stream" \
             "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=libLLVM.so" \
-            --data-binary @/tmp/libLLVM.so \
-            | jq '{id:.id, name:.name, size:.size}'
-          echo "Done ✅"
+            --data-binary @/tmp/libLLVM.so)
+          echo "$RESP" | jq '{id:.id, name:.name, size:.size, state:.state}'
+          echo "$RESP" | jq -e '.id != null' && echo "✅ Done" || (echo "❌ Upload failed"; echo "$RESP"; exit 1)
