@@ -121,6 +121,7 @@ jobs:
             -mllvm -fla \
             -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
             -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -sobf \
             -mllvm -split     -mllvm -split_num=2 \
             -mllvm -ibr \
             -mllvm -icall \
@@ -226,19 +227,20 @@ jobs:
       - name: Confirm OLLVM passes active
         run: |
           # Probe with -fla — if OLLVM passes are loaded this compiles fine.
-          # Fast-strong passes (sobf removed — strings XOR-encrypted by encrypt_blob.py):
+          # Fast-strong passes:
           # 1. fla      — Control Flow Flattening      (hardest to deobfuscate)
           # 2. bcf      — Bogus Control Flow           prob=70  bcf_loop=2
           # 3. sub      — Instruction Substitution     sub_loop=1
-          # 4. split    — Basic Block Splitting        split_num=2
-          # 5. ibr      — Indirect Branching
-          # 6. icall    — Indirect Call Obfuscation
-          # 7. igv      — Indirect Global Variable
+          # 4. sobf     — String Obfuscation
+          # 5. split    — Basic Block Splitting        split_num=2
+          # 6. ibr      — Indirect Branching
+          # 7. icall    — Indirect Call Obfuscation
+          # 8. igv      — Indirect Global Variable
           echo "int x;" > /tmp/probe.c
           if "$OLLVM_BIN" --target=aarch64-linux-android26 \
                --sysroot="$SYSROOT" -mllvm -fla \
                -x c -c /tmp/probe.c -o /tmp/probe.o 2>/dev/null; then
-            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 -mllvm -sub -mllvm -sub_loop=1 -mllvm -split -mllvm -split_num=2 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
+            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 -mllvm -sub -mllvm -sub_loop=1 -mllvm -sobf -mllvm -split -mllvm -split_num=2 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
             echo "✅ OLLVM fast-strong passes: fla bcf(75%×2) sub(×1) split(2) ibr icall igv"
           else
             echo "OLLVM_FLAGS=" >> $GITHUB_ENV
@@ -259,6 +261,7 @@ jobs:
             -mllvm -fla \
             -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
             -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -sobf \
             -mllvm -split     -mllvm -split_num=2 \
             -mllvm -ibr \
             -mllvm -icall \
@@ -271,6 +274,7 @@ jobs:
             -mllvm -fla \
             -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
             -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -sobf \
             -mllvm -split     -mllvm -split_num=2 \
             -mllvm -ibr \
             -mllvm -icall \
