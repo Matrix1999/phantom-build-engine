@@ -1,18 +1,5 @@
 name: Build libphantom.so + encrypt blobs (amice-vmp)
 
-# ---------------------------------------------------------------------------
-# Replaces the OLLVM build pipeline with amice-vmp (fuqiuluo/amice v0.1.5-beta.3).
-#
-# What changes vs OLLVM:
-#   • No build-ollvm job — libamice.so is downloaded pre-built (7.8 MB, public)
-#   • NDK r29 (LLVM 21) instead of r25c + OLLVM clang-19
-#   • Obfuscation via -fpass-plugin=libamice.so + env vars instead of -mllvm flags
-#   • arx_kdf + check_rooted get instruction-level VMP via __attribute__((annotate))
-#   • All other functions get: CFG flatten, MBA, bogus-CF, indirect call/branch,
-#     string encryption, basic-block splitting
-#   • Blob encryption step identical — same encrypt_blob.py / ARX key
-# ---------------------------------------------------------------------------
-
 on:
   workflow_dispatch:
 
@@ -27,12 +14,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install NDK r29
+      # nttld/setup-ndk  → sysroot + linker wrappers (aarch64-linux-android26-clang etc.)
+      - name: Install NDK r29 (sysroot + linker)
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r29
           add-to-path: false
+
+      # Ylarod/setup-ndk-clang → full LLVM toolchain WITH libLLVM.so (amice needs it)
+      - name: Install NDK clang r29 (full LLVM, includes libLLVM.so)
+        id: ndk-clang
+        uses: Ylarod/setup-ndk-clang@v1
+        with:
+          ndk-version: r29
 
       - name: Install Python (for encrypt_blob.py)
         run: sudo apt-get install -y --no-install-recommends python3
@@ -49,21 +44,32 @@ jobs:
         run: |
           NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}"
           TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          LLVM_HOME="${{ steps.ndk-clang.outputs.clang-path }}"
 
-          # libLLVM.so lives in lib64 (r29) — amice plugin needs it at runtime
-          LLVM_LIBDIR="$TC/lib64"
-          [ -d "$LLVM_LIBDIR" ] || LLVM_LIBDIR="$TC/lib"
+          # libLLVM.so is in lib64 of the full LLVM toolchain from Ylarod
+          LLVM_LIBDIR="$LLVM_HOME/lib64"
+          [ -d "$LLVM_LIBDIR" ] || LLVM_LIBDIR="$LLVM_HOME/lib"
+
+          # Create libLLVM.so symlink if only versioned copy exists
+          if [ ! -e "$LLVM_LIBDIR/libLLVM.so" ]; then
+            CANDIDATE=$(ls "$LLVM_LIBDIR"/libLLVM*.so* 2>/dev/null | head -1)
+            [ -n "$CANDIDATE" ] && ln -s "$CANDIDATE" "$LLVM_LIBDIR/libLLVM.so" && \
+              echo "Symlinked $CANDIDATE → libLLVM.so"
+          fi
 
           {
             echo "NDK_ROOT=$NDK_ROOT"
             echo "TC=$TC"
             echo "SYSROOT=$TC/sysroot"
-            echo "CLANG=$TC/bin/clang"
+            echo "CLANG=$LLVM_HOME/bin/clang"
             echo "NDK_LINK_ARM64=$TC/bin/aarch64-linux-android26-clang"
             echo "NDK_LINK_ARM32=$TC/bin/armv7a-linux-androideabi21-clang"
             echo "LLVM_LIBDIR=$LLVM_LIBDIR"
             echo "AMICE_PLUGIN=$PWD/libamice.so"
           } >> "$GITHUB_ENV"
+
+          echo "LLVM_HOME=$LLVM_HOME  LLVM_LIBDIR=$LLVM_LIBDIR"
+          ls "$LLVM_LIBDIR"/libLLVM*.so* 2>/dev/null || echo "⚠ no libLLVM*.so found"
 
       - name: Smoke-test amice plugin (arm64 + arm32)
         run: |
@@ -74,23 +80,19 @@ jobs:
           }
           EOF
 
-          # arm64
-          AMICE_STRING_ENCRYPTION=true AMICE_FLATTEN=true \
-          LD_LIBRARY_PATH="$LLVM_LIBDIR" \
-          "$CLANG" --target=aarch64-linux-android26 \
-            --sysroot="$SYSROOT" -fPIC -O2 \
-            -fpass-plugin="$AMICE_PLUGIN" \
-            -c /tmp/smoke.c -o /tmp/smoke_arm64.o
-          echo "✅ arm64 — amice plugin loaded OK"
+          run_smoke() {
+            local TARGET="$1" OUT="$2"
+            AMICE_STRING_ENCRYPTION=true AMICE_FLATTEN=true \
+            LD_LIBRARY_PATH="$LLVM_LIBDIR" \
+            "$CLANG" --target="$TARGET" \
+              --sysroot="$SYSROOT" -fPIC -O2 \
+              -fpass-plugin="$AMICE_PLUGIN" \
+              -c /tmp/smoke.c -o "$OUT"
+            echo "✅ $TARGET — amice plugin OK"
+          }
 
-          # arm32
-          AMICE_STRING_ENCRYPTION=true AMICE_FLATTEN=true \
-          LD_LIBRARY_PATH="$LLVM_LIBDIR" \
-          "$CLANG" --target=armv7a-linux-androideabi21 \
-            --sysroot="$SYSROOT" -fPIC -O2 \
-            -fpass-plugin="$AMICE_PLUGIN" \
-            -c /tmp/smoke.c -o /tmp/smoke_arm32.o
-          echo "✅ arm32 — amice plugin loaded OK"
+          run_smoke aarch64-linux-android26    /tmp/smoke_arm64.o
+          run_smoke armv7a-linux-androideabi21 /tmp/smoke_arm32.o
 
       - name: Write linker version script
         run: |
@@ -112,17 +114,6 @@ jobs:
           set -e
           SRC="Ultra Dex2c Vmp/src/main/cpp/phantom_key.c"
 
-          # ── Amice pass configuration ────────────────────────────────────────
-          # arx_kdf + check_rooted get full instruction-level VMP via the
-          # __attribute__((annotate("+vm_virtualize"))) in phantom_key.c.
-          # All other functions get these global passes:
-          #   FLATTEN          — control-flow flattening (dominator mode)
-          #   MBA              — mixed boolean-arithmetic rewriting
-          #   BOGUS_CONTROL_FLOW — bogus branches / opaque predicates
-          #   INDIRECT_CALL    — call-site indirection via table
-          #   INDIRECT_BRANCH  — branch indirection + index encryption
-          #   SPLIT_BASIC_BLOCK — basic-block splitting
-          #   STRING_ENCRYPTION — XOR/SIMD-XOR string hiding
           AMICE_PASSES=(
             AMICE_FLATTEN=true
             AMICE_MBA=true
@@ -157,30 +148,22 @@ jobs:
             -llog
           )
 
-          # ── arm64-v8a ───────────────────────────────────────────────────────
           echo "Building arm64-v8a (amice-vmp)..."
           env "${AMICE_PASSES[@]}" \
           "$CLANG" --target=aarch64-linux-android26 \
-            "${COMMON_FLAGS[@]}" \
-            -c "$SRC" -o phantom_arm64.o
-          "$NDK_LINK_ARM64" \
-            "${LDFLAGS[@]}" \
-            -Wl,-soname,libphantom.so \
-            phantom_arm64.o \
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o
+          "$NDK_LINK_ARM64" "${LDFLAGS[@]}" \
+            -Wl,-soname,libphantom.so phantom_arm64.o \
             "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
             -o libphantom_arm64.so
           echo "  OK libphantom_arm64.so — $(wc -c < libphantom_arm64.so) bytes"
 
-          # ── armeabi-v7a ─────────────────────────────────────────────────────
           echo "Building armeabi-v7a (amice-vmp)..."
           env "${AMICE_PASSES[@]}" \
           "$CLANG" --target=armv7a-linux-androideabi21 \
-            "${COMMON_FLAGS[@]}" \
-            -c "$SRC" -o phantom_arm32.o
-          "$NDK_LINK_ARM32" \
-            "${LDFLAGS[@]}" \
-            -Wl,-soname,libphantom.so \
-            phantom_arm32.o \
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o
+          "$NDK_LINK_ARM32" "${LDFLAGS[@]}" \
+            -Wl,-soname,libphantom.so phantom_arm32.o \
             "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
             -o libphantom_arm.so
           echo "  OK libphantom_arm.so — $(wc -c < libphantom_arm.so) bytes"
@@ -211,8 +194,7 @@ jobs:
         run: |
           python3 "Ultra Dex2c Vmp/phantom/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
           python3 "Ultra Dex2c Vmp/phantom/encrypt_blob.py" libphantom_arm.so  libphantom_arm.blob
-          echo "Blobs:"
-          ls -lh libphantom_arm64.blob libphantom_arm.blob
+          echo "Blobs:"; ls -lh libphantom_arm64.blob libphantom_arm.blob
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
