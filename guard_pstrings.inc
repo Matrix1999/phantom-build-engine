@@ -55,11 +55,8 @@ static __attribute__((always_inline)) inline const char *gstr_xor_dec(
 // ════════════════════════════════════════════════════════════════════════════
 // Master-key reveal — shared key, VCore markers and blocked-class names
 // ════════════════════════════════════════════════════════════════════════════
-// PSTR_XOR_MASK (0x5A) is no longer a compile-time macro literal.
-// It is computed at runtime by _mba_xor_mask_5a() (guard_mba.h, included
-// via guard.cpp before this .inc file) so no MOVZ #0x5A appears in .text.
-// Both reveal() and reveal_ns() call the helper once, store in a local const,
-// then use that const in the loop — same performance, zero literal in binary.
+// PSTR_XOR_MASK (0x5A) is a plain literal here; amice's MBA pass transforms
+// it at compile time so no MOVZ #0x5A appears in the shipped binary.
 
 static __attribute__((noinline)) const char *reveal(const uint8_t *ct, int ct_len, char *out) {
     uint8_t key[32], iv[16];
@@ -67,7 +64,7 @@ static __attribute__((noinline)) const char *reveal(const uint8_t *ct, int ct_le
     int plen = aes256_cbc_dec(key, iv, ct, ct_len, (uint8_t *)out);
     memset(key, 0, 32); memset(iv, 0, 16);
     if (plen < 0) { out[0] = '\0'; return out; }
-    const uint8_t _mask = _mba_xor_mask_5a();   // 0x5A — runtime, no literal
+    const uint8_t _mask = 0x5Au;   // amice MBA hides this literal
     for (int i = 0; i < plen; i++) out[i] = (char)((uint8_t)out[i] ^ _mask);
     out[plen] = '\0';
     return out;
@@ -148,7 +145,7 @@ static __attribute__((noinline)) const char *reveal_ns(uint32_t idx,
     int plen = aes256_cbc_dec(key, iv, ct, ct_len, (uint8_t *)buf);
     memset(key, 0, 32); memset(iv, 0, 16);
     if (plen < 0) { buf[0] = '\0'; return buf; }
-    const uint8_t _mask = _mba_xor_mask_5a();   // 0x5A — runtime, no literal
+    const uint8_t _mask = 0x5Au;   // amice MBA hides this literal
     for (int i = 0; i < plen; i++) buf[i] = (char)((uint8_t)buf[i] ^ _mask);
     buf[plen] = '\0';
     return buf;
