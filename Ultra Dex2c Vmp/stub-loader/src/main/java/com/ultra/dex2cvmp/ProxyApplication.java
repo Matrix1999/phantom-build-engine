@@ -143,10 +143,14 @@ public class ProxyApplication extends Application {
      * points to ProxyApplication at this point.
      */
     private void patchProviders(Object currentActivityThread, Application realApp) {
-        ArrayMap<String, String> mProviderMap = (ArrayMap<String, String>) Reflect.getFieldOjbect(
+        // mProviderMap is ArrayMap<String, ProviderClientRecord> — NOT <String, String>.
+        // Using raw ArrayMap avoids the ClassCastException on all Android versions.
+        @SuppressWarnings("rawtypes")
+        ArrayMap mProviderMap = (ArrayMap) Reflect.getFieldOjbect(
                 "android.app.ActivityThread", currentActivityThread, "mProviderMap");
         if (mProviderMap == null) return;
-        for (String providerClientRecord : mProviderMap.values()) {
+        for (Object providerClientRecord : mProviderMap.values()) {
+            if (providerClientRecord == null) continue;
             Object localProvider = Reflect.getFieldOjbect(
                     "android.app.ActivityThread$ProviderClientRecord",
                     providerClientRecord, "mLocalProvider");
