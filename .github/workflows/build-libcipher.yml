@@ -106,6 +106,7 @@ jobs:
           CPP_ABI_ARM32=$(   find "$TC" -name "libc++abi.a"     | grep "arm-linux" | head -1)
 
           AMICE_PASSES=(
+             AMICE_VMP=true
             AMICE_FLATTEN=true
             AMICE_MBA=true
             AMICE_BOGUS_CONTROL_FLOW=true
