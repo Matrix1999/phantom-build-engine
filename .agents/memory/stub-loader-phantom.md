@@ -123,3 +123,36 @@ Location: `Ultra Dex2c Vmp/src/main/cpp/phantom_key.c` (1397 lines)
 
 **Why:** Key is never returned to Java; zeroed on return via `goto cleanup` pattern.
 **How to apply:** Any change to KDF or cipher must be mirrored in Java `DexCrypto.exfr/FxIjsF/nDnv` AND `encrypt_blob.py arx_cipher` to stay byte-identical.
+
+---
+
+## DexPacker toggle & Block-Rooted toggle (packer side)
+
+### DexPacker toggle
+- UI: `SettingsFragment.sw_dex_packer` → `dex2c_prefs / dex_packer_enabled` (default OFF)
+- `ApkProtector.protectApk()` reads `dex_packer_enabled` after all dex2c/VMP work is done
+- When ON: calls `new DexPacker(context).pack(outputApk, packedUnsigned, packWorkDir)` — encrypts stripped DEX shards and injects `ProxyApplication` stub loader
+- Stacks on top of dex2c: dex2c removes bytecode → DexPacker encrypts the empty shells
+- If sign is requested, re-signs the packed APK (DexPacker changes the ZIP, invalidating V1)
+
+### Block-Rooted toggle
+- UI: `SettingsFragment.sw_block_rooted` → `dex2c_mega_prefs / block_rooted_enabled` (default ON)
+- Stored in a separate prefs file (`dex2c_mega_prefs`) shared with `ProtectViewModel`
+- Auto-saves on toggle change (no Save button needed for this setting)
+
+**Pack time** (`DexPacker.pack()`):
+1. Reads `block_rooted_enabled` fresh from SharedPreferences
+2. Generates random 16-byte salt (`DexSeed.randomSalt()`)
+3. ON → `salt[0] |= 0x80`; OFF → `salt[0] &= 0x7F`
+4. Strips flag for KDF: `saltForKdf[0] &= 0x7F` — derived key is identical either way
+5. Writes raw salt (flag bit intact) to `assets/phantom/ph_salt`
+6. Same two `.blob` files used for both ON and OFF — no separate builds
+
+**Runtime** (`phantom_key.c` — `nativeDecryptShard()`):
+1. Reads `(salt[0] & 0x80) != 0` → extracts flag
+2. Strips bit before KDF: `salt[0] &= 0x7F`
+3. Sets global `g_block_rooted`
+4. If ON: immediately calls `check_rooted()` — SELinux permissive, su binaries, CapEff elevated, Magisk mounts, hook dirs, build.prop test-keys → any hit → `nuke_app()` (raw tgkill SIGKILL)
+5. Background `detect_frida_loop` (5s) checks `g_block_rooted` before running `detect_root()` + `detect_riru_zygisk()` each cycle
+
+**Why hidden in salt bit-7:** Java only sees an opaque 16-byte array. A Frida hook on the Java layer cannot read or patch the flag — it is already consumed in C before `nativeDecryptShard` returns.
