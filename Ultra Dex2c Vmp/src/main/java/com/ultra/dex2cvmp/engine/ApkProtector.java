@@ -54,11 +54,14 @@ public class ApkProtector {
 
     public String protect(Uri inputUri, String filterText, boolean signOutput, boolean useVmp,
                           boolean blockRootedDevices) throws Exception {
-        // Clear all leftover dex2c_mega_* dirs from previous runs before starting fresh
+        // Auto-clear the entire app cache before every protection run.
+        // This mirrors the manual "Clear Cache" button in Settings and ensures
+        // no leftover temp files, old dex2c_mega_* work dirs, or stale compiler
+        // artifacts can interfere with the new job.
         File baseCache = context.getCacheDir();
-        File[] stale = baseCache.listFiles(f -> f.isDirectory() && f.getName().startsWith("dex2c_mega_"));
-        if (stale != null) {
-            for (File old : stale) deleteDir(old);
+        File[] allCached = baseCache.listFiles();
+        if (allCached != null) {
+            for (File f : allCached) deleteDir(f);
         }
 
         File cacheDir = new File(baseCache, "dex2c_mega_" + System.currentTimeMillis());
