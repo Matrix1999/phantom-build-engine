@@ -895,6 +895,13 @@ static void detect_root(void) {
 // Frida thread names, named pipes, binary checksums, ptrace, eBPF uprobes.
 // ?
 
+/* g_block_rooted — set to 1 the first time nativeDecryptShard reads
+   salt[0] bit-7 == 1 (block-rooted toggle ON).  Starts at 0 so that
+   detect_root() and detect_riru_zygisk() in the background loop are
+   suppressed until the salt is read and the flag is known.
+   Declared volatile so the compiler does not cache it across loop iterations. */
+static volatile int g_block_rooted = 0;
+
 static void *detect_frida_loop(void *args) {
     (void)args;
     struct timespec timereq;
@@ -923,13 +930,6 @@ static void *detect_frida_loop(void *args) {
 // Optional (compile-time -DBLOCK_ROOTED_DEVICES):
 //   SELinux permissive → immediate nuke (rooted phone detected on launch).
 // ?
-
-/* g_block_rooted — set to 1 the first time nativeDecryptShard reads
-   salt[0] bit-7 == 1 (block-rooted toggle ON).  Starts at 0 so that
-   detect_root() in the background loop is suppressed until the salt is
-   read and the flag is known.  Declared volatile so the compiler does
-   not cache it across the loop iteration. */
-static volatile int g_block_rooted = 0;
 
 /* Root checks — always compiled in, always present in every blob.
    Triggered at runtime by a flag bit DexPacker hides in salt[0] bit-7.
