@@ -20,51 +20,25 @@ import java.util.zip.InflaterOutputStream;
  * Runtime DEX decryption + libphantom bootstrap for the stub loader.
  *
  * Key design:
- *  • Key derivation + shard decryption happen entirely inside libphantom.so
- *    via nativeDecryptShard() — the 16-byte key never crosses the JNI boundary.
+ *  • All shard decryption, DEX loading, and anti-dump wipes happen entirely
+ *    inside libphantom.so via nativeLoadShards() — plaintext DEX bytes never
+ *    cross the JNI boundary to Java.
  *  • libphantom.so is stored as an ARX-encrypted blob in assets/phantom/.
  *    loadPhantomLib(Context) decrypts it with the hardcoded blob key, writes
  *    it to code_cache/, and calls System.load().
  *
  * ── Call order ────────────────────────────────────────────────────────────────
- *   DexCrypto.loadPhantomLib(ctx);
- *   byte[] dex = DexCrypto.nativeDecryptShard(salt, pkgNameUtf8, encShard);
+ *   DexCrypto.loadPhantomLib(ctx, maskedBlobKey);
+ *   ClassLoader cl = DexCrypto.nativeLoadShards(salt, pkg, encShards, parent);
  * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * NOTE: nativeDecryptShard / nativeWipeShard / nativeWipeArtDex are
+ * intentionally NOT exposed here.  They still exist in libphantom.so for
+ * internal use by nativeLoadShards, but no Java code should call them
+ * directly — doing so would re-expose plaintext DEX bytes at the Java level.
+ * Do not re-add Java declarations for those symbols.
  */
 public class DexCrypto {
-
-    // ── Native entry-point ────────────────────────────────────────────────────
-
-    /**
-     * Derive key + decrypt one DEX shard entirely inside libphantom.so.
-     *
-     * The key is derived from (salt, pkgName) and consumed in-place — it is
-     * never returned to Java.  Java receives only the plaintext DEX bytes.
-     *
-     * MUST be called only after {@link #loadPhantomLib(Context)}.
-     *
-     * @param salt        16-byte raw salt from assets/phantom/ph_salt.
-     * @param pkgNameUtf8 Package name pre-encoded as standard UTF-8 bytes.
-     * @param encShard    Encrypted shard bytes from the phantom.vmp bundle.
-     * @return Plaintext DEX bytes.
-     */
-    public static native byte[] nativeDecryptShard(byte[] salt, byte[] pkgNameUtf8, byte[] encShard);
-
-    /**
-     * Layer-2a anti-dump — wipe DEX magic from a plaintext shard byte[].
-     *
-     * Call this immediately after InMemoryDexClassLoader (or the file-based
-     * fallback) has consumed the byte[].  The native side zeroes:
-     *   bytes  0-7  : dex\n magic + version string
-     *   bytes 40-43 : endian_tag (0x12345678)
-     *
-     * ART has already fully parsed and mapped the DEX before this is called,
-     * so zeroing the source array does not affect class resolution.
-     * The byte[] will no longer match the scanner's DEX heuristics.
-     *
-     * MUST be called only after {@link #loadPhantomLib(Context)}.
-     */
-    public static native void nativeWipeShard(byte[] dexBytes);
 
     /**
      * Decrypt all shards + load InMemoryDexClassLoader — entirely in native.
@@ -98,27 +72,6 @@ public class DexCrypto {
     public static native ClassLoader nativeLoadShards(
             byte[] salt, byte[] pkgNameUtf8, byte[][] encShards, ClassLoader parent);
 
-    /**
-     * Layer-2b anti-dump — wipe DEX magic from ART's internal mmap copy.
-     *
-     * When InMemoryDexClassLoader parses a DEX, ART mmaps the bytes into its
-     * own anonymous read-only region in the process's virtual address space.
-     * That region persists for the lifetime of the process.  nativeWipeShard()
-     * zeroes the Java byte[] source, but ART's internal copy still has a valid
-     * "dex\n" magic header readable via /proc/self/mem without root.
-     *
-     * This function scans /proc/self/maps for anonymous regions with DEX magic,
-     * uses mprotect (raw syscall — bypasses Frida libc hooks) to temporarily
-     * add write permission, zeroes bytes 0-7 (magic+version) and 40-43
-     * (endian_tag), then restores the original protection.  ART class resolution
-     * is unaffected — ART has already fully parsed the DEX into its internal
-     * structures before this is called.
-     *
-     * MUST be called only after all shards have been loaded and nativeWipeShard()
-     * has been called on each.  Requires {@link #loadPhantomLib(Context)}.
-     */
-    public static native void nativeWipeArtDex();
-
     // ── Blob bootstrap ────────────────────────────────────────────────────────
 
     /**
@@ -126,7 +79,7 @@ public class DexCrypto {
      * appears verbatim in the DEX string pool.
      * This key is ONLY used to decrypt the libphantom.so blob; it does NOT
      * protect any user data.  It is separate from, and weaker than, the per-APK
-     * key stays inside libphantom.so (nativeDecryptShard).
+     * key stays inside libphantom.so (nativeLoadShards).
      *
      * The blob key itself is NOT stored here — it is reconstructed at runtime by
      * XORing the masked bytes from phantom.vmp header with ASSET_KEY_MASK below.
