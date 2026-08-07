@@ -1,0 +1,217 @@
+name: Build libcipher (amice)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Compiles guard.cpp into libcipher static archives using amice-VMP.
+# No OLLVM dependency — libamice.so + libLLVM.so are downloaded from this
+# repo's own release tag "amice-ndk-r29".
+#
+# Outputs (download the artifact zip after the run):
+#   libcipher_arm64.a        — arm64-v8a  static archive  (amice all passes)
+#   libcipher_arm64.so       — arm64-v8a  shared lib      (amice all passes)
+#   libcipher_armeabi-v7a.a  — armeabi-v7a static archive (amice all passes)
+#   libcipher_armeabi-v7a.so — armeabi-v7a shared lib     (amice all passes)
+#
+# After the run: copy all four files to
+#   src/main/assets/
+# in the Dex2c Mega project, commit + push, then rebuild the APK.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-cipher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Android SDK + NDK ───────────────────────────────────────────────────
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK r25c
+        run: |
+          yes | sdkmanager "ndk;25.2.9519653" 2>/dev/null || true
+          echo "NDK_ROOT=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
+
+      # ── Download amice plugin + LLVM from this repo's own release ───────────
+      - name: Download libamice.so + libLLVM.so from amice-ndk-r29 release
+        run: |
+          REPO="${{ github.repository }}"
+          TOKEN="${{ github.token }}"
+
+          fetch_asset() {
+            local name="$1" dest="$2"
+            ASSET_ID=$(curl -sf \
+              -H "Authorization: Bearer $TOKEN" \
+              "https://api.github.com/repos/$REPO/releases/tags/amice-ndk-r29" \
+              | jq -r --arg n "$name" '.assets[] | select(.name==$n) | .id')
+            if [ -z "$ASSET_ID" ]; then
+              echo "❌ Asset not found in release: $name"
+              exit 1
+            fi
+            curl -L -sf \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/octet-stream" \
+              "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID" \
+              -o "$dest"
+            echo "✅ $name — $(du -sh "$dest" | cut -f1)"
+          }
+
+          mkdir -p amice_libs
+          fetch_asset "libamice-android-ndk-r29-linux-x86_64.so" "amice_libs/libamice.so"
+          fetch_asset "libLLVM.so"                                 "amice_libs/libLLVM.so"
+
+          echo "AMICE_SO=$PWD/amice_libs/libamice.so"   >> $GITHUB_ENV
+          echo "LLVM_LIBDIR=$PWD/amice_libs"            >> $GITHUB_ENV
+
+      # ── Resolve toolchain paths ─────────────────────────────────────────────
+      - name: Resolve toolchain paths
+        run: |
+          TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          echo "TC=$TC"                                                          >> $GITHUB_ENV
+          # NDK clang++ wrappers — carry sysroot, CRT, runtime libs
+          echo "NDK_CXX_ARM64=$TC/bin/aarch64-linux-android26-clang++"          >> $GITHUB_ENV
+          echo "NDK_CXX_ARM32=$TC/bin/armv7a-linux-androideabi21-clang++"       >> $GITHUB_ENV
+          echo "SYSROOT=$TC/sysroot"                                             >> $GITHUB_ENV
+
+      # ── Smoke-test amice plugin ─────────────────────────────────────────────
+      - name: Smoke-test amice plugin
+        run: |
+          TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          NDK_CLANG="$TC/bin/clang++"
+          cat > /tmp/smoke.cpp << 'EOF'
+          int foo(int x, int y) {
+            int a = x ^ y, b = a + x, c = b * y;
+            return (a > 0) ? b : c;
+          }
+          EOF
+          AMICE_FLATTEN=true \
+          AMICE_MBA=true \
+          AMICE_BOGUS_CONTROL_FLOW=true \
+          AMICE_INDIRECT_CALL=true \
+          AMICE_INDIRECT_BRANCH=true \
+          AMICE_SPLIT_BASIC_BLOCK=true \
+          AMICE_STRING_ENCRYPTION=true \
+          LD_LIBRARY_PATH="$LLVM_LIBDIR" \
+          "$NDK_CLANG" \
+            --target=aarch64-linux-android26 \
+            --sysroot="$SYSROOT" \
+            -fpass-plugin="$AMICE_SO" \
+            -std=c++17 -fPIC -O2 \
+            -c /tmp/smoke.cpp -o /tmp/smoke.o
+          echo "✅ amice plugin — all passes OK on arm64"
+
+      # ── Build libcipher archives ────────────────────────────────────────────
+      - name: Build libcipher (arm64-v8a + armeabi-v7a)
+        run: |
+          set -e
+          TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          # Source lives in this repo (phantom-build-engine)
+          GUARD="guard.cpp"
+
+          # Static C++ runtime — bake it in so the .a needs no libc++_shared.so at link time
+          CPP_STATIC_ARM64=$(find "$TC" -name "libc++_static.a" | grep "aarch64"     | head -1)
+          CPP_ABI_ARM64=$(   find "$TC" -name "libc++abi.a"     | grep "aarch64"     | head -1)
+          CPP_STATIC_ARM32=$(find "$TC" -name "libc++_static.a" | grep "arm-linux"   | head -1)
+          CPP_ABI_ARM32=$(   find "$TC" -name "libc++abi.a"     | grep "arm-linux"   | head -1)
+
+          # Common compile flags (amice plugin + all 7 passes)
+          AMICE_ENV=(
+            AMICE_FLATTEN=true
+            AMICE_MBA=true
+            AMICE_BOGUS_CONTROL_FLOW=true
+            AMICE_INDIRECT_CALL=true
+            AMICE_INDIRECT_BRANCH=true
+            AMICE_SPLIT_BASIC_BLOCK=true
+            AMICE_STRING_ENCRYPTION=true
+            LD_LIBRARY_PATH="$LLVM_LIBDIR"
+          )
+
+          COMMON_FLAGS=(
+            --sysroot="$SYSROOT"
+            -fpass-plugin="$AMICE_SO"
+            -fPIC -O2 -g0
+            -std=c++17
+            -fno-unwind-tables -fno-asynchronous-unwind-tables
+            -fexceptions -frtti
+            -fvisibility=hidden
+            -ffunction-sections -fdata-sections
+            -D__ANDROID__ -DANDROID
+            -DD2C_HAS_JNILOAD
+            -I.
+          )
+
+          LDFLAGS=(
+            -shared -fPIC
+            -Wl,--gc-sections
+            -Wl,--build-id=none
+            -Wl,-soname,libcipher.so
+          )
+
+          # ── arm64-v8a ───────────────────────────────────────────────────────
+          echo "Building arm64-v8a (amice — all 7 passes)…"
+          env "${AMICE_ENV[@]}" \
+            "$NDK_CXX_ARM64" \
+              --target=aarch64-linux-android26 \
+              "${COMMON_FLAGS[@]}" \
+              -c "$GUARD" -o guard_arm64.o
+          # .so (for reference / readelf inspection)
+          "$NDK_CXX_ARM64" \
+            "${LDFLAGS[@]}" \
+            -nostdlib++ "$CPP_STATIC_ARM64" "$CPP_ABI_ARM64" \
+            -llog -lz -lm \
+            guard_arm64.o \
+            -o libcipher_arm64.so
+          echo "  ✅ libcipher_arm64.so  — $(wc -c < libcipher_arm64.so) bytes"
+          # .a (what the Dex2C mega-build links at APK time)
+          "$TC/bin/llvm-ar" rcs libcipher_arm64.a guard_arm64.o
+          echo "  ✅ libcipher_arm64.a   — $(wc -c < libcipher_arm64.a) bytes"
+
+          # ── armeabi-v7a ─────────────────────────────────────────────────────
+          echo "Building armeabi-v7a (amice — all 7 passes)…"
+          env "${AMICE_ENV[@]}" \
+            "$NDK_CXX_ARM32" \
+              --target=armv7a-linux-androideabi21 \
+              "${COMMON_FLAGS[@]}" \
+              -c "$GUARD" -o guard_arm32.o
+          "$NDK_CXX_ARM32" \
+            "${LDFLAGS[@]}" \
+            -nostdlib++ "$CPP_STATIC_ARM32" "$CPP_ABI_ARM32" \
+            -llog -lz -lm \
+            guard_arm32.o \
+            -o libcipher_armeabi-v7a.so
+          echo "  ✅ libcipher_armeabi-v7a.so — $(wc -c < libcipher_armeabi-v7a.so) bytes"
+          "$TC/bin/llvm-ar" rcs libcipher_armeabi-v7a.a guard_arm32.o
+          echo "  ✅ libcipher_armeabi-v7a.a  — $(wc -c < libcipher_armeabi-v7a.a) bytes"
+
+      # ── Strip + harden .so files ────────────────────────────────────────────
+      - name: Strip + harden
+        run: |
+          TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          STRIP="$TC/bin/llvm-strip"
+          OBJCOPY="$TC/bin/llvm-objcopy"
+          for SO in libcipher_arm64.so libcipher_armeabi-v7a.so; do
+            "$STRIP" --strip-all "$SO"
+            for SEC in .symtab .strtab .comment .note.android.ident .eh_frame .eh_frame_hdr; do
+              "$OBJCOPY" --remove-section="$SEC" "$SO" 2>/dev/null || true
+            done
+            echo "  $SO → $(wc -c < "$SO") bytes"
+          done
+
+      # ── Upload ──────────────────────────────────────────────────────────────
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cipher-binaries-amice
+          retention-days: 90
+          path: |
+            libcipher_arm64.so
+            libcipher_arm64.a
+            libcipher_armeabi-v7a.so
+            libcipher_armeabi-v7a.a
