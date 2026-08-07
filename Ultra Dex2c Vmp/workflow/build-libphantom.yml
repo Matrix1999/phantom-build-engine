@@ -119,7 +119,7 @@ jobs:
           /tmp/ollvm-install/bin/clang \
             --target=aarch64-linux-android26 \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -bcf       -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 \
             -mllvm -sub       -mllvm -sub_loop=2 \
             -mllvm -sobf \
             -mllvm -split     -mllvm -split_num=3 \
@@ -240,7 +240,7 @@ jobs:
           if "$OLLVM_BIN" --target=aarch64-linux-android26 \
                --sysroot="$SYSROOT" -mllvm -fla \
                -x c -c /tmp/probe.c -o /tmp/probe.o 2>/dev/null; then
-            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 -mllvm -sub -mllvm -sub_loop=2 -mllvm -sobf -mllvm -split -mllvm -split_num=3 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
+            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 -mllvm -sub -mllvm -sub_loop=2 -mllvm -sobf -mllvm -split -mllvm -split_num=3 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
             echo "✅ OLLVM passes: fla bcf(80%×3) sub(×2) sobf split(3) ibr icall igv"
           else
             echo "OLLVM_FLAGS=" >> $GITHUB_ENV
@@ -259,7 +259,7 @@ jobs:
           "$OLLVM_BIN" --target=aarch64-linux-android26 \
             --sysroot="$SYSROOT" \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -bcf       -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 \
             -mllvm -sub       -mllvm -sub_loop=2 \
             -mllvm -sobf \
             -mllvm -split     -mllvm -split_num=3 \
@@ -272,7 +272,7 @@ jobs:
           "$OLLVM_BIN" --target=armv7a-linux-androideabi21 \
             --sysroot="$SYSROOT" \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -bcf       -mllvm -bcf_prob=90 -mllvm -bcf_loop=3 \
             -mllvm -sub       -mllvm -sub_loop=2 \
             -mllvm -sobf \
             -mllvm -split     -mllvm -split_num=3 \
