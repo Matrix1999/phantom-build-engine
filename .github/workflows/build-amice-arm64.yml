@@ -14,6 +14,19 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # ── Install LLVM 19 dev headers (needed by llvm-sys at compile time) ──────
+      # llvm-sys links against LLVM headers at build time even though the final
+      # .so resolves LLVM symbols at runtime from clang-19. LLVM_SYS_191_PREFIX
+      # tells llvm-sys where to find them on this runner.
+      - name: Install LLVM 19 dev
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee /etc/apt/sources.list.d/llvm19.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends llvm-19-dev libclang-19-dev clang-19
+          echo "LLVM_SYS_191_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
+          llvm-config-19 --version
+
       # ── Rust toolchain + aarch64-linux-android target ─────────────────────────
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -103,7 +116,7 @@ jobs:
             "https://api.github.com/repos/$TARGET_REPO/releases/tags/$RELEASE_TAG" 2>/dev/null || true)
 
           if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":"Not Found"'; then
-            echo "Creating release $RELEASE_TAG …"
+            echo "Creating release $RELEASE_TAG ..."
             RELEASE_JSON=$(curl -sf -X POST \
               -H "Authorization: Bearer $OLLVM_PAT" \
               -H "Content-Type: application/json" \
@@ -122,14 +135,14 @@ jobs:
             | jq -r ".[] | select(.name==\"$ASSET\") | .id")
 
           if [ -n "$ASSET_ID" ]; then
-            echo "Deleting old asset $ASSET_ID …"
+            echo "Deleting old asset $ASSET_ID ..."
             curl -sf -X DELETE \
               -H "Authorization: Bearer $OLLVM_PAT" \
               "https://api.github.com/repos/$TARGET_REPO/releases/assets/$ASSET_ID"
           fi
 
           # Upload new asset
-          echo "Uploading $ASSET …"
+          echo "Uploading $ASSET ..."
           curl -sf -X POST \
             -H "Authorization: Bearer $OLLVM_PAT" \
             -H "Content-Type: application/octet-stream" \
