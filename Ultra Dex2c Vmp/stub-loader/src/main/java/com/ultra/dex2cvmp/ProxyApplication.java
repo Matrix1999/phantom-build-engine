@@ -36,7 +36,13 @@ public class ProxyApplication extends Application {
     }
 
     private Application realApplication() {
-        // Определяем наличие Applicaiton
+        // ── 1. Collect all references BEFORE touching mApplication ────────────
+        // This minimises the null window that causes a race with background
+        // threads (e.g. TheRouterLibThread) that call getApplicationContext()
+        // concurrently.  Previously mApplication was nulled here and then
+        // 7+ reflection operations ran before makeApplication() restored it;
+        // any thread calling getApplicationContext() in that window got null
+        // and Kotlin's non-null cast threw NullPointerException.
         Object currentActivityThread = Reflect.invokeMethod("android.app.ActivityThread", null, "currentActivityThread", new Object[]{}, null);
         Object mBoundApplication = Reflect.getFieldValue(
                 "android.app.ActivityThread", currentActivityThread,
@@ -44,19 +50,12 @@ public class ProxyApplication extends Application {
         Object loadedApkInfo = Reflect.getFieldValue(
                 "android.app.ActivityThread$AppBindData",
                 mBoundApplication, "info");
-        // Установить для текущего процесса Application значение null
-        Reflect.setFieldValue("android.app.LoadedApk", loadedApkInfo, "mApplication", null);
         Object oldApplication = Reflect.getFieldValue(
                 "android.app.ActivityThread", currentActivityThread,
                 "mInitialApplication");
-        // http://www.codeceo.com/article/android-context.html
         ArrayList<Application> mAllApplications = (ArrayList<Application>) Reflect
                 .getFieldValue("android.app.ActivityThread",
                         currentActivityThread, "mAllApplications");
-        if (mAllApplications != null) {
-            mAllApplications.remove(oldApplication);// Удалить старый Application
-        }
-
         ApplicationInfo loadedApk = (ApplicationInfo) Reflect
                 .getFieldValue("android.app.LoadedApk", loadedApkInfo,
                         "mApplicationInfo");
@@ -64,17 +63,26 @@ public class ProxyApplication extends Application {
                 .getFieldValue("android.app.ActivityThread$AppBindData",
                         mBoundApplication, "appInfo");
 
+        // ── 2. Apply className + list changes (still no null window yet) ──────
         if (loadedApk != null) {
             loadedApk.className = Const.getRealApp();
         }
         if (appBindData != null) {
             appBindData.className = Const.getRealApp();
         }
+        if (mAllApplications != null) {
+            mAllApplications.remove(oldApplication);
+        }
 
+        // ── 3. Null + makeApplication back-to-back (minimise null window) ─────
+        // getApplicationContext() returns null between these two lines.
+        // Keeping them adjacent means the window is only as wide as the
+        // makeApplication() JNI call itself, not 7+ extra reflection ops.
+        Reflect.setFieldValue("android.app.LoadedApk", loadedApkInfo, "mApplication", null);
         Application app = (Application) Reflect.invokeMethod(
                 "android.app.LoadedApk", loadedApkInfo, "makeApplication",
                 new Object[]{false, null},
-                boolean.class, Instrumentation.class); // Выполнить makeApplication (false, null)
+                boolean.class, Instrumentation.class);
 
         Reflect.setFieldValue("android.app.ActivityThread", currentActivityThread, "mInitialApplication", app);
 
