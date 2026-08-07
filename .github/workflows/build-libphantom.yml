@@ -109,12 +109,25 @@ jobs:
       - name: Smoke-test OLLVM passes (arm64)
         if: steps.check.outputs.asset_id == ''
         run: |
-          echo "int main(){return 0;}" > /tmp/test.c
+          # Non-trivial function so every pass has something to work on
+          cat > /tmp/test.c << 'EOF'
+          int foo(int x, int y) {
+            int a = x ^ y; int b = a + x; int c = b * y;
+            if (a > 0) return b; else return c;
+          }
+          EOF
           /tmp/ollvm-install/bin/clang \
             --target=aarch64-linux-android26 \
-            -mllvm -fla -mllvm -bcf -mllvm -sub \
+            -mllvm -fla \
+            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -sub       -mllvm -sub_loop=3 \
+            -mllvm -sobf \
+            -mllvm -split     -mllvm -split_num=5 \
+            -mllvm -ibr \
+            -mllvm -icall \
+            -mllvm -igv \
             -fPIC -O2 -c /tmp/test.c -o /tmp/test_arm64.o
-          echo "OK OLLVM arm64 passes OK"
+          echo "✅ All 8 OLLVM passes — arm64 smoke OK"
 
       - name: Package
         if: steps.check.outputs.asset_id == ''
@@ -213,10 +226,61 @@ jobs:
 
       - name: Confirm OLLVM passes active
         run: |
-          # OLLVM temporarily disabled — re-enable when everything is confirmed working.
-          # To re-enable: restore the if/else probe block and set OLLVM_FLAGS with all 8 passes.
-          echo "OLLVM_FLAGS=" >> $GITHUB_ENV
-          echo "OLLVM disabled -- NDK-only build (faster, for correctness testing)"
+          # Probe with -fla — if OLLVM passes are loaded this compiles fine.
+          # All 8 passes + tuning:
+          # 1. fla      — Control Flow Flattening      (no loop param)
+          # 2. bcf      — Bogus Control Flow           prob=80  bcf_loop=3
+          # 3. sub      — Instruction Substitution     sub_loop=3
+          # 4. sobf     — String Obfuscation           (no param)
+          # 5. split    — Basic Block Splitting        split_num=5
+          # 6. ibr      — Indirect Branching           (no param)
+          # 7. icall    — Indirect Call Obfuscation    (no param)
+          # 8. igv      — Indirect Global Variable     (no param)
+          echo "int x;" > /tmp/probe.c
+          if "$OLLVM_BIN" --target=aarch64-linux-android26 \
+               --sysroot="$SYSROOT" -mllvm -fla \
+               -x c -c /tmp/probe.c -o /tmp/probe.o 2>/dev/null; then
+            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 -mllvm -sub -mllvm -sub_loop=3 -mllvm -sobf -mllvm -split -mllvm -split_num=5 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
+            echo "✅ All 8 OLLVM passes confirmed: fla bcf(80%×3) sub(×3) sobf split(5) ibr icall igv"
+          else
+            echo "OLLVM_FLAGS=" >> $GITHUB_ENV
+            echo "⚠️  OLLVM passes not responding — building without obfuscation"
+          fi
+
+      - name: Smoke-test all 8 OLLVM passes (arm64 + arm32)
+        run: |
+          cat > /tmp/smoke.c << 'EOF'
+          int foo(int x, int y) {
+            int a = x ^ y; int b = a + x; int c = b * y;
+            if (a > 0) return b; else return c;
+          }
+          EOF
+          # arm64
+          "$OLLVM_BIN" --target=aarch64-linux-android26 \
+            --sysroot="$SYSROOT" \
+            -mllvm -fla \
+            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -sub       -mllvm -sub_loop=3 \
+            -mllvm -sobf \
+            -mllvm -split     -mllvm -split_num=5 \
+            -mllvm -ibr \
+            -mllvm -icall \
+            -mllvm -igv \
+            -fPIC -O2 -c /tmp/smoke.c -o /tmp/smoke_arm64.o
+          echo "✅ arm64 — all 8 passes OK"
+          # arm32
+          "$OLLVM_BIN" --target=armv7a-linux-androideabi21 \
+            --sysroot="$SYSROOT" \
+            -mllvm -fla \
+            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -sub       -mllvm -sub_loop=3 \
+            -mllvm -sobf \
+            -mllvm -split     -mllvm -split_num=5 \
+            -mllvm -ibr \
+            -mllvm -icall \
+            -mllvm -igv \
+            -fPIC -O2 -c /tmp/smoke.c -o /tmp/smoke_arm32.o
+          echo "✅ arm32 — all 8 passes OK"
 
       - name: Write linker version script
         run: |
