@@ -71,6 +71,15 @@ jobs:
             echo "AMICE_PLUGIN=$PWD/libamice.so"
           } >> "$GITHUB_ENV"
 
+      # libamice.so was built against libedit.so.0 but Ubuntu ships libedit.so.2
+      # Create the versioned symlink so the dynamic linker finds it
+      - name: Fix libedit symlink for amice
+        run: |
+          LIBEDIT=$(find /usr/lib/x86_64-linux-gnu -name "libedit.so.2*" | head -1)
+          echo "Found: $LIBEDIT"
+          sudo ln -sf "$LIBEDIT" /usr/lib/x86_64-linux-gnu/libedit.so.0
+          echo "✅ libedit.so.0 → $LIBEDIT"
+
       - name: Smoke-test amice plugin (arm64 + arm32)
         run: |
           cat > /tmp/smoke.cpp <<'CPPSRC'
