@@ -13,27 +13,23 @@ jobs:
           set -e
           sudo apt-get install -y --no-install-recommends zstd
 
-          echo "Downloading clang tarball (777 MB)..."
           curl -L --retry 3 --progress-bar \
             "https://github.com/Ylarod/setup-ndk-clang/releases/download/prebuilt/clang-linux-x86-ndk-r29-r563880c.tar.zst" \
             -o /tmp/clang.tar.zst
           echo "Downloaded: $(du -sh /tmp/clang.tar.zst | cut -f1)"
 
-          echo "Decompressing..."
           zstd -d /tmp/clang.tar.zst -o /tmp/clang.tar --force
           rm /tmp/clang.tar.zst
 
-          echo "Listing libLLVM entries in archive..."
-          tar -tf /tmp/clang.tar | grep -i "libLLVM" | head -10
-
-          echo "Extracting libLLVM*.so..."
-          tar -xf /tmp/clang.tar --wildcards --no-anchored "libLLVM*.so*" -C /tmp/
+          # Extract lib/ directory (contains libLLVM.so symlink + libLLVM-21.so real file)
+          tar -xf /tmp/clang.tar --wildcards "./lib/libLLVM*" -C /tmp/
           rm /tmp/clang.tar
 
-          LLVM_SO=$(find /tmp -name "libLLVM*.so*" ! -name "*.py" -type f 2>/dev/null | head -1)
-          echo "Found: $LLVM_SO  ($(du -sh $LLVM_SO | cut -f1))"
-          cp "$LLVM_SO" /tmp/libLLVM.so
-          ls -lh /tmp/libLLVM.so
+          ls -lh /tmp/lib/libLLVM*
+
+          # Follow the symlink — copy the real file
+          cp -L /tmp/lib/libLLVM.so /tmp/libLLVM.so
+          echo "libLLVM.so size: $(du -sh /tmp/libLLVM.so | cut -f1)"
 
       - name: Upload to amice-ndk-r29 release
         env:
@@ -41,13 +37,12 @@ jobs:
         run: |
           API="https://api.github.com/repos/${{ github.repository }}"
 
-          # Delete old asset if exists
           OLD=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
             "$API/releases/tags/amice-ndk-r29" \
             | jq -r '.assets[]? | select(.name=="libLLVM.so") | .id')
           [ -n "$OLD" ] && curl -s -X DELETE \
             -H "Authorization: Bearer $GH_TOKEN" \
-            "$API/releases/assets/$OLD" && echo "Deleted old libLLVM.so"
+            "$API/releases/assets/$OLD" && echo "Deleted old asset"
 
           RELEASE_ID=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
             "$API/releases/tags/amice-ndk-r29" | jq -r '.id')
@@ -57,5 +52,5 @@ jobs:
             -H "Content-Type: application/octet-stream" \
             "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=libLLVM.so" \
             --data-binary @/tmp/libLLVM.so \
-            | jq '{id:.id, name:.name, size:.size, url:.browser_download_url}'
-          echo "✅ libLLVM.so uploaded"
+            | jq '{id:.id, name:.name, size:.size}'
+          echo "Done ✅"
