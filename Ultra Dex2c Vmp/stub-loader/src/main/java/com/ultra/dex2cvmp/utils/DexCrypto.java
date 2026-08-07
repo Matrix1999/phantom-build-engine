@@ -1,6 +1,7 @@
 package com.ultra.dex2cvmp.utils;
 
 import android.annotation.SuppressLint;
+import android.app.Application;
 import android.content.Context;
 import android.os.Build;
 
@@ -71,6 +72,25 @@ public class DexCrypto {
      */
     public static native ClassLoader nativeLoadShards(
             byte[] salt, byte[] pkgNameUtf8, byte[][] encShards, ClassLoader parent);
+
+    /**
+     * Swap ProxyApplication → real Application entirely in native C.
+     *
+     * Does all ActivityThread reflection (mBoundApplication, LoadedApk,
+     * mInitialApplication, mAllApplications, mProviderMap) via raw JNI
+     * jobject pointers — no Java generic casts, no ClassCastException
+     * possible on any Android version.
+     *
+     * Equivalent to the old ProxyApplication.realApplication() + patchProviders()
+     * Java methods, but hidden inside OLLVM-obfuscated libphantom.so.
+     *
+     * @param classLoader  the current app ClassLoader (ProxyApplication.getClassLoader())
+     * @param realAppClass the real Application class name from Const.getRealApp()
+     * @param baseContext  ProxyApplication.getBaseContext()
+     * @return             the newly created real Application, or null on failure
+     */
+    public static native Application nativeSwapApplication(
+            ClassLoader classLoader, String realAppClass, Context baseContext);
 
     // ── Blob bootstrap ────────────────────────────────────────────────────────
 

@@ -1614,6 +1614,272 @@ cleanup:
     return result_cl;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * ph_patch_providers_native()
+ *
+ * Patches every in-process ContentProvider's mContext from the old
+ * ProxyApplication to the newly installed real Application.
+ *
+ * Runs entirely via JNI jobject pointers — no Java generic casts,
+ * no ClassCastException possible on ANY Android version.
+ * (The Java equivalent cast mProviderMap as ArrayMap<String,String> which
+ * crashed with ClassCastException because values are ProviderClientRecord.)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void ph_patch_providers_native(JNIEnv *env, jobject activityThread, jobject realApp) {
+    /* ActivityThread.mProviderMap — ArrayMap<String, ProviderClientRecord> */
+    jclass atCls2 = (*env)->FindClass(env, "android/app/ActivityThread");
+    if (!atCls2) { (*env)->ExceptionClear(env); return; }
+    jfieldID mProvMapFid = (*env)->GetFieldID(env, atCls2,
+            "mProviderMap", "Landroid/util/ArrayMap;");
+    (*env)->DeleteLocalRef(env, atCls2);
+    if (!mProvMapFid) { (*env)->ExceptionClear(env); return; }
+
+    jobject provMap = (*env)->GetObjectField(env, activityThread, mProvMapFid);
+    if (!provMap) return;
+
+    /* ArrayMap.values() → Collection */
+    jclass amCls = (*env)->FindClass(env, "android/util/ArrayMap");
+    if (!amCls) { (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, provMap); return; }
+    jmethodID valuesMid = (*env)->GetMethodID(env, amCls, "values", "()Ljava/util/Collection;");
+    (*env)->DeleteLocalRef(env, amCls);
+    if (!valuesMid) { (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, provMap); return; }
+
+    jobject values = (*env)->CallObjectMethod(env, provMap, valuesMid);
+    (*env)->DeleteLocalRef(env, provMap);
+    if (!values || (*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
+
+    /* Collection.toArray() → Object[] — avoids iterator generics entirely */
+    jclass colCls = (*env)->FindClass(env, "java/util/Collection");
+    if (!colCls) { (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, values); return; }
+    jmethodID toArrMid = (*env)->GetMethodID(env, colCls, "toArray", "()[Ljava/lang/Object;");
+    (*env)->DeleteLocalRef(env, colCls);
+    if (!toArrMid) { (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, values); return; }
+
+    jobjectArray arr = (jobjectArray)(*env)->CallObjectMethod(env, values, toArrMid);
+    (*env)->DeleteLocalRef(env, values);
+    if (!arr || (*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return; }
+
+    /* ProviderClientRecord.mLocalProvider */
+    jclass pcrCls = (*env)->FindClass(env, "android/app/ActivityThread$ProviderClientRecord");
+    jfieldID mLocalProvFid = NULL;
+    if (pcrCls) {
+        mLocalProvFid = (*env)->GetFieldID(env, pcrCls, "mLocalProvider",
+                                           "Landroid/content/ContentProvider;");
+        if (!mLocalProvFid) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, pcrCls);
+    } else { (*env)->ExceptionClear(env); }
+
+    /* ContentProvider.mContext */
+    jclass cpCls = (*env)->FindClass(env, "android/content/ContentProvider");
+    jfieldID mCtxFid = NULL;
+    if (cpCls) {
+        mCtxFid = (*env)->GetFieldID(env, cpCls, "mContext", "Landroid/content/Context;");
+        if (!mCtxFid) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, cpCls);
+    } else { (*env)->ExceptionClear(env); }
+
+    if (!mLocalProvFid || !mCtxFid) { (*env)->DeleteLocalRef(env, arr); return; }
+
+    jsize len = (*env)->GetArrayLength(env, arr);
+    for (jsize i = 0; i < len; i++) {
+        jobject pcr = (*env)->GetObjectArrayElement(env, arr, i);
+        if (!pcr) continue;
+        jobject lp = (*env)->GetObjectField(env, pcr, mLocalProvFid);
+        if (lp) {
+            (*env)->SetObjectField(env, lp, mCtxFid, realApp);
+            (*env)->DeleteLocalRef(env, lp);
+        }
+        (*env)->DeleteLocalRef(env, pcr);
+    }
+    (*env)->DeleteLocalRef(env, arr);
+    PH_LOG("ph_patch_providers_native: patched %d provider record(s)", (int)len);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * nativeSwapApplication()
+ *
+ * Moves ALL ActivityThread application-swap reflection out of Java (where
+ * type-unsafe generics caused ClassCastException) into native C.
+ *
+ * Mirrors the old ProxyApplication.realApplication() logic but:
+ *   • Runs entirely via raw JNI jobject pointers — Java generics never
+ *     involved, ClassCastException impossible on any Android version.
+ *   • Atomic swap: mApplication is NEVER null — ContentProvider background
+ *     threads always see either ProxyApplication or realApp, never null.
+ *   • Provider patching done via ph_patch_providers_native() which iterates
+ *     mProviderMap values as Object[], not as String (the old bug).
+ *   • Swap logic hidden inside OLLVM-obfuscated libphantom.so — not visible
+ *     in the stub DEX string pool or reflection call list.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+JNIEXPORT jobject JNICALL
+Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
+        JNIEnv *env, jclass klass,
+        jobject classLoader,
+        jstring realAppClass,
+        jobject baseContext) {
+
+    (void)klass;
+    PH_LOG("nativeSwapApplication: start");
+
+    jobject result = NULL;
+
+    /* ── ActivityThread ──────────────────────────────────────────────────── */
+    jclass atCls = (*env)->FindClass(env, "android/app/ActivityThread");
+    if (!atCls) { (*env)->ExceptionClear(env); return NULL; }
+
+    jmethodID curThreadMid = (*env)->GetStaticMethodID(env, atCls,
+            "currentActivityThread", "()Landroid/app/ActivityThread;");
+    if (!curThreadMid) { (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, atCls); return NULL; }
+
+    jobject thread = (*env)->CallStaticObjectMethod(env, atCls, curThreadMid);
+    if (!thread || (*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, atCls); return NULL;
+    }
+
+    /* ── AppBindData → LoadedApk ─────────────────────────────────────────── */
+    jclass abdCls = (*env)->FindClass(env, "android/app/ActivityThread$AppBindData");
+    jfieldID mBoundFid = (*env)->GetFieldID(env, atCls, "mBoundApplication",
+            "Landroid/app/ActivityThread$AppBindData;");
+    if (!abdCls || !mBoundFid) {
+        (*env)->ExceptionClear(env);
+        if (abdCls) (*env)->DeleteLocalRef(env, abdCls); /* avoid local ref leak */
+        goto done;
+    }
+    jobject mBoundApp = (*env)->GetObjectField(env, thread, mBoundFid);
+
+    jfieldID infoFid = (*env)->GetFieldID(env, abdCls, "info", "Landroid/app/LoadedApk;");
+    if (!infoFid) { (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, abdCls); goto done; }
+    jobject loadedApk = (*env)->GetObjectField(env, mBoundApp, infoFid);
+
+    jfieldID bindAppInfoFid = (*env)->GetFieldID(env, abdCls, "appInfo",
+            "Landroid/content/pm/ApplicationInfo;");
+    jobject bindDataAppInfo = (bindAppInfoFid && !(*env)->ExceptionCheck(env))
+            ? (*env)->GetObjectField(env, mBoundApp, bindAppInfoFid) : NULL;
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    (*env)->DeleteLocalRef(env, abdCls);
+
+    /* ── LoadedApk fields ────────────────────────────────────────────────── */
+    jclass laCls = (*env)->FindClass(env, "android/app/LoadedApk");
+    if (!laCls) { (*env)->ExceptionClear(env); goto done; }
+
+    jfieldID mAppInfoFid = (*env)->GetFieldID(env, laCls, "mApplicationInfo",
+            "Landroid/content/pm/ApplicationInfo;");
+    jobject laAppInfo = (mAppInfoFid && !(*env)->ExceptionCheck(env))
+            ? (*env)->GetObjectField(env, loadedApk, mAppInfoFid) : NULL;
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+
+    jfieldID mAppFid = (*env)->GetFieldID(env, laCls, "mApplication",
+            "Landroid/app/Application;");
+    if (!mAppFid) (*env)->ExceptionClear(env);
+
+    /* ── Patch className in both ApplicationInfo copies ──────────────────── */
+    jclass aiCls = (*env)->FindClass(env, "android/content/pm/ApplicationInfo");
+    if (aiCls) {
+        jfieldID cnFid = (*env)->GetFieldID(env, aiCls, "className", "Ljava/lang/String;");
+        if (cnFid) {
+            if (laAppInfo)       (*env)->SetObjectField(env, laAppInfo,       cnFid, realAppClass);
+            if (bindDataAppInfo) (*env)->SetObjectField(env, bindDataAppInfo, cnFid, realAppClass);
+        } else { (*env)->ExceptionClear(env); }
+        (*env)->DeleteLocalRef(env, aiCls);
+    } else { (*env)->ExceptionClear(env); }
+
+    /* ── mInitialApplication (old = ProxyApplication) ────────────────────── */
+    jfieldID mInitFid = (*env)->GetFieldID(env, atCls, "mInitialApplication",
+            "Landroid/app/Application;");
+    if (!mInitFid) { (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, laCls); goto done; }
+    jobject oldApp = (*env)->GetObjectField(env, thread, mInitFid);
+
+    /* mAllApplications */
+    jfieldID mAllFid = (*env)->GetFieldID(env, atCls, "mAllApplications",
+            "Ljava/util/ArrayList;");
+    jobject mAllApps = (mAllFid && !(*env)->ExceptionCheck(env))
+            ? (*env)->GetObjectField(env, thread, mAllFid) : NULL;
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+
+    /* mInstrumentation */
+    jfieldID mInstrFid = (*env)->GetFieldID(env, atCls, "mInstrumentation",
+            "Landroid/app/Instrumentation;");
+    if (!mInstrFid) { (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, laCls); goto done; }
+    jobject instr = (*env)->GetObjectField(env, thread, mInstrFid);
+
+    /* ── Create real Application via Instrumentation.newApplication() ──────── */
+    jobject realApp = NULL;
+    jclass instrCls = (*env)->FindClass(env, "android/app/Instrumentation");
+    if (instrCls) {
+        jmethodID newAppMid = (*env)->GetMethodID(env, instrCls, "newApplication",
+                "(Ljava/lang/ClassLoader;Ljava/lang/String;Landroid/content/Context;)"
+                "Landroid/app/Application;");
+        if (newAppMid && instr) {
+            realApp = (*env)->CallObjectMethod(env, instr, newAppMid,
+                    classLoader, realAppClass, baseContext);
+            if ((*env)->ExceptionCheck(env)) {
+                (*env)->ExceptionClear(env);
+                realApp = NULL;
+            }
+        } else { (*env)->ExceptionClear(env); }
+        (*env)->DeleteLocalRef(env, instrCls);
+    } else { (*env)->ExceptionClear(env); }
+
+    /* Fallback: LoadedApk.makeApplication(false, null) */
+    if (!realApp) {
+        PH_LOG("nativeSwapApplication: newApplication() failed — fallback makeApplication()");
+        if (mAppFid) (*env)->SetObjectField(env, loadedApk, mAppFid, NULL);
+        jmethodID makeAppMid = (*env)->GetMethodID(env, laCls, "makeApplication",
+                "(ZLandroid/app/Instrumentation;)Landroid/app/Application;");
+        if (makeAppMid) {
+            realApp = (*env)->CallObjectMethod(env, loadedApk, makeAppMid, JNI_FALSE, NULL);
+            if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); realApp = NULL; }
+        } else { (*env)->ExceptionClear(env); }
+        if (realApp) {
+            if (mInitFid) (*env)->SetObjectField(env, thread, mInitFid, realApp);
+            ph_patch_providers_native(env, thread, realApp);
+            result = (*env)->NewGlobalRef(env, realApp);
+            PH_LOG("nativeSwapApplication: fallback OK");
+        }
+        (*env)->DeleteLocalRef(env, laCls);
+        goto done;
+    }
+
+    PH_LOG("nativeSwapApplication: newApplication() OK");
+
+    /* ── Update mAllApplications ─────────────────────────────────────────── */
+    if (mAllApps) {
+        jclass alCls = (*env)->FindClass(env, "java/util/ArrayList");
+        if (alCls) {
+            jmethodID remMid = (*env)->GetMethodID(env, alCls, "remove", "(Ljava/lang/Object;)Z");
+            jmethodID addMid = (*env)->GetMethodID(env, alCls, "add",    "(Ljava/lang/Object;)Z");
+            if (remMid) { (*env)->CallBooleanMethod(env, mAllApps, remMid, oldApp);
+                          if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); }
+            if (addMid) { (*env)->CallBooleanMethod(env, mAllApps, addMid, realApp);
+                          if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); }
+            (*env)->DeleteLocalRef(env, alCls);
+        } else { (*env)->ExceptionClear(env); }
+    }
+
+    /* ── Atomic swap: LoadedApk.mApplication + ActivityThread.mInitialApplication ── */
+    if (mAppFid)  (*env)->SetObjectField(env, loadedApk, mAppFid,  realApp);
+    if (mInitFid) (*env)->SetObjectField(env, thread,    mInitFid, realApp);
+
+    /* ── Patch ContentProvider contexts (raw JNI — no ClassCastException) ── */
+    ph_patch_providers_native(env, thread, realApp);
+
+    result = (*env)->NewGlobalRef(env, realApp);
+    PH_LOG("nativeSwapApplication: done");
+
+    (*env)->DeleteLocalRef(env, laCls);
+
+done:
+    (*env)->DeleteLocalRef(env, atCls);
+    (*env)->DeleteLocalRef(env, thread);
+    /* Return local ref — caller (Java) owns this reference */
+    if (result) {
+        jobject local = (*env)->NewLocalRef(env, result);
+        (*env)->DeleteGlobalRef(env, result);
+        return local;
+    }
+    return NULL;
+}
+
 // ?
 // nativeDecryptShard -- JNI entry-point
 //
