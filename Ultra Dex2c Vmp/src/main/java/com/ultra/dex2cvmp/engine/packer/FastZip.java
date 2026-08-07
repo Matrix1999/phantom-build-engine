@@ -100,7 +100,11 @@ public class FastZip {
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
-                if (name.startsWith("META-INF/")) continue;
+                // Drop only APK signing blocks — NOT META-INF/services/ or other
+                // non-signing entries. Dropping META-INF/services/ breaks ServiceLoader
+                // (e.g. kotlinx-coroutines-android MainDispatcherFactory → crash on launch).
+                if (name.matches("META-INF/[^/]+\\.(RSA|DSA|EC|SF)")
+                        || name.equals("META-INF/MANIFEST.MF")) continue;
                 if (name.equals("AndroidManifest.xml")) continue;
                 if (name.matches("classes\\.dex") || name.matches("classes\\d+\\.dex")) continue;
                 if (name.startsWith("assets/" + assetDirName + "/")) continue;
