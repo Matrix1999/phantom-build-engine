@@ -31,14 +31,30 @@ jobs:
           ndk-version: r29
           add-to-path: false
 
-      # Download amice plugin + libLLVM.so into workspace root — same layout as phantom
+      # Download amice plugin + libLLVM.so via GitHub API (private repo needs token)
       - name: Download libamice.so + libLLVM.so from amice-ndk-r29 release
         run: |
-          BASE="https://github.com/Matrix1999/phantom-build-engine/releases/download/amice-ndk-r29"
-          curl -L -s --retry 3 "$BASE/libamice-android-ndk-r29-linux-x86_64.so" -o libamice.so
-          curl -L -s --retry 3 "$BASE/libLLVM.so" -o libLLVM.so
-          echo "libamice.so : $(du -sh libamice.so | cut -f1)"
-          echo "libLLVM.so  : $(du -sh libLLVM.so  | cut -f1)"
+          REPO="${{ github.repository }}"
+          TOKEN="${{ github.token }}"
+
+          fetch_asset() {
+            local name="$1" dest="$2"
+            ASSET_ID=$(curl -sf \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/releases/tags/amice-ndk-r29" \
+              | jq -r --arg n "$name" '.assets[] | select(.name==$n) | .id')
+            if [ -z "$ASSET_ID" ]; then echo "❌ Asset not found: $name"; exit 1; fi
+            curl -Lf -s \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/octet-stream" \
+              "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID" \
+              -o "$dest"
+            echo "✅ $name — $(du -sh "$dest" | cut -f1)"
+          }
+
+          fetch_asset "libamice-android-ndk-r29-linux-x86_64.so" "libamice.so"
+          fetch_asset "libLLVM.so" "libLLVM.so"
 
       - name: Resolve toolchain paths
         run: |
