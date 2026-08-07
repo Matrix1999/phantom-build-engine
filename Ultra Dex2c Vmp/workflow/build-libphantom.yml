@@ -119,15 +119,14 @@ jobs:
           /tmp/ollvm-install/bin/clang \
             --target=aarch64-linux-android26 \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
-            -mllvm -sub       -mllvm -sub_loop=3 \
-            -mllvm -sobf \
-            -mllvm -split     -mllvm -split_num=4 \
+            -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
+            -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -split     -mllvm -split_num=2 \
             -mllvm -ibr \
             -mllvm -icall \
             -mllvm -igv \
             -fPIC -O2 -c /tmp/test.c -o /tmp/test_arm64.o
-          echo "✅ All 8 OLLVM passes — arm64 smoke OK"
+          echo "✅ OLLVM fast-strong passes — arm64 smoke OK"
 
       - name: Package
         if: steps.check.outputs.asset_id == ''
@@ -227,21 +226,20 @@ jobs:
       - name: Confirm OLLVM passes active
         run: |
           # Probe with -fla — if OLLVM passes are loaded this compiles fine.
-          # All 8 passes + tuning:
-          # 1. fla      — Control Flow Flattening      (no loop param)
-          # 2. bcf      — Bogus Control Flow           prob=80  bcf_loop=3
-          # 3. sub      — Instruction Substitution     sub_loop=3
-          # 4. sobf     — String Obfuscation           (no param)
-          # 5. split    — Basic Block Splitting        split_num=4
-          # 6. ibr      — Indirect Branching           (no param)
-          # 7. icall    — Indirect Call Obfuscation    (no param)
-          # 8. igv      — Indirect Global Variable     (no param)
+          # Fast-strong passes (sobf removed — strings XOR-encrypted by encrypt_blob.py):
+          # 1. fla      — Control Flow Flattening      (hardest to deobfuscate)
+          # 2. bcf      — Bogus Control Flow           prob=70  bcf_loop=2
+          # 3. sub      — Instruction Substitution     sub_loop=1
+          # 4. split    — Basic Block Splitting        split_num=2
+          # 5. ibr      — Indirect Branching
+          # 6. icall    — Indirect Call Obfuscation
+          # 7. igv      — Indirect Global Variable
           echo "int x;" > /tmp/probe.c
           if "$OLLVM_BIN" --target=aarch64-linux-android26 \
                --sysroot="$SYSROOT" -mllvm -fla \
                -x c -c /tmp/probe.c -o /tmp/probe.o 2>/dev/null; then
-            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 -mllvm -sub -mllvm -sub_loop=3 -mllvm -sobf -mllvm -split -mllvm -split_num=4 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
-            echo "✅ All 8 OLLVM passes confirmed: fla bcf(80%×3) sub(×3) sobf split(4) ibr icall igv"
+            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 -mllvm -sub -mllvm -sub_loop=1 -mllvm -split -mllvm -split_num=2 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
+            echo "✅ OLLVM fast-strong passes: fla bcf(75%×2) sub(×1) split(2) ibr icall igv"
           else
             echo "OLLVM_FLAGS=" >> $GITHUB_ENV
             echo "⚠️  OLLVM passes not responding — building without obfuscation"
@@ -259,23 +257,21 @@ jobs:
           "$OLLVM_BIN" --target=aarch64-linux-android26 \
             --sysroot="$SYSROOT" \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
-            -mllvm -sub       -mllvm -sub_loop=3 \
-            -mllvm -sobf \
-            -mllvm -split     -mllvm -split_num=4 \
+            -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
+            -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -split     -mllvm -split_num=2 \
             -mllvm -ibr \
             -mllvm -icall \
             -mllvm -igv \
             -fPIC -O2 -c /tmp/smoke.c -o /tmp/smoke_arm64.o
-          echo "✅ arm64 — all 8 passes OK"
+          echo "✅ arm64 — fast-strong passes OK"
           # arm32
           "$OLLVM_BIN" --target=armv7a-linux-androideabi21 \
             --sysroot="$SYSROOT" \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
-            -mllvm -sub       -mllvm -sub_loop=3 \
-            -mllvm -sobf \
-            -mllvm -split     -mllvm -split_num=4 \
+            -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
+            -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -split     -mllvm -split_num=2 \
             -mllvm -ibr \
             -mllvm -icall \
             -mllvm -igv \
@@ -295,6 +291,7 @@ jobs:
           EOF
 
       - name: Build libphantom.so (arm64-v8a + armeabi-v7a)
+        timeout-minutes: 10
         run: |
           set -e
           SRC="Ultra Dex2c Vmp/src/main/cpp/phantom_key.c"
