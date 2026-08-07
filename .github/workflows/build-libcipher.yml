@@ -211,7 +211,5 @@ jobs:
           name: cipher-binaries-amice
           retention-days: 90
           path: |
-            libcipher_arm64.so
             libcipher_arm64.a
-            libcipher_armeabi-v7a.so
             libcipher_armeabi-v7a.a
