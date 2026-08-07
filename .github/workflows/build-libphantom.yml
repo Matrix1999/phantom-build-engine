@@ -119,10 +119,10 @@ jobs:
           /tmp/ollvm-install/bin/clang \
             --target=aarch64-linux-android26 \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
-            -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -sub       -mllvm -sub_loop=2 \
             -mllvm -sobf \
-            -mllvm -split     -mllvm -split_num=2 \
+            -mllvm -split     -mllvm -split_num=3 \
             -mllvm -ibr \
             -mllvm -icall \
             -mllvm -igv \
@@ -229,10 +229,10 @@ jobs:
           # Probe with -fla — if OLLVM passes are loaded this compiles fine.
           # Fast-strong passes:
           # 1. fla      — Control Flow Flattening      (hardest to deobfuscate)
-          # 2. bcf      — Bogus Control Flow           prob=70  bcf_loop=2
-          # 3. sub      — Instruction Substitution     sub_loop=1
+          # 2. bcf      — Bogus Control Flow           prob=80  bcf_loop=3
+          # 3. sub      — Instruction Substitution     sub_loop=2
           # 4. sobf     — String Obfuscation
-          # 5. split    — Basic Block Splitting        split_num=2
+          # 5. split    — Basic Block Splitting        split_num=3
           # 6. ibr      — Indirect Branching
           # 7. icall    — Indirect Call Obfuscation
           # 8. igv      — Indirect Global Variable
@@ -240,8 +240,8 @@ jobs:
           if "$OLLVM_BIN" --target=aarch64-linux-android26 \
                --sysroot="$SYSROOT" -mllvm -fla \
                -x c -c /tmp/probe.c -o /tmp/probe.o 2>/dev/null; then
-            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 -mllvm -sub -mllvm -sub_loop=1 -mllvm -sobf -mllvm -split -mllvm -split_num=2 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
-            echo "✅ OLLVM passes: fla bcf(70%×2) sub(×1) sobf split(2) ibr icall igv"
+            echo "OLLVM_FLAGS=-mllvm -fla -mllvm -bcf -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 -mllvm -sub -mllvm -sub_loop=2 -mllvm -sobf -mllvm -split -mllvm -split_num=3 -mllvm -ibr -mllvm -icall -mllvm -igv" >> $GITHUB_ENV
+            echo "✅ OLLVM passes: fla bcf(80%×3) sub(×2) sobf split(3) ibr icall igv"
           else
             echo "OLLVM_FLAGS=" >> $GITHUB_ENV
             echo "⚠️  OLLVM passes not responding — building without obfuscation"
@@ -259,10 +259,10 @@ jobs:
           "$OLLVM_BIN" --target=aarch64-linux-android26 \
             --sysroot="$SYSROOT" \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
-            -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -sub       -mllvm -sub_loop=2 \
             -mllvm -sobf \
-            -mllvm -split     -mllvm -split_num=2 \
+            -mllvm -split     -mllvm -split_num=3 \
             -mllvm -ibr \
             -mllvm -icall \
             -mllvm -igv \
@@ -272,10 +272,10 @@ jobs:
           "$OLLVM_BIN" --target=armv7a-linux-androideabi21 \
             --sysroot="$SYSROOT" \
             -mllvm -fla \
-            -mllvm -bcf       -mllvm -bcf_prob=70 -mllvm -bcf_loop=2 \
-            -mllvm -sub       -mllvm -sub_loop=1 \
+            -mllvm -bcf       -mllvm -bcf_prob=80 -mllvm -bcf_loop=3 \
+            -mllvm -sub       -mllvm -sub_loop=2 \
             -mllvm -sobf \
-            -mllvm -split     -mllvm -split_num=2 \
+            -mllvm -split     -mllvm -split_num=3 \
             -mllvm -ibr \
             -mllvm -icall \
             -mllvm -igv \
