@@ -291,6 +291,7 @@ jobs:
               Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeDecryptShard;
               Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeShard;
               Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeArtDex;
+              Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards;
             local: *;
           };
           EOF
@@ -346,7 +347,7 @@ jobs:
             "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
             -o libphantom_arm64.so
           echo "  OK libphantom_arm64.so -- $(wc -c < libphantom_arm64.so) bytes"
-          nm -D libphantom_arm64.so | grep -E '(GLOBAL|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex)' || true
+          nm -D libphantom_arm64.so | grep -E '(GLOBAL|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex|nativeLoadShards)' || true
 
           # -- armeabi-v7a (OLLVM) ----------------------------------------------
           echo "Building armeabi-v7a (OLLVM)..."
@@ -360,7 +361,7 @@ jobs:
             "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
             -o libphantom_arm.so
           echo "  OK libphantom_arm.so  -- $(wc -c < libphantom_arm.so) bytes"
-          nm -D libphantom_arm.so | grep -E '(GLOBAL|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex)' || true
+          nm -D libphantom_arm.so | grep -E '(GLOBAL|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex|nativeLoadShards)' || true
 
           # No rootblock variants needed — block-rooted toggle is encoded
           # at pack time as bit 7 of salt[0] and read by libphantom.so at runtime.
