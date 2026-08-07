@@ -88,6 +88,15 @@ jobs:
           cp "$SO" /tmp/libLLVM.android.arm64.so
           echo "✅ libLLVM.android.arm64.so ready"
 
+      - name: Strip debug symbols
+        run: |
+          NDK="${{ steps.setup-ndk.outputs.ndk-path }}"
+          STRIP="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          BEFORE=$(du -sh /tmp/libLLVM.android.arm64.so | cut -f1)
+          "$STRIP" --strip-debug /tmp/libLLVM.android.arm64.so
+          AFTER=$(du -sh /tmp/libLLVM.android.arm64.so | cut -f1)
+          echo "Stripped: $BEFORE → $AFTER"
+
       - name: Publish to amice-arm64 release
         env:
           GH_TOKEN: ${{ github.token }}
