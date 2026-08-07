@@ -295,7 +295,7 @@ jobs:
           EOF
 
       - name: Build libphantom.so (arm64-v8a + armeabi-v7a)
-        timeout-minutes: 10
+        timeout-minutes: 50
         run: |
           set -e
           SRC="Ultra Dex2c Vmp/src/main/cpp/phantom_key.c"
