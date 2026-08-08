@@ -106,8 +106,9 @@ jobs:
           CPP_ABI_ARM32=$(   find "$TC" -name "libc++abi.a"     | grep "arm-linux" | head -1)
 
           AMICE_PASSES=(
-            # ── VMP (was AMICE_VMP which does nothing — fixed to correct var) ──
+            # ── VMP ───────────────────────────────────────────────────────────
             AMICE_VM_VIRTUALIZE=true
+            AMICE_CUSTOM_CALLING_CONV=true
 
             # ── Control flow ───────────────────────────────────────────────────
             AMICE_FLATTEN=true
