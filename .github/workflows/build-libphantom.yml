@@ -104,58 +104,14 @@ jobs:
           SRC="Ultra Dex2c Vmp/src/main/cpp/phantom_key.c"
 
           AMICE_PASSES=(
-            # ── VMP / VM ───────────────────────────────────────────────────────
-            AMICE_VM_VIRTUALIZE=true
-            AMICE_VM_FLATTEN=true
-
-            # ── Control flow ───────────────────────────────────────────────────
+             AMICE_VM_VIRTUALIZE=true
             AMICE_FLATTEN=true
-            AMICE_FLATTEN_MODE=dominator
-            AMICE_FLATTEN_LOOP_COUNT=1
-            AMICE_FLATTEN_ALWAYS_INLINE=true
-
+            AMICE_MBA=true
             AMICE_BOGUS_CONTROL_FLOW=true
-            AMICE_BOGUS_CONTROL_FLOW_MODE=polaris-primes
-            AMICE_BOGUS_CONTROL_FLOW_PROB=50
-            AMICE_BOGUS_CONTROL_FLOW_LOOPS=1
-
-            AMICE_LOWER_SWITCH=true
-            AMICE_SPLIT_BASIC_BLOCK=true
-            AMICE_SPLIT_BASIC_BLOCk_NUMS=3
-            AMICE_SHUFFLE_BLOCKS=true
-            AMICE_BASIC_BLOCK_OUTLINING=true
-
-            # ── Indirect flow ──────────────────────────────────────────────────
             AMICE_INDIRECT_CALL=true
             AMICE_INDIRECT_BRANCH=true
-            AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,shuffle_table
-
-            # ── Arithmetic & data ──────────────────────────────────────────────
-            AMICE_MBA=true
-            AMICE_MBA_AUX_COUNT=2
-            AMICE_MBA_REWRITE_OPS=20
-            AMICE_MBA_REWRITE_DEPTH=2
-
-            AMICE_ALIAS_ACCESS=true
-            AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
-            AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true
-
-            AMICE_DELAY_OFFSET_LOADING=true
-            AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true
-
-            AMICE_PARAM_AGGREGATE=true
-
-            # ── Function structure ─────────────────────────────────────────────
-            AMICE_FUNCTION_WRAPPER=true
-            AMICE_FUNCTION_WRAPPER_PROBABILITY=100
-            AMICE_FUNCTION_WRAPPER_TIMES=1
-
-            # ── String encryption ──────────────────────────────────────────────
+            AMICE_SPLIT_BASIC_BLOCK=true
             AMICE_STRING_ENCRYPTION=true
-            AMICE_STRING_ALGORITHM=simd_xor
-            AMICE_STRING_INLINE_DECRYPT_FN=true
-            AMICE_STRING_DECRYPT_TIMING=lazy
-
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
           )
 
