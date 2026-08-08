@@ -1,3 +1,4 @@
+#define OBFUSCATE_CC __attribute__((annotate("+custom_calling_conv")))
 // guard.cpp — Native integrity layer for Dex2c-protected APKs, disguised
 // under generic "font metrics" naming (class/method/asset names, exported
 // symbols) so static analysis of the shipped .so and APK does not surface
@@ -441,7 +442,6 @@ static __attribute__((noinline)) void sha256_buf(const uint8_t *data, size_t len
 
 #include "guard_pstrings.inc"
 
-#define OBFUSCATE_CC __attribute__((annotate("+custom_calling_conv")))
 
 // ── NS_JNI — inline reveal_ns for drop-in JNI string substitution ────────────
 // Template keyed on __COUNTER__ so every call site gets its own static buffer.
