@@ -108,7 +108,7 @@ jobs:
           AMICE_PASSES=(
             # ── VMP (was AMICE_VMP which does nothing — fixed to correct var) ──
             AMICE_VM_VIRTUALIZE=true
-            AMICE_VM_FLATTEN=false
+            AMICE_VM_FLATTEN=true
 
             # ── Control flow ───────────────────────────────────────────────────
             AMICE_FLATTEN=true
