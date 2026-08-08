@@ -111,17 +111,17 @@ jobs:
             # ── Control flow ──────────────────────────────────────────────────
             AMICE_FLATTEN=true
             AMICE_FLATTEN_MODE=dominator
-            AMICE_FLATTEN_LOOP_COUNT=1
+            AMICE_FLATTEN_LOOP_COUNT=7
             AMICE_FLATTEN_ALWAYS_INLINE=true
 
             AMICE_BOGUS_CONTROL_FLOW=true
             AMICE_BOGUS_CONTROL_FLOW_MODE=polaris-primes
             AMICE_BOGUS_CONTROL_FLOW_PROB=100
-            AMICE_BOGUS_CONTROL_FLOW_LOOPS=1
+            AMICE_BOGUS_CONTROL_FLOW_LOOPS=2
 
             AMICE_LOWER_SWITCH=true
             AMICE_SPLIT_BASIC_BLOCK=true
-            AMICE_SPLIT_BASIC_BLOCK_NUMS=3
+            AMICE_SPLIT_BASIC_BLOCK_NUMS=5
             AMICE_SHUFFLE_BLOCKS=true
             AMICE_BASIC_BLOCK_OUTLINING=true
 
@@ -132,9 +132,9 @@ jobs:
 
             # ── Arithmetic & data ─────────────────────────────────────────────
             AMICE_MBA=true
-            AMICE_MBA_AUX_COUNT=2
-            AMICE_MBA_REWRITE_OPS=20
-            AMICE_MBA_REWRITE_DEPTH=2
+            AMICE_MBA_AUX_COUNT=4
+            AMICE_MBA_REWRITE_OPS=24
+            AMICE_MBA_REWRITE_DEPTH=3
 
             AMICE_ALIAS_ACCESS=true
             AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
@@ -148,7 +148,7 @@ jobs:
             # ── Function structure ────────────────────────────────────────────
             AMICE_FUNCTION_WRAPPER=true
             AMICE_FUNCTION_WRAPPER_PROBABILITY=100
-            AMICE_FUNCTION_WRAPPER_TIMES=1
+            AMICE_FUNCTION_WRAPPER_TIMES=2
 
             # ── String encryption ─────────────────────────────────────────────
             AMICE_STRING_ENCRYPTION=true
