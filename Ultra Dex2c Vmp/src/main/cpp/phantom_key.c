@@ -1529,7 +1529,6 @@ static uint8_t *inflate_alloc(const uint8_t *in, size_t in_len, size_t *out_len)
 // nativeDecryptShard is retained for the API < 27 file-based fallback path.
 // ?
 
-__attribute__((annotate("-vm_flatten -vm_virtualize")))
 JNIEXPORT jobject JNICALL
 Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         JNIEnv      *env,
@@ -1992,7 +1991,6 @@ done:
 //       On API 27+ use nativeLoadShards instead — it never returns plaintext.
 // ?
 
-__attribute__((annotate("-vm_flatten -vm_virtualize")))
 JNIEXPORT jbyteArray JNICALL
 Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeDecryptShard(
         JNIEnv    *env,
