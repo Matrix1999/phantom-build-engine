@@ -1,4 +1,5 @@
 #define OBFUSCATE_CC __attribute__((annotate("+custom_calling_conv")))
+#define OBFUSCATE_CLONE __attribute__((annotate("+clone_function")))
 // guard.cpp — Native integrity layer for Dex2c-protected APKs, disguised
 // under generic "font metrics" naming (class/method/asset names, exported
 // symbols) so static analysis of the shipped .so and APK does not surface
@@ -55,6 +56,7 @@
 // Constants are computed via inline volatile splits so the compiler cannot
 // emit a plain MOVZ #9 / MOVZ #129 even without any obfuscation pass.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void _mba_kill_via_svc(long pid) {
 #if defined(__aarch64__)
     {
@@ -156,8 +158,10 @@ static const uint8_t G_RSBOX[256] = {
 static const uint8_t G_RCON[11] = {0x8d,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36};
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static uint8_t gf_xtime(uint8_t x) { return (uint8_t)((x << 1) ^ ((x >> 7) ? 0x1b : 0)); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static uint8_t gf_mul(uint8_t x, uint8_t y) {
     return (uint8_t)(
         ((y & 1) ? x : 0) ^
@@ -174,6 +178,7 @@ static uint8_t gf_mul(uint8_t x, uint8_t y) {
 typedef struct { uint8_t rk[240]; } AES256;
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void aes256_expand(AES256 *a, const uint8_t *key) {
     memcpy(a->rk, key, 32);
     uint8_t *w = a->rk;
@@ -195,6 +200,7 @@ static void aes256_expand(AES256 *a, const uint8_t *key) {
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void aes256_dec_block(const AES256 *a, const uint8_t *in, uint8_t *out) {
     uint8_t s[16];
     const uint8_t *rk = a->rk + 224;   // 14 * 16
@@ -221,6 +227,7 @@ static void aes256_dec_block(const AES256 *a, const uint8_t *in, uint8_t *out) {
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int aes256_cbc_dec(const uint8_t *key, const uint8_t *iv,
                            const uint8_t *in, int in_len, uint8_t *out) {
     if (in_len <= 0 || in_len % 16 != 0) return -1;
@@ -251,6 +258,7 @@ static volatile const uint8_t IV_LO[16]={0x69,0x69,0x69,0x67,0x65,0x71,0x61,0x69
 // IV_HI  XOR IV_LO  = {4E,8C,31,7A,B5,F2,96,0D,C8,53,A7,1B,E4,60,29,75}
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void build_iv(uint8_t *iv) {
     // MBA: a^b = (a|b)-(a&b) — identical result, unrecognisable to decompilers
     for(int i=0;i<16;i++){
@@ -269,6 +277,7 @@ static volatile const uint8_t K2_LO[16]={
     0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55};
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void build_key256(uint8_t *key) {
     // MBA: a^b = (a|b)-(a&b)
     for(int i=0;i<16;i++){
@@ -308,6 +317,7 @@ static __attribute__((noinline)) void build_key256(uint8_t *key) {
 // optnone prevents the compiler from folding volatile expressions even at -O3.
 // An attacker running `strings` or a hex search for the SIGKILL pattern finds nothing.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void crash_now(void) {
 #if defined(__aarch64__)
     // ARM64: syscall __NR_tgkill = 131, SIGKILL = 9
@@ -383,6 +393,7 @@ static const uint32_t G_SHA256_K[64] = {
 #define S256_SIG1(x)(S256_ROTR(x,17)^S256_ROTR(x,19)^((x)>>10))
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void sha256_init(SHA256Ctx *c) {
     c->h[0]=0x6a09e667;c->h[1]=0xbb67ae85;c->h[2]=0x3c6ef372;c->h[3]=0xa54ff53a;
     c->h[4]=0x510e527f;c->h[5]=0x9b05688c;c->h[6]=0x1f83d9ab;c->h[7]=0x5be0cd19;
@@ -390,6 +401,7 @@ static void sha256_init(SHA256Ctx *c) {
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void sha256_compress(SHA256Ctx *c) {
     uint32_t w[64];
     for (int i=0;i<16;i++){
@@ -409,6 +421,7 @@ static void sha256_compress(SHA256Ctx *c) {
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void sha256_update(SHA256Ctx *c, const uint8_t *data, size_t len) {
     for(size_t i=0;i<len;i++){
         c->buf[c->blen++]=data[i];
@@ -418,6 +431,7 @@ static void sha256_update(SHA256Ctx *c, const uint8_t *data, size_t len) {
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void sha256_final(SHA256Ctx *c, uint8_t out[32]) {
     uint32_t i=c->blen;
     c->buf[i++]=0x80;
@@ -436,6 +450,7 @@ static void sha256_final(SHA256Ctx *c, uint8_t out[32]) {
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void sha256_buf(const uint8_t *data, size_t len, uint8_t out[32]) {
     SHA256Ctx ctx; sha256_init(&ctx); sha256_update(&ctx,data,len); sha256_final(&ctx,out);
 }
@@ -449,6 +464,7 @@ static __attribute__((noinline)) void sha256_buf(const uint8_t *data, size_t len
 // multiple NS_JNI calls on the same line or in the same function.
 template<int N>
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) const char *ns_jni_slot(
         uint32_t idx, const uint8_t *ct, int len) {
     static char buf[SP_BUF_SZ * 4];
@@ -466,6 +482,7 @@ static __attribute__((noinline)) const char *ns_jni_slot(
 // so no MOVZ #0xA3 appears in the shipped binary (g_decode is not optnone).
 // ════════════════════════════════════════════════════════════════════════════
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void g_decode(const uint8_t *enc, int len, char *out) {
     const uint8_t _key = 0xA3u;    // amice MBA pass hides this in non-optnone context
     for (int i = 0; i < len; i++) out[i] = (char)(enc[i] ^ _key);
@@ -519,6 +536,7 @@ typedef struct {
 } RawRdr;
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void rrd_open(RawRdr *r, const char *path) {
     r->fd     = m_openat(path, O_RDONLY);
     r->rd_off = 0;
@@ -527,12 +545,14 @@ static void rrd_open(RawRdr *r, const char *path) {
     r->eof    = (r->fd < 0) ? 1 : 0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void rrd_close(RawRdr *r) {
     if (r->fd >= 0) { m_close(r->fd); r->fd = -1; }
     r->eof = 1;
 }
 /* Reads one newline-terminated line into out[0..max-1]; returns 1 or 0. */
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int rrd_getline(RawRdr *r, char *out, int max) {
     if (r->eof || r->fd < 0 || max <= 1) return 0;
     int n = 0;
@@ -557,6 +577,7 @@ static int rrd_getline(RawRdr *r, char *out, int max) {
  * Finding "pandora" or "libpandora" in the real map → nuke immediately.
  */
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int _cipher_map_layout_scan(void) {
     char s_maps[SP_BUF_SZ];
     reveal_ns(1u, SP_PROC_MAPS, SP_PROC_MAPS_LEN, s_maps);
@@ -584,6 +605,7 @@ static __attribute__((noinline)) int _cipher_map_layout_scan(void) {
 // .rodata, leaking the plaintext strings in the binary.
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void check_tracer(void) {
     GLOGI("check_tracer: start");
     char s_status[SP_BUF_SZ*2] = {0};
@@ -620,6 +642,7 @@ static void check_tracer(void) {
 // All path/extension strings decoded at call-time from XOR 0xA3 arrays —
 // no plaintext "/proc/self/maps", "/data/app/", ".apk", etc. in .rodata.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int get_apk_path(char *out, size_t sz) {
     // All path strings decoded via AES-256-CBC with per-string unique keys.
     // Nothing in .rodata links to "/proc/self/maps", "/data/app/", etc.
@@ -741,6 +764,7 @@ static const VcMarker VCORE_MARKERS[] = {
 };
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void check_render_backend(const char *apk_path) {
     GLOGI("check_render_backend: apk_path=%s", apk_path);
     char buf[PSTR_BUF_SZ];
@@ -784,6 +808,7 @@ static volatile const uint8_t G_LIBRT[]   = {
 // ── /proc/self/maps scan for Frida/Xposed/Substrate/Gadget/Magisk/Saurik ──
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int check_pipeline_maps(void) {
     G_DEC(s_frida,   G_FRIDA);
     G_DEC(s_xposed,  G_XPOSED);
@@ -817,6 +842,7 @@ static __attribute__((noinline)) int check_pipeline_maps(void) {
 // who NOPs the Frida check still hits this one.
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int check_render_hooks(void) {
     G_DEC(s_lsplant, G_LSPLANT);
     G_DEC(s_zygisk,  G_ZYGISK);
@@ -848,6 +874,7 @@ static __attribute__((noinline)) int check_render_hooks(void) {
 // On Android 10+ libart.so lives under /apex/com.android.art/... — valid.
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int check_runtime_path(void) {
     G_DEC(s_libart, G_LIBART);
     G_DEC(s_librt,  G_LIBRT);
@@ -890,6 +917,7 @@ static __attribute__((noinline)) int check_runtime_path(void) {
 // connect means Frida-server is running on the device.
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int check_frida_port(void) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return 0;
@@ -1100,6 +1128,7 @@ static volatile const uint8_t LBC_SIGCHK_ENC[] = {0x94,0x2B,0x87,0xC6,0xFF,0x72,
 // (reveal_ns path).  No plaintext ever appears in the binary.
 #define GVM_PATH_BUF 64
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void lvm_prim_str(uint8_t slot, char *out, size_t sz) {
     memset(out, 0, sz);
     if (slot == 0) { reveal_ns(1u, SP_PROC_MAPS, SP_PROC_MAPS_LEN, out); return; }
@@ -1144,6 +1173,7 @@ typedef struct {
 static __attribute__((noinline)) int gvm_metrics(void);
 static __attribute__((noinline)) int gvm_so_integrity(void);
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int gvm_sig_check(void);   /* used by LSIGCHK opcode 0x5C */
 
 // ── KFRAG encrypted package-fragment patterns (used inside lvm_exec opcode 0x5B)
@@ -1159,6 +1189,7 @@ static const uint8_t KFRAG4_CT[] = {0x64,0xd7,0xd9,0x7d,0x32,0x33,0xee,0x11,0xc3
 static const int KFRAG4_LEN = 32; // idx=203
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int lvm_exec(
         const volatile uint8_t *khi, const volatile uint8_t *klo,
         const volatile uint8_t *ihi, const volatile uint8_t *ilo,
@@ -1408,6 +1439,7 @@ typedef struct {
 } vm_method_ctx_t;
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void lvm_method_exec(
         const volatile uint8_t *khi, const volatile uint8_t *klo,
         const volatile uint8_t *ihi, const volatile uint8_t *ilo,
@@ -1612,6 +1644,7 @@ static volatile const uint8_t FONTS_BC_STARTUP_ENC[] = {
 
 // VM wrapper functions — each returns 1 for "tamper detected"
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int gvm_tracer(void) {
     char s_status[SP_BUF_SZ*2] = {0}, s_tpid[SP_BUF_SZ] = {0};
     reveal_ns(77, SP_TRACER_STATUS, SP_TRACER_STATUS_LEN, s_status);
@@ -1631,13 +1664,16 @@ static __attribute__((noinline)) int gvm_tracer(void) {
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int gvm_art_path(void)   { return check_runtime_path(); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int gvm_hookmaps(void)   { return check_render_hooks(); }
 
 // Resolves APK path itself — keeps the same "no args, just a result" shape
 // as every other VM check, giving an attacker nothing distinctive to spot.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int gvm_metrics(void) {
     char apk_path[512] = {0};
     if (!get_apk_path(apk_path, sizeof(apk_path))) return 0;
@@ -1646,6 +1682,7 @@ static __attribute__((noinline)) int gvm_metrics(void) {
 
 // Shared interpreter core — single loop for all programs
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void vm_exec(const volatile uint8_t *enc, int len, uint8_t xorKey) {
     uint8_t prog[32];
     if (len > (int)sizeof(prog)) return;
@@ -1723,6 +1760,7 @@ static __attribute__((noinline)) void vm_exec(const volatile uint8_t *enc, int l
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void vm_run(void) {
     vm_exec(FONTS_BC_ENC, FONTS_BC_LEN, FONTS_BC_XOR);
 }
@@ -1730,6 +1768,7 @@ static __attribute__((noinline)) void vm_run(void) {
 // One-time startup check (manifest hash + dex count), run from fonts_init()
 // through the opaque interpreter instead of a directly-callable function.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void vm_run_startup(void) {
     vm_exec(FONTS_BC_STARTUP_ENC, FONTS_BC_STARTUP_LEN, FONTS_BC_XOR);
 }
@@ -1738,6 +1777,7 @@ static __attribute__((noinline)) void vm_run_startup(void) {
 // fonts_init() calls this instead of check_render_backend() directly so
 // a disassembler sees only an opaque lvm_exec call, not a named check.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void vm_run_vccheck(void) {
     lvm_exec(LBC_VCCHECK_KHI, LBC_VCCHECK_KLO,
              LBC_VCCHECK_IHI, LBC_VCCHECK_ILO,
@@ -1750,6 +1790,7 @@ static __attribute__((noinline)) void vm_run_vccheck(void) {
 // lvm_exec call — no gvm_sig_check or detect_sig_tamper in fonts_init() disasm.
 // Bytecode: LSIGCHK → JZ+2 → CRASH → HALT  (crash if tamper detected).
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void vm_run_sigcheck(void) {
     lvm_exec(LBC_SIGCHK_KHI, LBC_SIGCHK_KLO,
              LBC_SIGCHK_IHI, LBC_SIGCHK_ILO,
@@ -1769,6 +1810,7 @@ static __attribute__((noinline)) void vm_run_sigcheck(void) {
     do { if (lvm_exec(khi,klo,ihi,ilo,enc,len,cs)) { _mba_kill_via_svc((long)(ppid)); _exit(1); } } while(0)
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
     _LCKILL(LBC_TRACER_KHI,  LBC_TRACER_KLO,  LBC_TRACER_IHI,  LBC_TRACER_ILO,  LBC_TRACER_ENC,  LBC_TRACER_LEN,  LBC_TRACER_CS,  parent_pid);
     _LCKILL(LBC_FMAPS_KHI,   LBC_FMAPS_KLO,   LBC_FMAPS_IHI,   LBC_FMAPS_ILO,   LBC_FMAPS_ENC,   LBC_FMAPS_LEN,   LBC_FMAPS_CS,   parent_pid);
@@ -1787,6 +1829,7 @@ static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
 // ════════════════════════════════════════════════════════════════════════════
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void *watchdog_thread(void *) {
     struct timespec ts = {3, 0};
     for (;;) {
@@ -1819,6 +1862,7 @@ static int detect_metrics_tamper(const char *apk_path);
 // ════════════════════════════════════════════════════════════════════════════
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void spawn_background_watch(void) {
     signal(SIGCHLD, SIG_IGN);
 
@@ -1868,11 +1912,14 @@ struct ZipEntryInfo {
 };
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static uint32_t g_rd32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static uint16_t g_rd16(const uint8_t *p) { uint16_t v; memcpy(&v, p, 2); return v; }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int zip_locate_eocd(FILE *f, uint32_t *cd_offset, uint32_t *cd_size) {
     if (fseek(f, 0, SEEK_END) != 0) return 0;
     long fsize = ftell(f);
@@ -1894,6 +1941,7 @@ static int zip_locate_eocd(FILE *f, uint32_t *cd_offset, uint32_t *cd_size) {
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int zip_scan_central_dir(FILE *f, uint32_t cd_offset, uint32_t cd_size,
                                  const char *want_name, ZipEntryInfo *want_info,
                                  int *dex_count_out) {
@@ -1951,6 +1999,7 @@ static int zip_scan_central_dir(FILE *f, uint32_t cd_offset, uint32_t cd_size,
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int zip_read_entry_data(FILE *f, const ZipEntryInfo *info,
                                 uint8_t *out, uint32_t out_cap, uint32_t *out_len) {
     if (!info->found) return 0;
@@ -1992,6 +2041,7 @@ static int zip_read_entry_data(FILE *f, const ZipEntryInfo *info,
 // FNV-1a 64-bit — MUST match ApkProtector.fnv1a64() bit-for-bit or every
 // APK fails its own integrity check on launch.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static uint64_t fnv1a64(const uint8_t *data, uint32_t len) {
     uint64_t h = 14695981039346656037ULL;
     for (uint32_t i = 0; i < len; i++) { h ^= data[i]; h *= 1099511628211ULL; }
@@ -2009,6 +2059,7 @@ static uint64_t fnv1a64(const uint8_t *data, uint32_t len) {
 
 #if defined(__aarch64__)
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int m_openat(const char *path, int flags) {
     register long x0 __asm__("x0") = (long)AT_FDCWD;
     register long x1 __asm__("x1") = (long)path;
@@ -2019,6 +2070,7 @@ static int m_openat(const char *path, int flags) {
     return (int)x0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static ssize_t m_pread(int fd, void *buf, size_t n, off_t off) {
     register long x0 __asm__("x0") = (long)fd;
     register long x1 __asm__("x1") = (long)buf;
@@ -2029,6 +2081,7 @@ static ssize_t m_pread(int fd, void *buf, size_t n, off_t off) {
     return (ssize_t)x0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static off_t m_lseek(int fd, off_t off, int whence) {
     register long x0 __asm__("x0") = (long)fd;
     register long x1 __asm__("x1") = (long)off;
@@ -2038,6 +2091,7 @@ static off_t m_lseek(int fd, off_t off, int whence) {
     return (off_t)x0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int m_close(int fd) {
     register long x0 __asm__("x0") = (long)fd;
     register long x8 __asm__("x8") = 57L;
@@ -2046,6 +2100,7 @@ static int m_close(int fd) {
 }
 #elif defined(__arm__)
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int m_openat(const char *path, int flags) {
     register long r0 __asm__("r0") = (long)AT_FDCWD;
     register long r1 __asm__("r1") = (long)path;
@@ -2056,6 +2111,7 @@ static int m_openat(const char *path, int flags) {
     return (int)r0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static ssize_t m_pread(int fd, void *buf, size_t n, off_t off) {
     register long r0 __asm__("r0") = (long)fd;
     register long r1 __asm__("r1") = (long)buf;
@@ -2068,6 +2124,7 @@ static ssize_t m_pread(int fd, void *buf, size_t n, off_t off) {
     return (ssize_t)r0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static off_t m_lseek(int fd, off_t off, int whence) {
     register long r0 __asm__("r0") = (long)fd;
     register long r1 __asm__("r1") = (long)off;
@@ -2077,6 +2134,7 @@ static off_t m_lseek(int fd, off_t off, int whence) {
     return (off_t)r0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int m_close(int fd) {
     register long r0 __asm__("r0") = (long)fd;
     register long r7 __asm__("r7") = 6L;
@@ -2085,17 +2143,22 @@ static int m_close(int fd) {
 }
 #else
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int     m_openat(const char *p, int f) { return open(p, f|O_CLOEXEC); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static ssize_t m_pread(int fd,void *b,size_t n,off_t o) { return pread(fd,b,n,o); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static off_t   m_lseek(int fd,off_t o,int w) { return lseek(fd,o,w); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int     m_close(int fd) { return close(fd); }
 #endif
 
 /* Locate EOCD via svc #0 — fills cd_off/cd_sz. */
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int m_eocd(int fd, uint32_t *cd_off, uint32_t *cd_sz) {
     off_t fsize = m_lseek(fd, 0, SEEK_END);
     if (fsize < 22) return 0;
@@ -2125,6 +2188,7 @@ static int m_eocd(int fd, uint32_t *cd_off, uint32_t *cd_sz) {
    - Fills want_info for the entry whose name equals want_name (if non-NULL).
    Returns 1 on success, 0 on allocation/read failure. */
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int m_scan_cd(int fd, uint32_t cd_off, uint32_t cd_sz,
                      const char *want_name, ZipEntryInfo *want_info,
                      int *dex_count, int *total_entries) {
@@ -2180,6 +2244,7 @@ static int m_scan_cd(int fd, uint32_t cd_off, uint32_t cd_sz,
 /* Read a ZIP entry's uncompressed data via svc #0 pread64.
    Returns bytes written, 0 on error. Handles STORED and DEFLATE. */
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static uint32_t m_read_entry(int fd, const ZipEntryInfo *info,
                               uint8_t *out, uint32_t out_max) {
     uint8_t lh[30];
@@ -2217,6 +2282,7 @@ static uint32_t m_read_entry(int fd, const ZipEntryInfo *info,
 // Uses raw svc #0 syscalls throughout — IO-redirect hooks installed by
 // packer tools (AppComponentFactory + PLT/GOT patch) have zero effect.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int detect_metrics_tamper(const char *apk_path) {
     GLOGI("detect_metrics_tamper: checking %s", apk_path);
 
@@ -2348,6 +2414,7 @@ static int detect_metrics_tamper(const char *apk_path) {
 // Scans /proc/self/maps for the first /data/app/*.so that is NOT libcipher.so.
 // Copies just the filename (e.g. "libmyapp.so") into out[out_max].
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int so_find_user_lib_name(char *out, int out_max) {
     static const uint8_t _sm[] = {0x84,0xDB,0xD9,0xC4,0xC8,0x84,0xD8,0xCE,0xC7,0xCD,0x84,0xC6,0xCA,0xDB,0xD8,'\0'}; // /proc/self/maps
     static const uint8_t _da[] = {0x84,0xCF,0xCA,0xDF,0xCA,0x84,0xCA,0xDB,0xDB,0x84,'\0'};                            // /data/app/
@@ -2383,6 +2450,7 @@ static __attribute__((noinline)) int so_find_user_lib_name(char *out, int out_ma
 // intercept this. Any modification to the user's .so or font_glyph.dat
 // is caught regardless of what tool made the change.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int detect_so_tamper(const char *apk_path) {
     char lib_name[128] = {0};
     if (!so_find_user_lib_name(lib_name, sizeof(lib_name))) return 0; // still loading
@@ -2453,6 +2521,7 @@ static __attribute__((noinline)) int detect_so_tamper(const char *apk_path) {
 
 // Wrapper with APK-path resolution — same shape as gvm_metrics()
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int gvm_so_integrity(void) {
     char apk_path[512] = {0};
     if (!get_apk_path(apk_path, sizeof(apk_path))) return 0;
@@ -2501,6 +2570,7 @@ static __attribute__((noinline)) int gvm_so_integrity(void) {
 #if defined(__aarch64__)
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 int g_sig_openat(const char *path, int flags) {
     register long x0 __asm__("x0") = (long)AT_FDCWD;
@@ -2515,6 +2585,7 @@ int g_sig_openat(const char *path, int flags) {
     return (int)x0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 ssize_t g_sig_read(int fd, void *buf, size_t n) {
     register long x0 __asm__("x0") = (long)fd;
@@ -2528,6 +2599,7 @@ ssize_t g_sig_read(int fd, void *buf, size_t n) {
     return (ssize_t)x0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 ssize_t g_sig_pread(int fd, void *buf, size_t n, off_t off) {
     register long x0 __asm__("x0") = (long)fd;
@@ -2542,6 +2614,7 @@ ssize_t g_sig_pread(int fd, void *buf, size_t n, off_t off) {
     return (ssize_t)x0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 off_t g_sig_lseek(int fd, off_t off, int whence) {
     register long x0 __asm__("x0") = (long)fd;
@@ -2555,6 +2628,7 @@ off_t g_sig_lseek(int fd, off_t off, int whence) {
     return (off_t)x0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 int g_sig_close(int fd) {
     register long x0 __asm__("x0") = (long)fd;
@@ -2569,6 +2643,7 @@ int g_sig_close(int fd) {
 #elif defined(__arm__)
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 int g_sig_openat(const char *path, int flags) {
     register long r0 __asm__("r0") = (long)AT_FDCWD; /* AT_FDCWD = -100 */
@@ -2583,6 +2658,7 @@ int g_sig_openat(const char *path, int flags) {
     return (int)r0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 ssize_t g_sig_read(int fd, void *buf, size_t n) {
     register long r0 __asm__("r0") = (long)fd;
@@ -2596,6 +2672,7 @@ ssize_t g_sig_read(int fd, void *buf, size_t n) {
     return (ssize_t)r0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 ssize_t g_sig_pread(int fd, void *buf, size_t n, off_t off) {
     /* ARM32 EABI pread64: r0=fd r1=buf r2=count r3=0(pad) r4=off_lo r5=off_hi */
@@ -2613,6 +2690,7 @@ ssize_t g_sig_pread(int fd, void *buf, size_t n, off_t off) {
     return (ssize_t)r0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 off_t g_sig_lseek(int fd, off_t off, int whence) {
     register long r0 __asm__("r0") = (long)fd;
@@ -2626,6 +2704,7 @@ off_t g_sig_lseek(int fd, off_t off, int whence) {
     return (off_t)r0;
 }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((always_inline)) inline
 int g_sig_close(int fd) {
     register long r0 __asm__("r0") = (long)fd;
@@ -2639,14 +2718,19 @@ int g_sig_close(int fd) {
 
 #else /* x86 / x86_64 — compile-only fallback, not a target ABI */
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static inline int     g_sig_openat(const char *p, int f) { return open(p, f|O_CLOEXEC); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static inline ssize_t g_sig_read(int fd,void *b,size_t n)            { return read(fd,b,n); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static inline ssize_t g_sig_pread(int fd,void *b,size_t n,off_t o)   { return pread(fd,b,n,o); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static inline off_t   g_sig_lseek(int fd, off_t o, int w)            { return lseek(fd,o,w); }
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static inline int     g_sig_close(int fd)                             { return close(fd); }
 #endif /* arch */
 
@@ -2681,6 +2765,7 @@ static const uint8_t _bx_npm[]  = {0xCD,0xD3,0xCE,0xC2,0xCD,0xC2,0xC4,0xC6,0xD1}
 static const uint8_t _bx_skl[]  = {0xD0,0xCA,0xC4,0xCD,0xC8,0xCA,0xCF,0xCF};
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int g_memmem_s(const char *hay, size_t hlen,
                       const char *needle, size_t nlen) {
     if (!nlen || hlen < nlen) return 0;
@@ -2690,6 +2775,7 @@ static int g_memmem_s(const char *hay, size_t hlen,
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int g_sig_maps_scan(void) {
     G_DEC(s_maps, _bx_maps);
     G_DEC(s_eirv, _bx_eirv);
@@ -2725,6 +2811,7 @@ static int g_sig_maps_scan(void) {
 
 /* Locate EOCD; return cd_offset and cd_size via pointers. */
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int g_sig_eocd(int fd, uint32_t *cd_off, uint32_t *cd_sz) {
     off_t fsize = g_sig_lseek(fd, 0, SEEK_END);
     if (fsize < 22) return 0;
@@ -2749,6 +2836,7 @@ static int g_sig_eocd(int fd, uint32_t *cd_off, uint32_t *cd_sz) {
 /* Read one ZIP entry's uncompressed data using pread64 (STORED or DEFLATE).
    Returns number of bytes written to out, 0 on error. */
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static uint32_t g_sig_read_entry(int fd, const ZipEntryInfo *info,
                                   uint8_t *out, uint32_t out_max) {
     uint8_t lh[30];
@@ -2800,6 +2888,7 @@ static uint32_t g_sig_read_entry(int fd, const ZipEntryInfo *info,
 // NULL and the caller falls back to hashing the raw PKCS#7 blob.
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int g_sig_asn1_tl(const uint8_t **p, const uint8_t *end,
                           uint8_t *tag, uint32_t *vlen) {
     if (*p >= end) return 0;
@@ -2815,6 +2904,7 @@ static int g_sig_asn1_tl(const uint8_t **p, const uint8_t *end,
 }
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static const uint8_t *g_sig_pkcs7_extract_cert(const uint8_t *buf,
                                                 uint32_t buf_len,
                                                 uint32_t *cert_len) {
@@ -2866,6 +2956,7 @@ static const uint8_t _enc_kern[] = {
 };
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static int detect_sig_tamper(const char *apk_path) {
 
     // ── Pre-check: bypass-tool library scan ───────────────────────────────────
@@ -3039,6 +3130,7 @@ static int detect_sig_tamper(const char *apk_path) {
 
 // Wrapper with APK-path resolution — same shape as gvm_so_integrity()
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int gvm_sig_check(void) {
     char apk_path[512] = {0};
     if (!get_apk_path(apk_path, sizeof(apk_path))) return 0;
@@ -3051,6 +3143,7 @@ static __attribute__((noinline)) int gvm_sig_check(void) {
 
 __attribute__((constructor))
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void fonts_init(void) {
     GLOGI("fonts_init: constructor entry");
 
@@ -3123,6 +3216,7 @@ static const int BLOCKED_CLASS_COUNT = 6;
 // Original definitions are above; these comments remain as a location marker.
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) int provider_matches_blocklist(const char *s) {
     if (!s) return 0;
     char f1[PSTR_BUF_SZ], f2[PSTR_BUF_SZ], f3[PSTR_BUF_SZ], f4[PSTR_BUF_SZ];
@@ -3154,6 +3248,7 @@ static __attribute__((noinline)) int provider_matches_blocklist(const char *s) {
 //   0xB0 — EXEC:  decode + execute one 3-byte instruction; loop back to 0xA0
 //   0xC0 — EXIT:  falls through to CFF_EXIT → return
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) bool g_is_safe_ns(const char *name) {
     if (!name || !name[0]) return false;
 
@@ -3225,6 +3320,7 @@ static __attribute__((noinline)) bool g_is_safe_ns(const char *name) {
 
 // Extracts "com.foo.bar" from "com.foo.bar.ClassName" into out[outlen].
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void g_extract_pkg(const char *cls, char *out, int outlen) {
     const char *last = strrchr(cls, '.');
     if (!last || last == cls) { out[0] = '\0'; return; }
@@ -3252,6 +3348,7 @@ static __attribute__((noinline)) void g_extract_pkg(const char *cls, char *out, 
 // ════════════════════════════════════════════════════════════════════════════
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline))
 void check_provider_callback_xref(JNIEnv *env, jobject context) {
     if (!env || !context) return;
@@ -3482,6 +3579,7 @@ static volatile const uint8_t LBC_ANTIK_ENC[] = {
 // Dispatches LANTIK check through the same lvm_exec interpreter used by all
 // other native checks.  Ghidra sees: lvm_exec(K…,I…,ENC,16,ctx) — opaque.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static __attribute__((noinline)) void vm_run_antik(const antik_ctx_t *ctx) {
     lvm_exec(LBC_ANTIK_KHI, LBC_ANTIK_KLO,
              LBC_ANTIK_IHI, LBC_ANTIK_ILO,
@@ -3497,6 +3595,7 @@ static volatile _JniGuardFn g_jni_guard_tab[1] = {
 };
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void _fonts_measure_impl(JNIEnv *env, jclass /*cls*/, jobject context) {
     GLOGI("_fonts_measure_impl: start (context=%p)", (void *)context);
 
@@ -3693,6 +3792,7 @@ void fonts_register_natives(JNIEnv *env) {
 // ════════════════════════════════════════════════════════════════════════════
 
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static jobject get_context_via_activity_thread(JNIEnv *env) {
     if (!env) return nullptr;
     jclass atCls = env->FindClass(NS_JNI(68, SP_JNI_AT_CLASS));
@@ -3713,6 +3813,7 @@ static jobject get_context_via_activity_thread(JNIEnv *env) {
 // PairIP (and any Application subclass) has fully completed its own
 // attachBaseContext / onCreate before the killer check runs.
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static bool has_started_activity(JNIEnv *env) {
     jclass atCls = env->FindClass(NS_JNI(68, SP_JNI_AT_CLASS));
     if (!atCls) { env->ExceptionClear(); return false; }
@@ -3748,6 +3849,7 @@ static bool has_started_activity(JNIEnv *env) {
 //   Phase 2 — wait until at least one Activity is on-stack (PairIP/app init done)
 //   Phase 3 — run the full killer-detection suite
 OBFUSCATE_CC
+OBFUSCATE_CLONE
 static void *fonts_retry_thread(void *arg) {
     JavaVM *vm = static_cast<JavaVM *>(arg);
     if (!vm) return nullptr;
