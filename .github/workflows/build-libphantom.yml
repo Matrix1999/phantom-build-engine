@@ -144,7 +144,6 @@ jobs:
             AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true
 
             AMICE_PARAM_AGGREGATE=true
-            AMICE_CLONE_FUNCTION=true
 
             # ── Function structure ─────────────────────────────────────────────
             AMICE_FUNCTION_WRAPPER=true
