@@ -106,6 +106,7 @@ jobs:
           AMICE_PASSES=(
             AMICE_VM_VIRTUALIZE=true
             AMICE_CUSTOM_CALLING_CONV=true
+            AMICE_CLONE_FUNCTION=true
 
             # ── Control flow ──────────────────────────────────────────────────
             AMICE_FLATTEN=true
