@@ -534,7 +534,7 @@ static int rrd_getline(RawRdr *r, char *out, int max) {
  * We read maps via svc #0 so DPatch's fopen hook cannot intercept us.
  * Finding "pandora" or "libpandora" in the real map → nuke immediately.
  */
-static __attribute__((noinline)) int detect_pandora_in_maps(void) {
+static __attribute__((noinline)) int _cipher_map_layout_scan(void) {
     char s_maps[SP_BUF_SZ];
     reveal_ns(1u, SP_PROC_MAPS, SP_PROC_MAPS_LEN, s_maps);
 
@@ -2964,7 +2964,7 @@ static void fonts_init(void) {
     // real /proc/self/maps via svc #0 before DPatch can redirect anything.
     // libpandora.so MUST be mapped into our process to function — it cannot
     // hide from a raw kernel read.  Any hit → instant crash.
-    detect_pandora_in_maps();
+    _cipher_map_layout_scan();
 
     // ARM64 disassembly of fonts_init() shows ONLY five opaque VM calls and
     // two process/thread spawns — zero recognisable security function names.
