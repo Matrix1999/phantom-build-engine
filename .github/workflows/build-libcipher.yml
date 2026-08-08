@@ -164,7 +164,7 @@ jobs:
           COMMON_FLAGS=(
             --sysroot="$SYSROOT"
             -fpass-plugin="$AMICE_PLUGIN"
-            -fPIC -O2 -g0 -std=c++17
+            -fPIC -O1 -g0 -std=c++17
             -fno-unwind-tables -fno-asynchronous-unwind-tables
             -fexceptions -frtti
             -fvisibility=hidden
