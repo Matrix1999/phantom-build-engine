@@ -118,7 +118,7 @@ jobs:
 
             AMICE_BOGUS_CONTROL_FLOW=true
             AMICE_BOGUS_CONTROL_FLOW_MODE=polaris-primes
-            AMICE_BOGUS_CONTROL_FLOW_PROB=100
+            AMICE_BOGUS_CONTROL_FLOW_PROB=50
             AMICE_BOGUS_CONTROL_FLOW_LOOPS=1
 
             AMICE_LOWER_SWITCH=true
