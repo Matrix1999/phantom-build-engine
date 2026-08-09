@@ -83,6 +83,35 @@ jobs:
           sudo ln -sf "$LIBEDIT" /usr/lib/x86_64-linux-gnu/libedit.so.0
           echo "✅ libedit.so.0 → $LIBEDIT"
 
+      - name: Inspect libamice.so — verify VmVirtualize pass is present
+        run: |
+          echo "══════════════════════════════════════════════════════"
+          echo " libamice.so — exported pass symbols"
+          echo "══════════════════════════════════════════════════════"
+
+          echo "── All exported symbols ──"
+          nm -D libamice.so 2>/dev/null | head -80 || echo "(nm failed)"
+
+          echo ""
+          echo "── VmVirtualize / VMP pass specifically ──"
+          nm -D libamice.so 2>/dev/null \
+            | grep -iE "VmVirtualize|vm_virtualize|VmpPass|VirtualizePass|vmp" \
+            || echo "❌ NO VmVirtualize symbol found — pass is NOT in this libamice.so build"
+
+          echo ""
+          echo "── All pass-registration symbols ──"
+          nm -D libamice.so 2>/dev/null \
+            | grep -iE "Pass|Flatten|Bogus|Outlining|Wrapper|Alias|MBA|Shuffle|Split|Indirect|String|Param|Delay|Lower" \
+            | head -60 \
+            || echo "(none)"
+
+          echo ""
+          echo "── Strings mentioning 'vmp' or 'virtualize' inside the .so ──"
+          strings libamice.so 2>/dev/null \
+            | grep -iE "vmp|virtualize|VmVirtualize|vm_protect" \
+            | head -30 \
+            || echo "(none)"
+
       - name: Smoke-test amice plugin (arm64 + arm32)
         run: |
           cat > /tmp/smoke.cpp <<'CPPSRC'
