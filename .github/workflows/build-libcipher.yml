@@ -107,11 +107,13 @@ jobs:
 
           AMICE_PASSES=(
             AMICE_VM_VIRTUALIZE=true
+            AMICE_VM_EMIT_MARKERS=true
+            AMICE_VM_DUMP_BYTECODE=true
 
             # ── Control flow ───────────────────────────────────────────────────
             AMICE_FLATTEN=true
             AMICE_FLATTEN_MODE=dominator
-            AMICE_FLATTEN_LOOP_COUNT=3
+            AMICE_FLATTEN_LOOP_COUNT=2
             AMICE_FLATTEN_ALWAYS_INLINE=true
 
             AMICE_BOGUS_CONTROL_FLOW=true
