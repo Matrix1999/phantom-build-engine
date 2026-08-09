@@ -88,6 +88,41 @@ static const uint8_t _E_TRACER_PID[]     = {0x5E,0x69,0x4D,0x5E,0x6F,0x69,0x7C,0
 static const uint8_t _E_LIBC[]           = {0x7D,0x4B,0x51,0x27,0x3F,0x51,0x5C,0x00};
 static const uint8_t _E_LIBPHANTOM[]     = {0x39,0x0F,0x15,0xF8,0x3D,0x07,0x19,0xFC,0x3A,0x0B,0x59,0xFB,0x3A,
                                              0x00};
+/* ── Emulator-detection encrypted string data (.rodata) ── */
+static const uint8_t _E_EMU_GOLDFISH_PIPE[] = {
+    0xEC,0x3E,0x74,0xFE,0xEC,0x3D,0x7E,0xE4,0xA7,0x3C,0x78,0xFB,
+    0xAB,0x05,0x61,0xE1,0xB3,0x3F,
+};
+static const uint8_t _E_EMU_QEMU_PIPE[] = {
+    0x60,0x47,0xD2,0x1B,0x60,0x52,0xD2,0x00,0x3A,0x7C,0xC7,0x04,
+    0x3F,0x46,
+};
+static const uint8_t _E_EMU_QEMUD[] = {
+    0xB1,0x65,0xA9,0x42,0xB1,0x72,0xA3,0x57,0xF5,0x64,0xB8,0x1B,
+    0xEF,0x64,0xA1,0x41,0xFA,
+};
+static const uint8_t _E_EMU_GOLDFISH_SYNC[] = {
+    0x5D,0xCF,0x3A,0x97,0x5D,0xCC,0x30,0x8D,0x16,0xCD,0x36,0x92,
+    0x1A,0xF4,0x2C,0x98,0x1C,0xC8,
+};
+static const uint8_t _E_EMU_CPUINFO[] = {
+    0x37,0xA4,0x5E,0x18,0x7B,0xFB,0x4F,0x07,0x6D,0xBD,0x42,0x11,
+    0x77,
+};
+static const uint8_t _E_EMU_CPU_GOLDFISH_U[] = {0xBD,0x59,0xE8,0x6F,0x9C,0x5F,0xF7,0x63};
+static const uint8_t _E_EMU_CPU_GOLDFISH_L[] = {0x4E,0x33,0x8B,0xF7,0x4F,0x35,0x94,0xFB};
+static const uint8_t _E_EMU_CPU_RANCHU[]     = {0x13,0xD3,0x67,0x97,0x09,0xC7};
+static const uint8_t _E_EMU_CPU_QEMU[]       = {0x84,0x0D,0xE1,0x6A};
+static const uint8_t _E_EMU_HW_RANDOM[] = {
+    0x79,0xFC,0xBB,0x6E,0x79,0xEB,0xA7,0x6B,0x3F,0xEC,0xA7,0x6E,
+    0x79,0xF9,0xAB,0x6F,0x22,0xFA,0xA3,0x71,0x79,0xE2,0xAB,0x6E,
+    0x35,0xA0,0xAA,0x6A,0x09,0xFD,0xA3,0x73,0x32,0xE0,0xAF,
+};
+static const uint8_t _E_EMU_PROC_MOUNTS[] = {
+    0x8C,0x0E,0x39,0xA6,0xC0,0x51,0x38,0xAC,0xCF,0x18,0x64,0xA4,
+    0xCC,0x0B,0x25,0xBD,0xD0,
+};
+static const uint8_t _E_EMU_VBOX[]          = {0x78,0xF3,0x38,0xCE};
 static const uint8_t _E_FRIDA_WS_REQ[]  = {
     0xF3,0x96,0x28,0x39,0x9B,0xA4,0x0F,0x39,0xFC,0x87,0x28,0x49,
     0x9B,0xE2,0x52,0x28,0xB9,0xD9,0x29,0x69,0xD3,0xA1,0x1D,0x7D,
@@ -130,6 +165,18 @@ static const uint8_t _K_TRACER_PID[]     = {0x0A,0x1B,0x2C,0x3D};
 static const uint8_t _K_LIBC[]           = {0x11,0x22,0x33,0x44};
 static const uint8_t _K_LIBPHANTOM[]     = {0x55,0x66,0x77,0x88};
 static const uint8_t _K_FRIDA_WS_REQ[]  = {0xB4,0xD3,0x7C,0x19};
+static const uint8_t _K_EMU_GOLDFISH_PIPE[] = {0xC3,0x5A,0x11,0x88};
+static const uint8_t _K_EMU_QEMU_PIPE[]     = {0x4F,0x23,0xB7,0x6D};
+static const uint8_t _K_EMU_QEMUD[]         = {0x9E,0x01,0xCC,0x34};
+static const uint8_t _K_EMU_GOLDFISH_SYNC[] = {0x72,0xAB,0x5F,0xE1};
+static const uint8_t _K_EMU_CPUINFO[]       = {0x18,0xD4,0x2C,0x77};
+static const uint8_t _K_EMU_CPU_GOLDFISH_U[]= {0xFA,0x36,0x84,0x0B};
+static const uint8_t _K_EMU_CPU_GOLDFISH_L[]= {0x29,0x5C,0xE7,0x93};
+static const uint8_t _K_EMU_CPU_RANCHU[]    = {0x61,0xB2,0x09,0xF4};
+static const uint8_t _K_EMU_CPU_QEMU[]      = {0xD5,0x48,0xAC,0x3F};
+static const uint8_t _K_EMU_HW_RANDOM[]     = {0x56,0x8F,0xC2,0x1D};
+static const uint8_t _K_EMU_PROC_MOUNTS[]   = {0xA3,0x7E,0x4B,0xC9};
+static const uint8_t _K_EMU_VBOX[]          = {0x0E,0x91,0x57,0xB6};
 
 // ── Plaintext buffers (.bss — all zeros at startup) ───────────────────────────
 static char APPNAME[14];
@@ -138,6 +185,19 @@ static char FRIDA_THREAD_GMAIN[6];
 static char FRIDA_NAMEDPIPE_LINJECTOR[10];
 static char FRIDA_WS_ACCEPT[30];
 static char FRIDA_WS_REQUEST[177];
+/* ── Emulator-detection plaintext buffers (.bss) ── */
+static char _S_EMU_GOLDFISH_PIPE[19];
+static char _S_EMU_QEMU_PIPE[15];
+static char _S_EMU_QEMUD[18];
+static char _S_EMU_GOLDFISH_SYNC[19];
+static char _S_EMU_CPUINFO[14];
+static char _S_EMU_CPU_GOLDFISH_U[9];
+static char _S_EMU_CPU_GOLDFISH_L[9];
+static char _S_EMU_CPU_RANCHU[7];
+static char _S_EMU_CPU_QEMU[5];
+static char _S_EMU_HW_RANDOM[36];
+static char _S_EMU_PROC_MOUNTS[18];
+static char _S_EMU_VBOX[5];
 static char JDWP_THREAD_NAME[5];
 static char HOOK_RIRU[5];
 static char HOOK_ZYGISK[7];
@@ -183,6 +243,18 @@ static void ph_strings_init(void) {
     PH_DECRYPT_N(STR_LIBC,                _E_LIBC,            7, _K_LIBC);
     PH_DECRYPT_N(STR_LIBPHANTOM,          _E_LIBPHANTOM,     13, _K_LIBPHANTOM);
     PH_DECRYPT_N(FRIDA_WS_REQUEST,        _E_FRIDA_WS_REQ,  176, _K_FRIDA_WS_REQ);
+    PH_DECRYPT_N(_S_EMU_GOLDFISH_PIPE, _E_EMU_GOLDFISH_PIPE, 18, _K_EMU_GOLDFISH_PIPE);
+    PH_DECRYPT_N(_S_EMU_QEMU_PIPE,     _E_EMU_QEMU_PIPE,    14, _K_EMU_QEMU_PIPE);
+    PH_DECRYPT_N(_S_EMU_QEMUD,         _E_EMU_QEMUD,        17, _K_EMU_QEMUD);
+    PH_DECRYPT_N(_S_EMU_GOLDFISH_SYNC, _E_EMU_GOLDFISH_SYNC, 18, _K_EMU_GOLDFISH_SYNC);
+    PH_DECRYPT_N(_S_EMU_CPUINFO,       _E_EMU_CPUINFO,      13, _K_EMU_CPUINFO);
+    PH_DECRYPT_N(_S_EMU_CPU_GOLDFISH_U,_E_EMU_CPU_GOLDFISH_U, 8, _K_EMU_CPU_GOLDFISH_U);
+    PH_DECRYPT_N(_S_EMU_CPU_GOLDFISH_L,_E_EMU_CPU_GOLDFISH_L, 8, _K_EMU_CPU_GOLDFISH_L);
+    PH_DECRYPT_N(_S_EMU_CPU_RANCHU,    _E_EMU_CPU_RANCHU,    6, _K_EMU_CPU_RANCHU);
+    PH_DECRYPT_N(_S_EMU_CPU_QEMU,      _E_EMU_CPU_QEMU,      4, _K_EMU_CPU_QEMU);
+    PH_DECRYPT_N(_S_EMU_HW_RANDOM,     _E_EMU_HW_RANDOM,    35, _K_EMU_HW_RANDOM);
+    PH_DECRYPT_N(_S_EMU_PROC_MOUNTS,   _E_EMU_PROC_MOUNTS,  17, _K_EMU_PROC_MOUNTS);
+    PH_DECRYPT_N(_S_EMU_VBOX,          _E_EMU_VBOX,          4, _K_EMU_VBOX);
     libstocheck[0] = STR_LIBPHANTOM;
     libstocheck[1] = STR_LIBC;
 }
@@ -958,6 +1030,70 @@ static void detect_root(void) {
 }
 
 // ?
+// detect_emulator -- QEMU/Goldfish/ranchu/VirtualBox detection
+// Checks device nodes, /proc/cpuinfo strings, hw_random sysfs, and mounts.
+// All paths decrypted at runtime — zero plaintext in .rodata.
+// ?
+
+static void detect_emulator(void) {
+    // A. QEMU/Goldfish device nodes — present on Android emulator, absent on real hw
+    {
+        const char *EMU_DEVS[5] = {
+            _S_EMU_GOLDFISH_PIPE,  // /dev/goldfish_pipe
+            _S_EMU_QEMU_PIPE,      // /dev/qemu_pipe
+            _S_EMU_QEMUD,          // /dev/socket/qemud
+            _S_EMU_GOLDFISH_SYNC,  // /dev/goldfish_sync
+            NULL
+        };
+        for (int i = 0; EMU_DEVS[i]; i++) {
+            int fd = my_openat(AT_FDCWD, EMU_DEVS[i], O_RDONLY | O_CLOEXEC, 0);
+            if (fd >= 0) { my_close(fd); PH_NUKE("emulator device node"); nuke_app(); }
+        }
+    }
+
+    // B. /proc/cpuinfo — QEMU/Goldfish/ranchu CPU model strings
+    {
+        int fd = my_openat(AT_FDCWD, _S_EMU_CPUINFO, O_RDONLY | O_CLOEXEC, 0);
+        if (fd >= 0) {
+            char buf[2048]; ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
+            my_close(fd);
+            if (n > 0) {
+                buf[n] = '\0';
+                if (my_strstr(buf, _S_EMU_CPU_GOLDFISH_U) ||
+                    my_strstr(buf, _S_EMU_CPU_GOLDFISH_L) ||
+                    my_strstr(buf, _S_EMU_CPU_RANCHU)     ||
+                    my_strstr(buf, _S_EMU_CPU_QEMU))
+                    nuke_app();
+            }
+        }
+    }
+
+    // C. /sys/devices/virtual/misc/hw_random — QEMU RNG, absent on real hardware
+    {
+        int fd = my_openat(AT_FDCWD, _S_EMU_HW_RANDOM, O_RDONLY | O_CLOEXEC, 0);
+        if (fd >= 0) { my_close(fd); PH_NUKE("emulator hw_random sysfs"); nuke_app(); }
+    }
+
+    // D. /proc/self/mounts — QEMU/Goldfish/VirtualBox block device tags
+    {
+        int fd = my_openat(AT_FDCWD, _S_EMU_PROC_MOUNTS, O_RDONLY | O_CLOEXEC, 0);
+        if (fd >= 0) {
+            char line[MAX_LINE];
+            while (read_one_line(fd, line, MAX_LINE) > 0) {
+                if (my_strstr(line, _S_EMU_CPU_GOLDFISH_L) ||
+                    my_strstr(line, _S_EMU_CPU_RANCHU)     ||
+                    my_strstr(line, _S_EMU_VBOX)) {
+                    my_close(fd);
+                    PH_NUKE("emulator mount entry");
+                    nuke_app();
+                }
+            }
+            my_close(fd);
+        }
+    }
+}
+
+// ?
 // detect_frida_loop -- 5-second cadence
 // Frida thread names, named pipes, binary checksums, ptrace, eBPF uprobes.
 // ?
@@ -981,6 +1117,7 @@ static void *detect_frida_loop(void *args) {
         detect_frida_memdiskcompare();
         detect_ptrace();
         detect_ebpf_uprobe();
+        detect_emulator();                            // QEMU/Goldfish/ranchu/VirtualBox
         if (g_block_rooted) detect_riru_zygisk();  // Riru/Zygisk/Xposed: maps + phdr + paths — only if toggle ON
         if (g_block_rooted) detect_root();        // su binaries + Magisk mounts — only if toggle ON
         my_nanosleep(&timereq, NULL);
@@ -1103,6 +1240,8 @@ static void check_rooted(void) {
 __attribute__((constructor))
 void detect_frida_init(void) {
     prctl(PR_SET_DUMPABLE, 0);
+    ph_strings_init();
+    detect_emulator();   // block emulators immediately at load time, before any Java runs
     /* check_rooted() is NOT called here — it runs inside nativeDecryptShard
        when the Java-side blockRooted flag is true. */
     char *filePaths[NUM_LIBS] = {NULL, NULL};
