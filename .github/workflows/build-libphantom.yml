@@ -130,7 +130,7 @@ jobs:
 
           echo "Building arm64-v8a..."
           env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
-            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o 2>&1
           "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
             phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
             -o libphantom_arm64.so
@@ -138,11 +138,53 @@ jobs:
 
           echo "Building armeabi-v7a..."
           env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
-            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
           "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
             phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
             -o libphantom_arm.so
           echo "  OK $(wc -c < libphantom_arm.so) bytes"
+
+      - name: VMP section audit (arm64 + arm32)
+        run: |
+          for OBJ in phantom_arm64.o phantom_arm32.o; do
+            echo "══════════════════════════════════════════════════════"
+            echo " $OBJ — VMP protection audit"
+            echo "══════════════════════════════════════════════════════"
+
+            echo ""
+            echo "── VMP marker sections (.amice.vm.*) ──"
+            readelf -S --wide "$OBJ" 2>/dev/null \
+              | grep -E "amice\.vm|vm\.meta|vm\.bc|vm\.bytecode" \
+              | head -80 \
+              || echo "(none — VMP hit zero functions)"
+
+            echo ""
+            echo "── All amice-related section names ──"
+            readelf -S --wide "$OBJ" 2>/dev/null \
+              | awk '{print $2}' \
+              | grep -i "amice" \
+              | sort -u \
+              | head -60 \
+              || echo "(none)"
+
+            echo ""
+            echo "── VMP section count ──"
+            VM_COUNT=$(readelf -S --wide "$OBJ" 2>/dev/null \
+              | grep -cE "amice\.vm|vm\.meta|vm\.bc" || true)
+            echo "  amice.vm.* sections found: $VM_COUNT"
+
+            echo ""
+            echo "── Detection function symbol sizes (pre-strip) ──"
+            "$TC/bin/llvm-nm" --print-size --size-sort "$OBJ" 2>/dev/null \
+              | grep -iE \
+                "detect_ptrace|detect_frida|detect_ebpf|detect_riru|detect_root|\
+check_rooted|nuke_app|hook_phdr|parse_proc_maps|fetch_checksum|\
+scan_executable|check_frida_port|ph_strings" \
+              | sort -k2 -rn \
+              || echo "(none visible — VMP may have removed them from symbol table)"
+
+            echo ""
+          done
 
       - name: Strip + harden
         run: |
