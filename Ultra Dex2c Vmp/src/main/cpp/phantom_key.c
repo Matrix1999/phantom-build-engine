@@ -62,9 +62,6 @@
 #include <zlib.h>
 #include <android/log.h>
 
-#define OBFUSCATE_CC __attribute__((annotate("+custom_calling_conv")))
-
-
 // ── Debug logging — DISABLED for release build (silenced to no-ops)
 // To re-enable for debugging: replace ((void)0) with __android_log_print(...)
 #define PH_LOG(fmt, ...)     ((void)0)
@@ -179,11 +176,9 @@ static char STR_LIBC[8];
 static char STR_LIBPHANTOM[14];
 
 #define NUM_LIBS 2
-OBFUSCATE_CC
 static char *libstocheck[NUM_LIBS]; // filled by ph_strings_init() → STR_LIBPHANTOM, STR_LIBC
 
 // Decrypts all detection strings into the static buffers above on first call.
-OBFUSCATE_CC
 static void ph_strings_init(void) {
     static volatile int _done = 0;
     if (_done) return;
@@ -235,7 +230,6 @@ typedef Elf32_Shdr Elf_Shdr;
 // ?
 
 __attribute__((always_inline))
-OBFUSCATE_CC
 static inline size_t my_strlen(const char *s) {
     size_t len = 0;
     while (*s++) len++;
@@ -243,7 +237,6 @@ static inline size_t my_strlen(const char *s) {
 }
 
 __attribute__((always_inline))
-OBFUSCATE_CC
 static inline int my_strcmp(const char *s1, const char *s2) {
     while (*s1 == *s2++) if (*s1++ == 0) return 0;
     return (*(unsigned char *)s1 - *(unsigned char *)--s2);
@@ -252,7 +245,6 @@ static inline int my_strcmp(const char *s1, const char *s2) {
 static inline int my_strncmp(const char *s1, const char *s2, size_t n);
 
 __attribute__((always_inline))
-OBFUSCATE_CC
 static inline char *my_strstr(const char *s, const char *find) {
     char c, sc;
     size_t len;
@@ -267,7 +259,6 @@ static inline char *my_strstr(const char *s, const char *find) {
 }
 
 __attribute__((always_inline))
-OBFUSCATE_CC
 static inline int my_strncmp(const char *s1, const char *s2, size_t n) {
     if (n == 0) return 0;
     do {
@@ -278,7 +269,6 @@ static inline int my_strncmp(const char *s1, const char *s2, size_t n) {
 }
 
 __attribute__((always_inline))
-OBFUSCATE_CC
 static inline void *my_memset(void *dst, int c, size_t n) {
     char *q = (char *)dst;
     for (size_t i = 0; i < n; i++) q[i] = (char)c;
@@ -292,7 +282,6 @@ static inline void *my_memset(void *dst, int c, size_t n) {
 #if defined(__aarch64__)
 
 __attribute__((always_inline))
-OBFUSCATE_CC
 static inline long raw_syscall_3(long no, long a1, long a2, long a3) {
     register long x8 __asm__("x8") = no;
     register long x0 __asm__("x0") = a1;
@@ -304,7 +293,6 @@ static inline long raw_syscall_3(long no, long a1, long a2, long a3) {
 }
 
 __attribute__((always_inline))
-OBFUSCATE_CC
 static inline long raw_syscall_4(long no, long a1, long a2, long a3, long a4) {
     register long x8 __asm__("x8") = no;
     register long x0 __asm__("x0") = a1;
@@ -392,7 +380,6 @@ __attribute__((always_inline)) static inline int my_connect(int fd, const struct
 // Low-level I/O helpers
 // ?
 
-OBFUSCATE_CC
 static inline ssize_t read_one_line(int fd, char *buf, unsigned int max_len) {
     char b;
     ssize_t ret, bytes_read = 0;
@@ -407,7 +394,6 @@ static inline ssize_t read_one_line(int fd, char *buf, unsigned int max_len) {
     return bytes_read;
 }
 
-OBFUSCATE_CC
 static inline unsigned long checksum(void *buffer, size_t len) {
     unsigned long seed = 0;
     uint8_t *buf = (uint8_t *)buffer;
@@ -419,7 +405,6 @@ static inline unsigned long checksum(void *buffer, size_t len) {
 // ELF section checksum helpers (Frida mem/disk compare)
 // ?
 
-OBFUSCATE_CC
 static inline void parse_proc_maps_to_fetch_path(char **filepaths) {
     int fd = my_openat(AT_FDCWD, PROC_MAPS, O_RDONLY | O_CLOEXEC, 0);
     if (fd < 0) return;
@@ -443,7 +428,6 @@ static inline void parse_proc_maps_to_fetch_path(char **filepaths) {
     my_close(fd);
 }
 
-OBFUSCATE_CC
 static inline bool fetch_checksum_of_library(const char *filePath, execSection **pTextSection) {
     Elf_Ehdr ehdr;
     Elf_Shdr sectHdr;
@@ -480,7 +464,6 @@ static inline bool fetch_checksum_of_library(const char *filePath, execSection *
     return true;
 }
 
-OBFUSCATE_CC
 static inline bool scan_executable_segments(char *map, execSection *pElfSectArr) {
     unsigned long start, end;
     char buf[MAX_LINE] = "", path[MAX_LENGTH] = "", tmp[100] = "";
@@ -556,7 +539,6 @@ __attribute__((noreturn)) static void nuke_app(void) {
 // Original anti-Frida detection functions (unchanged)
 // ?
 
-OBFUSCATE_CC
 static inline void detect_ptrace(void) {
     ph_strings_init();
     PH_LOG("detect_ptrace: checking TracerPid");
@@ -579,7 +561,6 @@ static inline void detect_ptrace(void) {
 
 // ?
 
-OBFUSCATE_CC
 static inline void detect_frida_memdiskcompare(void) {
     // Open a fresh fd each call — avoids cross-thread fd sharing.
     // elfSectionArr[i] NULL guard: array stays NULL if fetch_checksum_of_library()
@@ -614,7 +595,6 @@ static inline void detect_frida_memdiskcompare(void) {
 // Reading status for EVERY task (not just /proc/self/status) catches debuggers
 // that attach to a single worker thread rather than the main thread — a common
 // bypass of single-file TracerPid checks.
-OBFUSCATE_CC
 static inline void detect_frida_threads(void) {
     ph_strings_init();
     PH_LOG("detect_frida_threads: scanning all task comm + status");
@@ -723,7 +703,6 @@ static const char FRIDA_WS_REQUEST[] =
     "\r\n";
 
 // Returns 1 if port 127.0.0.1:port responds with the Frida fingerprint.
-OBFUSCATE_CC
 static int check_frida_port(int port) {
     int fd = my_socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return 0;
@@ -757,7 +736,6 @@ static int check_frida_port(int port) {
     return my_strstr(res, FRIDA_WS_ACCEPT) != NULL;
 }
 
-OBFUSCATE_CC
 static inline void detect_frida_websocket(void) {
     PH_LOG("detect_frida_websocket: scanning for Frida server WebSocket fingerprint");
 
@@ -788,7 +766,6 @@ static inline void detect_frida_websocket(void) {
     }
 }
 
-OBFUSCATE_CC
 static inline void detect_frida_namedpipe(void) {
     PH_LOG("detect_frida_namedpipe: scanning fds for Frida linjector pipe");
     DIR *dir = opendir(PROC_FD);
@@ -829,7 +806,6 @@ static inline void detect_frida_namedpipe(void) {
 // Any line containing "libart" -> an eBPF dumper is active -> nuke_app().
 // ?
 
-OBFUSCATE_CC
 static void detect_ebpf_uprobe(void) {
     static const char *paths[] = {
         "/sys/kernel/debug/tracing/uprobe_events",
@@ -876,7 +852,6 @@ static void detect_ebpf_uprobe(void) {
 // ?
 
 // C-style dl_iterate_phdr callback (file is compiled as C, not C++).
-OBFUSCATE_CC
 static int hook_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
     (void)size;
     if (!info || !info->dlpi_name || info->dlpi_name[0] == '\0') return 0;
@@ -892,7 +867,6 @@ static int hook_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
     return 0;
 }
 
-OBFUSCATE_CC
 static void detect_riru_zygisk(void) {
     PH_LOG("detect_riru_zygisk: scanning maps + phdr + paths");
 
@@ -964,7 +938,6 @@ static void detect_riru_zygisk(void) {
 //      these strings catches Magisk even when it hides su from PATH.
 // ?
 
-OBFUSCATE_CC
 static void detect_root(void) {
     PH_LOG("detect_root: checking su binaries + Magisk mounts");
 
@@ -1027,7 +1000,6 @@ static void detect_root(void) {
    Declared volatile so the compiler does not cache it across loop iterations. */
 static volatile int g_block_rooted = 0;
 
-OBFUSCATE_CC
 static void *detect_frida_loop(void *args) {
     (void)args;
     struct timespec timereq;
@@ -1062,7 +1034,6 @@ static void *detect_frida_loop(void *args) {
    Java sees only an opaque 16-byte salt and cannot distinguish the variants.
    OLLVM -fla flattens this separately from the tiny constructor. */
 __attribute__((annotate("+vm_virtualize")))
-OBFUSCATE_CC
 static void check_rooted(void) {
     /* 1. SELinux permissive */
     static const char * const SE[] = {
@@ -1339,7 +1310,6 @@ static const uint32_t K256[64] = {
     0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 };
 
-OBFUSCATE_CC
 static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
     uint32_t w[64];
     int i;
@@ -1366,7 +1336,6 @@ static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
     h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
 }
 
-OBFUSCATE_CC
 static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
     uint32_t h[8] = {
         0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
@@ -1396,7 +1365,6 @@ static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
 
 #define ROL32(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
 
-OBFUSCATE_CC
 static inline uint32_t le32(const uint8_t *b, int off) {
     return (uint32_t)b[off]
          | ((uint32_t)b[off+1] <<  8)
@@ -1404,7 +1372,6 @@ static inline uint32_t le32(const uint8_t *b, int off) {
          | ((uint32_t)b[off+3] << 24);
 }
 
-OBFUSCATE_CC
 static inline void put_le32(uint8_t *b, int off, uint32_t v) {
     b[off]   = (uint8_t)v;
     b[off+1] = (uint8_t)(v >>  8);
@@ -1413,7 +1380,6 @@ static inline void put_le32(uint8_t *b, int off, uint32_t v) {
 }
 
 __attribute__((annotate("+vm_virtualize")))
-OBFUSCATE_CC
 static void arx_kdf(const uint8_t salt[16], const uint8_t pkg_hash[32], uint8_t out[16]) {
     uint32_t s0 = le32(salt,  0), s1 = le32(salt,  4);
     uint32_t s2 = le32(salt,  8), s3 = le32(salt, 12);
@@ -1438,7 +1404,6 @@ typedef struct {
     int      pos;
 } arx_ctx_t;
 
-OBFUSCATE_CC
 static void arx_ctx_init(arx_ctx_t *s, const uint8_t key[16]) {
     uint32_t k0=le32(key,0), k1=le32(key,4), k2=le32(key,8), k3=le32(key,12);
     s->st[0] = k0 ^ k2;
@@ -1455,7 +1420,6 @@ static void arx_ctx_init(arx_ctx_t *s, const uint8_t key[16]) {
     }
 }
 
-OBFUSCATE_CC
 static void arx_advance_block(arx_ctx_t *s) {
     const uint32_t *ks = s->ks;
     uint32_t i=s->st[0], i2=s->st[1];
@@ -1489,7 +1453,6 @@ static void arx_advance_block(arx_ctx_t *s) {
     s->st[0]=ROL32(i,3)^i2; s->st[1]=i2;
 }
 
-OBFUSCATE_CC
 static void arx_xor(arx_ctx_t *s, uint8_t *buf, size_t len) {
     for (size_t n=0; n<len; n++) {
         int i6=s->pos%8, shift=(s->pos%4)*8;
@@ -1504,7 +1467,6 @@ static void arx_xor(arx_ctx_t *s, uint8_t *buf, size_t len) {
 // zlib inflate helper
 // ?
 
-OBFUSCATE_CC
 static uint8_t *inflate_alloc(const uint8_t *in, size_t in_len, size_t *out_len) {
     z_stream zs;
     uint8_t *buf, *tmp;
@@ -1763,7 +1725,6 @@ cleanup:
  * (The Java equivalent cast mProviderMap as ArrayMap<String,String> which
  * crashed with ClassCastException because values are ProviderClientRecord.)
  * ═══════════════════════════════════════════════════════════════════════════ */
-OBFUSCATE_CC
 static void ph_patch_providers_native(JNIEnv *env, jobject activityThread, jobject realApp) {
     /* ActivityThread.mProviderMap — ArrayMap<String, ProviderClientRecord> */
     jclass atCls2 = (*env)->FindClass(env, "android/app/ActivityThread");
