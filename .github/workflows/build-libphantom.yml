@@ -146,42 +146,28 @@ jobs:
 
       - name: VMP section audit (arm64 + arm32)
         run: |
+          PATTERN="detect_ptrace|detect_frida|detect_ebpf|detect_riru|detect_root|check_rooted|nuke_app|hook_phdr|parse_proc_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
-            echo "══════════════════════════════════════════════════════"
-            echo " $OBJ — VMP protection audit"
-            echo "══════════════════════════════════════════════════════"
+            echo "======================================================"
+            echo "$OBJ - VMP protection audit"
+            echo "======================================================"
 
             echo ""
-            echo "── VMP marker sections (.amice.vm.*) ──"
-            readelf -S --wide "$OBJ" 2>/dev/null \
-              | grep -E "amice\.vm|vm\.meta|vm\.bc|vm\.bytecode" \
-              | head -80 \
-              || echo "(none — VMP hit zero functions)"
+            echo "--- VMP marker sections (.amice.vm.*) ---"
+            readelf -S --wide "$OBJ" 2>/dev/null | grep -E "amice\.vm|vm\.meta|vm\.bc|vm\.bytecode" | head -80 || echo "(none - VMP hit zero functions)"
 
             echo ""
-            echo "── All amice-related section names ──"
-            readelf -S --wide "$OBJ" 2>/dev/null \
-              | awk '{print $2}' \
-              | grep -i "amice" \
-              | sort -u \
-              | head -60 \
-              || echo "(none)"
+            echo "--- All amice-related section names ---"
+            readelf -S --wide "$OBJ" 2>/dev/null | awk '{print $2}' | grep -i "amice" | sort -u | head -60 || echo "(none)"
 
             echo ""
-            echo "── VMP section count ──"
-            VM_COUNT=$(readelf -S --wide "$OBJ" 2>/dev/null \
-              | grep -cE "amice\.vm|vm\.meta|vm\.bc" || true)
-            echo "  amice.vm.* sections found: $VM_COUNT"
+            echo "--- VMP section count ---"
+            VM_COUNT=$(readelf -S --wide "$OBJ" 2>/dev/null | grep -cE "amice\.vm|vm\.meta|vm\.bc" || true)
+            echo "amice.vm.* sections found: $VM_COUNT"
 
             echo ""
-            echo "── Detection function symbol sizes (pre-strip) ──"
-            "$TC/bin/llvm-nm" --print-size --size-sort "$OBJ" 2>/dev/null \
-              | grep -iE \
-                "detect_ptrace|detect_frida|detect_ebpf|detect_riru|detect_root|\
-check_rooted|nuke_app|hook_phdr|parse_proc_maps|fetch_checksum|\
-scan_executable|check_frida_port|ph_strings" \
-              | sort -k2 -rn \
-              || echo "(none visible — VMP may have removed them from symbol table)"
+            echo "--- Detection function symbol sizes (pre-strip) ---"
+            "$TC/bin/llvm-nm" --print-size --size-sort "$OBJ" 2>/dev/null | grep -iE "$PATTERN" | sort -k2 -rn || echo "(none visible)"
 
             echo ""
           done
