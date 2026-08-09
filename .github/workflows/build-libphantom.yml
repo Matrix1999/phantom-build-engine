@@ -104,10 +104,10 @@ jobs:
           SRC="Ultra Dex2c Vmp/src/main/cpp/phantom_key.c"
 
           AMICE_PASSES=(
-            # ── VMP / VM ──────────────────────────────────────────────────────
+            # ── VMP / VM ───────────────────────────────────────────────────────
             AMICE_VM_VIRTUALIZE=true
 
-            # ── Control flow ──────────────────────────────────────────────────
+            # ── Control flow ───────────────────────────────────────────────────
             AMICE_FLATTEN=true
             AMICE_FLATTEN_MODE=dominator
             AMICE_FLATTEN_LOOP_COUNT=3
@@ -120,16 +120,16 @@ jobs:
 
             AMICE_LOWER_SWITCH=true
             AMICE_SPLIT_BASIC_BLOCK=true
-            AMICE_SPLIT_BASIC_BLOCK_NUMS=6
+            AMICE_SPLIT_BASIC_BLOCk_NUMS=6
             AMICE_SHUFFLE_BLOCKS=true
             AMICE_BASIC_BLOCK_OUTLINING=true
 
-            # ── Indirect flow ─────────────────────────────────────────────────
+            # ── Indirect flow ──────────────────────────────────────────────────
             AMICE_INDIRECT_CALL=true
             AMICE_INDIRECT_BRANCH=true
             AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,chained_dummy_blocks,encrypt_block_index,shuffle_table
 
-            # ── Arithmetic & data ─────────────────────────────────────────────
+            # ── Arithmetic & data ──────────────────────────────────────────────
             AMICE_MBA=true
             AMICE_MBA_AUX_COUNT=4
             AMICE_MBA_REWRITE_OPS=48
@@ -144,12 +144,12 @@ jobs:
 
             AMICE_PARAM_AGGREGATE=true
 
-            # ── Function structure ────────────────────────────────────────────
+            # ── Function structure ─────────────────────────────────────────────
             AMICE_FUNCTION_WRAPPER=true
             AMICE_FUNCTION_WRAPPER_PROBABILITY=100
             AMICE_FUNCTION_WRAPPER_TIMES=2
 
-            # ── String encryption ─────────────────────────────────────────────
+            # ── String encryption ──────────────────────────────────────────────
             AMICE_STRING_ENCRYPTION=true
             AMICE_STRING_ALGORITHM=simd_xor
             AMICE_STRING_INLINE_DECRYPT_FN=true
