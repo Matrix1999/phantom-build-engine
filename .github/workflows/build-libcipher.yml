@@ -1,12 +1,5 @@
 name: Build libcipher (amice)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# VMP-ONLY diagnostic build — all OLLVM passes disabled.
-# Goal: confirm VMP can virtualize the guard.cpp security functions on clean IR.
-# AMICE_VM_EMIT_MARKERS + AMICE_VM_DUMP_BYTECODE redirect to stdout so the
-# full runner log captures exactly which functions VMP hit or skipped.
-# ─────────────────────────────────────────────────────────────────────────────
-
 on:
   workflow_dispatch:
 
@@ -61,8 +54,6 @@ jobs:
             echo "TC=$TC"
             echo "SYSROOT=$TC/sysroot"
             echo "CLANGXX=$TC/bin/clang++"
-            echo "NDK_LINK_ARM64=$TC/bin/aarch64-linux-android26-clang++"
-            echo "NDK_LINK_ARM32=$TC/bin/armv7a-linux-androideabi21-clang++"
             echo "LLVM_LIBDIR=$PWD"
             echo "AMICE_PLUGIN=$PWD/libamice.so"
           } >> "$GITHUB_ENV"
@@ -70,39 +61,12 @@ jobs:
       - name: Fix libedit symlink for amice
         run: |
           LIBEDIT=$(find /usr/lib/x86_64-linux-gnu -name "libedit.so.2*" | head -1)
-          echo "Found: $LIBEDIT"
           sudo ln -sf "$LIBEDIT" /usr/lib/x86_64-linux-gnu/libedit.so.0
-          echo "✅ libedit.so.0 → $LIBEDIT"
 
-      - name: Smoke-test amice plugin (arm64 + arm32)
-        run: |
-          cat > /tmp/smoke.cpp <<'CPPSRC'
-          int foo(int x, int y) { int a=x^y; int b=a+x; if(a>0) return b; return b*y; }
-          CPPSRC
-          for TARGET in aarch64-linux-android26 armv7a-linux-androideabi21; do
-            AMICE_VM_VIRTUALIZE=true \
-            AMICE_VM_EMIT_MARKERS=true \
-            AMICE_VM_DUMP_BYTECODE=true \
-            LD_LIBRARY_PATH="$LLVM_LIBDIR" \
-            "$CLANGXX" --target="$TARGET" --sysroot="$SYSROOT" \
-              -std=c++17 -fPIC -O2 \
-              -fpass-plugin="$AMICE_PLUGIN" \
-              -c /tmp/smoke.cpp -o /tmp/smoke_${TARGET}.o 2>&1
-            echo "✅ $TARGET — smoke done"
-          done
-
-      - name: Build libcipher arm64-v8a (VMP only, full stderr)
+      - name: Build libcipher arm64-v8a
         run: |
           set -e
-          echo "══════════════════════════════════════════════════════"
-          echo " VMP-ONLY build — ALL other OLLVM passes DISABLED"
-          echo " guard.cpp → guard_arm64.o"
-          echo "══════════════════════════════════════════════════════"
-
-          # ── VMP only — every other AMICE_* flag is intentionally absent ──
           AMICE_VM_VIRTUALIZE=true \
-          AMICE_VM_EMIT_MARKERS=true \
-          AMICE_VM_DUMP_BYTECODE=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
@@ -116,57 +80,13 @@ jobs:
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm64.o 2>&1
-
-          echo ""
-          echo "── Compiler done ──"
-          echo "guard_arm64.o size: $(wc -c < guard_arm64.o) bytes"
-
-      - name: Inspect guard_arm64.o — VMP section audit
-        run: |
-          echo "══════════════════════════════════════════════════════"
-          echo " Section audit — looking for .amice.vm.meta.* sections"
-          echo "══════════════════════════════════════════════════════"
-
-          SECTION_COUNT=$(readelf -S --wide guard_arm64.o 2>/dev/null | grep -c PROGBITS || true)
-          echo "Total PROGBITS sections: $SECTION_COUNT"
-          echo ""
-
-          echo "── VMP marker sections (.amice.vm.*) ──"
-          readelf -S --wide guard_arm64.o 2>/dev/null \
-            | grep -E "amice\.vm|vm\.meta|vm\.bc" \
-            | head -50 \
-            || echo "(none — VMP virtualized zero functions)"
-
-          echo ""
-          echo "── All amice-related sections ──"
-          readelf -S --wide guard_arm64.o 2>/dev/null \
-            | awk '{print $2}' \
-            | grep "amice" \
-            | sort -u \
-            | head -40 \
-            || echo "(none)"
-
-          echo ""
-          echo "── Key security function sizes ──"
-          objdump -t guard_arm64.o 2>/dev/null | c++filt \
-            | grep -iE "gvm_sig_check|detect_sig_tamper|detect_metrics_tamper|vm_run_sigcheck|vm_run_vccheck|gvm_metrics|gvm_so_integrity" \
-            | awk '{print $5, $6}' | sort -k1 -rn | head -20
-
-      - name: Pack arm64 archive
-        run: |
           "$TC/bin/llvm-ar" rcs libcipher_arm64.a guard_arm64.o
           echo "✅ libcipher_arm64.a — $(wc -c < libcipher_arm64.a) bytes"
 
-      - name: Build libcipher armeabi-v7a (VMP only, full stderr)
+      - name: Build libcipher armeabi-v7a
         run: |
           set -e
-          echo "══════════════════════════════════════════════════════"
-          echo " VMP-ONLY build — armeabi-v7a"
-          echo "══════════════════════════════════════════════════════"
-
           AMICE_VM_VIRTUALIZE=true \
-          AMICE_VM_EMIT_MARKERS=true \
-          AMICE_VM_DUMP_BYTECODE=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
@@ -180,10 +100,6 @@ jobs:
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm32.o 2>&1
-
-          echo ""
-          echo "── Compiler done ──"
-          echo "guard_arm32.o size: $(wc -c < guard_arm32.o) bytes"
           "$TC/bin/llvm-ar" rcs libcipher_armeabi-v7a.a guard_arm32.o
           echo "✅ libcipher_armeabi-v7a.a — $(wc -c < libcipher_armeabi-v7a.a) bytes"
 
