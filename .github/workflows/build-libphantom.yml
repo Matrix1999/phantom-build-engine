@@ -176,19 +176,29 @@ jobs:
 
           echo "Building arm64-v8a..."
           env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
-            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o \
+            2>&1 | tee amice_report_arm64.txt
           "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
             phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
             -o libphantom_arm64.so
           echo "  OK $(wc -c < libphantom_arm64.so) bytes"
+          echo "  amice arm64 report: $(wc -l < amice_report_arm64.txt) lines"
 
           echo "Building armeabi-v7a..."
           env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
-            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o \
+            2>&1 | tee amice_report_arm32.txt
           "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
             phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
             -o libphantom_arm.so
           echo "  OK $(wc -c < libphantom_arm.so) bytes"
+          echo "  amice arm32 report: $(wc -l < amice_report_arm32.txt) lines"
+
+          # Print VMP summary to Actions log for quick review
+          echo ""
+          echo "══════════════ AMICE VMP REPORT (arm64) ══════════════"
+          grep -i "virtuali\|vmp\|bytecode\|marker\|flatten\|obfuscat\|function\|pass\|protect" \
+            amice_report_arm64.txt || echo "(no amice diagnostic lines found in stderr)"
 
       - name: Strip + harden
         run: |
@@ -222,3 +232,12 @@ jobs:
           path: |
             libphantom_arm64.blob
             libphantom_arm.blob
+
+      - name: Upload amice VMP report
+        uses: actions/upload-artifact@v4
+        with:
+          name: amice-vmp-report
+          retention-days: 30
+          path: |
+            amice_report_arm64.txt
+            amice_report_arm32.txt
