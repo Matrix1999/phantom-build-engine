@@ -106,6 +106,9 @@ jobs:
           CPP_ABI_ARM32=$(   find "$TC" -name "libc++abi.a"     | grep "arm-linux" | head -1)
 
           AMICE_PASSES=(
+            # ── VMP (was AMICE_VMP which does nothing — fixed to correct var) ──
+            AMICE_VM_VIRTUALIZE=true
+
             # ── Control flow ───────────────────────────────────────────────────
             AMICE_FLATTEN=true
             AMICE_FLATTEN_MODE=dominator
@@ -119,7 +122,7 @@ jobs:
 
             AMICE_LOWER_SWITCH=true
             AMICE_SPLIT_BASIC_BLOCK=true
-            AMICE_SPLIT_BASIC_BLOCK_NUMS=6
+            AMICE_SPLIT_BASIC_BLOCk_NUMS=6
             AMICE_SHUFFLE_BLOCKS=true
             AMICE_BASIC_BLOCK_OUTLINING=true
 
@@ -160,7 +163,7 @@ jobs:
           COMMON_FLAGS=(
             --sysroot="$SYSROOT"
             -fpass-plugin="$AMICE_PLUGIN"
-            -fPIC -O1 -g0 -std=c++17
+            -fPIC -O2 -g0 -std=c++17
             -fno-unwind-tables -fno-asynchronous-unwind-tables
             -fexceptions -frtti
             -fvisibility=hidden
