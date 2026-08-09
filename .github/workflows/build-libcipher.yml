@@ -111,7 +111,7 @@ jobs:
             # ── Control flow ───────────────────────────────────────────────────
             AMICE_FLATTEN=true
             AMICE_FLATTEN_MODE=dominator
-            AMICE_FLATTEN_LOOP_COUNT=7
+            AMICE_FLATTEN_LOOP_COUNT=2
             AMICE_FLATTEN_ALWAYS_INLINE=true
 
             AMICE_BOGUS_CONTROL_FLOW=true
