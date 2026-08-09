@@ -547,7 +547,8 @@ static __attribute__((noinline)) int _cipher_map_layout_scan(void) {
             found = 1;
     }
     rrd_close(&r);
-    if (found) CRASH_HERE("DPatch/libpandora detected in process maps");
+    // Kill decision moved inside lvm_exec opcode 0x5E (LMAPSCAN) — no ARM
+    // branch here; crash_now() fires inside the VM if found != 0.
     return found;
 }
 
@@ -1065,6 +1066,30 @@ static volatile const uint8_t LBC_SIGCHK_ENC[] = {0x94,0x2B,0x87,0xC6,0xFF,0x72,
 #define LBC_SIGCHK_LEN  16
 #define LBC_SIGCHK_CS   0x7Du
 
+// ── SOINT program: gvm_so_integrity() run inside lvm_exec (opcode 0x5D) ─────
+// Bytecode: [LSOINT(0x5D,0x00), HALT(0x01,0x00)] — crash inside VM on failure.
+// fonts_init() shows only an opaque lvm_exec(LBC_SOINT_*) call — zero cbnz,
+// zero crash_now() call site, zero gvm_so_integrity reference in ARM64 disasm.
+static volatile const uint8_t LBC_SOINT_KHI[] = {0x83,0x69,0x9A,0xDD,0x6D,0xC7,0x2D,0x16,0x69,0x20,0x2E,0xED,0x82,0x78,0xB3,0x04,0x19,0xCF,0x8F,0xD3,0x1D,0x12,0x2E,0x77,0xB7,0xCB,0xA8,0x3A,0xDF,0x61,0xCF,0xFB};
+static volatile const uint8_t LBC_SOINT_KLO[] = {0x49,0x17,0x3E,0xCF,0xA4,0xE5,0x13,0xC2,0x12,0x54,0x3D,0xC9,0x39,0xB4,0xB0,0x05,0xA1,0xC9,0xD6,0x81,0x1A,0x9B,0x93,0x11,0x8A,0xD1,0x4D,0x21,0x95,0x32,0x8C,0x32};
+static volatile const uint8_t LBC_SOINT_IHI[] = {0x11,0x8C,0x7C,0x53,0x4F,0xA1,0xA0,0x24,0xCB,0x51,0xB2,0xBF,0xBD,0xD5,0xB1,0xB9};
+static volatile const uint8_t LBC_SOINT_ILO[] = {0x92,0xAF,0x76,0x8B,0x5E,0x3E,0xB7,0xD8,0xF7,0xE1,0x41,0xF9,0x8E,0xAC,0xE6,0xB5};
+static volatile const uint8_t LBC_SOINT_ENC[] = {0xB9,0x21,0xDC,0x0C,0x3F,0xE8,0xF3,0xE2,0xB6,0x49,0x5E,0x1A,0xDD,0xAA,0x25,0xFC};
+#define LBC_SOINT_LEN  16
+#define LBC_SOINT_CS   0x5Cu
+
+// ── MAPSCAN program: _cipher_map_layout_scan() inside lvm_exec (opcode 0x5E) ─
+// Bytecode: [LMAPSCAN(0x5E,0x00), HALT(0x01,0x00)] — crash inside VM on hit.
+// fonts_init() shows only an opaque LVM_CALL — no bl _cipher_map_layout_scan,
+// no cbnz, no crash_now visible in its ARM64 disassembly.
+static volatile const uint8_t LBC_MAPSCAN_KHI[] = {0x86,0x20,0xA7,0x55,0xF7,0xEB,0x33,0xE8,0x7F,0x39,0x05,0x4B,0x17,0xFE,0x14,0x44,0xDA,0xB3,0xD2,0x4F,0xCC,0xAD,0x6A,0x2B,0x7E,0xEF,0xD5,0x03,0x9C,0x5A,0xE9,0x18};
+static volatile const uint8_t LBC_MAPSCAN_KLO[] = {0xD3,0x95,0xD0,0x9F,0xB1,0x71,0x29,0x01,0x5E,0xDA,0xA7,0x22,0xFA,0xE0,0xF0,0xA9,0x0B,0x44,0x0C,0x6C,0xF5,0x31,0x58,0x7D,0x33,0x71,0xF6,0xA2,0x46,0x1C,0xE9,0xC1};
+static volatile const uint8_t LBC_MAPSCAN_IHI[] = {0x53,0x74,0xBF,0xA9,0xC0,0x6A,0xDF,0x78,0x6E,0x56,0x40,0x25,0x4C,0xEC,0x8D,0xED};
+static volatile const uint8_t LBC_MAPSCAN_ILO[] = {0xC0,0xFF,0xF8,0x7E,0x42,0xBE,0x86,0xF4,0xE7,0x42,0x42,0xB0,0x49,0xD9,0x77,0x77};
+static volatile const uint8_t LBC_MAPSCAN_ENC[] = {0x16,0x34,0x9A,0x1E,0xE3,0x08,0xFA,0x0D,0x8B,0xEB,0x92,0x16,0xF2,0xAB,0x7B,0xA3};
+#define LBC_MAPSCAN_LEN  16
+#define LBC_MAPSCAN_CS   0x5Fu
+
 // ── Primitive string resolver — maps slot index → decrypted C string ─────────
 // All source arrays remain XOR-encoded in .rodata (G_*) or AES-encrypted
 // (reveal_ns path).  No plaintext ever appears in the binary.
@@ -1333,6 +1358,36 @@ static __attribute__((noinline)) int lvm_exec(
                  * in the ARM64 disassembly of fonts_init().
                  */
                 vm_res = gvm_sig_check();
+                break;
+            }
+            case 0x5D: { /* LSOINT — .so self-integrity check (Layer 3)
+                 * Calls gvm_so_integrity() INSIDE the VM interpreter loop.
+                 * If the check fails, crash_now() is called here — inside lvm_exec.
+                 * fonts_init() shows only an opaque lvm_exec(LBC_SOINT_*) call:
+                 *   no gvm_so_integrity call site, no cbnz/crash_now branch visible
+                 *   in the ARM64 disassembly of fonts_init().
+                 * Bytecode program: [0x5D,0x00, 0x01,0x00]  LSOINT → HALT
+                 */
+                vm_res = gvm_so_integrity();
+                if (vm_res) {
+                    GLOGE("lvm: LSOINT — .so integrity check failed");
+                    crash_now();
+                }
+                break;
+            }
+            case 0x5E: { /* LMAPSCAN — DPatch/libpandora /proc/self/maps scan
+                 * Calls _cipher_map_layout_scan() INSIDE the VM interpreter loop.
+                 * If pandora/bytehook found, crash_now() fires here — inside lvm_exec.
+                 * fonts_init() shows only an opaque LVM_CALL(LBC_MAPSCAN_*) call:
+                 *   no _cipher_map_layout_scan call site, no cbnz/crash_now visible
+                 *   in the ARM64 disassembly of fonts_init().
+                 * Bytecode program: [0x5E,0x00, 0x01,0x00]  LMAPSCAN → HALT
+                 */
+                vm_res = _cipher_map_layout_scan();
+                if (vm_res) {
+                    GLOGE("lvm: LMAPSCAN — DPatch/libpandora detected in maps");
+                    crash_now();
+                }
                 break;
             }
             default: break;  // unknown opcode treated as NOP
@@ -1693,11 +1748,52 @@ static __attribute__((noinline)) void vm_run_startup(void) {
     vm_exec(FONTS_BC_STARTUP_ENC, FONTS_BC_STARTUP_LEN, FONTS_BC_XOR);
 }
 
+// ── Indirect VM dispatch (Fix 2) ─────────────────────────────────────────────
+// All vm_run_* wrappers call lvm_exec through this volatile function pointer
+// instead of directly.  The compiler cannot inline or devirtualise a volatile
+// pointer read, so every wrapper emits:
+//     ldr  x8, [page(g_lvm_dispatch)]   ; load pointer from GOT
+//     blr  x8                            ; indirect call — no fixed target
+// instead of:
+//     bl   lvm_exec                      ; direct call — patchable fixed offset
+//
+// An attacker patching the binary sees only `blr x8` — the target address is
+// resolved at load time via ASLR and is different on every run.  Patching the
+// `blr` itself just crashes the dispatch for all checks simultaneously, which
+// is immediately obvious.  The OLLVM -icall pass provides the same guarantee
+// in production; this pointer gives it for the VMP-only diagnostic build.
+//
+// Initialised by _init_lvm_dispatch() (priority 102, runs before fonts_init
+// at priority 103) so the pointer is valid before any check fires.
+// ─────────────────────────────────────────────────────────────────────────────
+typedef int (*lvm_exec_fn_t)(
+        const volatile uint8_t*, const volatile uint8_t*,
+        const volatile uint8_t*, const volatile uint8_t*,
+        const volatile uint8_t*, int, uint8_t, const void*);
+
+static lvm_exec_fn_t volatile g_lvm_dispatch = nullptr;
+
+__attribute__((constructor(102)))
+static void _init_lvm_dispatch(void) {
+    // Assign through a volatile local so the compiler cannot fold this into a
+    // direct call at the call site — the pointer must be re-read every time.
+    volatile uintptr_t addr = (uintptr_t)lvm_exec;
+    g_lvm_dispatch = (lvm_exec_fn_t)(addr);
+}
+
+// Convenience macro — routes through g_lvm_dispatch; emits `blr xN` not `bl`.
+#define LVM_CALL(khi,klo,ihi,ilo,enc,len,cs) \
+    g_lvm_dispatch((khi),(klo),(ihi),(ilo),(enc),(len),(cs),nullptr)
+
+// Variant that forwards a ctx_in pointer (used by vm_run_antik).
+#define LVM_CALL_CTX(khi,klo,ihi,ilo,enc,len,cs,ctx) \
+    g_lvm_dispatch((khi),(klo),(ihi),(ilo),(enc),(len),(cs),(const void*)(ctx))
+
 // VCore/VirtualApp check — LVCFULL opcode inside an lvm_exec program.
 // fonts_init() calls this instead of check_render_backend() directly so
-// a disassembler sees only an opaque lvm_exec call, not a named check.
+// a disassembler sees only an opaque indirect VM call, not a named check.
 static __attribute__((noinline)) void vm_run_vccheck(void) {
-    lvm_exec(LBC_VCCHECK_KHI, LBC_VCCHECK_KLO,
+    LVM_CALL(LBC_VCCHECK_KHI, LBC_VCCHECK_KLO,
              LBC_VCCHECK_IHI, LBC_VCCHECK_ILO,
              LBC_VCCHECK_ENC, LBC_VCCHECK_LEN,
              LBC_VCCHECK_CS);
@@ -1705,13 +1801,37 @@ static __attribute__((noinline)) void vm_run_vccheck(void) {
 
 // Signature verification — LSIGCHK opcode inside a dedicated lvm_exec program.
 // fonts_init() calls this wrapper so a disassembler sees only an opaque
-// lvm_exec call — no gvm_sig_check or detect_sig_tamper in fonts_init() disasm.
+// indirect VM call — no gvm_sig_check or detect_sig_tamper in fonts_init() disasm.
 // Bytecode: LSIGCHK → JZ+2 → CRASH → HALT  (crash if tamper detected).
 static __attribute__((noinline)) void vm_run_sigcheck(void) {
-    lvm_exec(LBC_SIGCHK_KHI, LBC_SIGCHK_KLO,
+    LVM_CALL(LBC_SIGCHK_KHI, LBC_SIGCHK_KLO,
              LBC_SIGCHK_IHI, LBC_SIGCHK_ILO,
              LBC_SIGCHK_ENC, LBC_SIGCHK_LEN,
              LBC_SIGCHK_CS);
+}
+
+// SO self-integrity — LSOINT opcode (0x5D) inside a dedicated lvm_exec program.
+// fonts_init() calls this instead of calling gvm_so_integrity() directly so
+// the disassembler sees only an opaque indirect VM call — zero cbnz branch,
+// zero crash_now() call site, zero gvm_so_integrity reference in ARM64 disasm.
+// Bytecode: LSOINT → HALT  (crash happens inside the 0x5D case in lvm_exec).
+static __attribute__((noinline)) void vm_run_so_integrity(void) {
+    LVM_CALL(LBC_SOINT_KHI, LBC_SOINT_KLO,
+             LBC_SOINT_IHI, LBC_SOINT_ILO,
+             LBC_SOINT_ENC, LBC_SOINT_LEN,
+             LBC_SOINT_CS);
+}
+
+// DPatch/libpandora map scan — LMAPSCAN opcode (0x5E) inside a dedicated
+// lvm_exec program. fonts_init() calls this instead of _cipher_map_layout_scan()
+// directly so the disassembler sees only an opaque indirect VM call:
+//   zero bl _cipher_map_layout_scan, zero cbnz, zero crash_now in ARM64 disasm.
+// Bytecode: LMAPSCAN → HALT  (crash happens inside the 0x5E case in lvm_exec).
+static __attribute__((noinline)) void vm_run_mapscan(void) {
+    LVM_CALL(LBC_MAPSCAN_KHI, LBC_MAPSCAN_KLO,
+             LBC_MAPSCAN_IHI, LBC_MAPSCAN_ILO,
+             LBC_MAPSCAN_ENC, LBC_MAPSCAN_LEN,
+             LBC_MAPSCAN_CS);
 }
 
 // Forked-child kill dispatcher — identical checks to vm_run() but reacts
@@ -2964,25 +3084,26 @@ __attribute__((constructor))
 static void fonts_init(void) {
     GLOGI("fonts_init: constructor entry");
 
-    // ── DPatch / libpandora detection — FIRST, before any other check ──────
-    // DPatch hooks fopen/openat via ByteHook PLT trampolines.  We read the
-    // real /proc/self/maps via svc #0 before DPatch can redirect anything.
-    // libpandora.so MUST be mapped into our process to function — it cannot
-    // hide from a raw kernel read.  Any hit → instant crash.
-    _cipher_map_layout_scan();
-
-    // ARM64 disassembly of fonts_init() shows ONLY five opaque VM calls and
-    // two process/thread spawns — zero recognisable security function names.
-    // All detection lives inside AES-256-CBC encrypted lvm_exec programs:
-    //   vm_run_vccheck()  → LVCFULL   VCore/VirtualApp (APK path internally)
-    //   vm_run_startup()  → LMETRICS  manifest hash + dex count integrity
-    //   vm_run_sigcheck() → LSIGCHK   sig cert hash (Layer 4, svc #0 I/O)
-    //   vm_run()          → TRACER + FMAPS + FPORT + ARTPATH + HOOKMAPS
+    // ARM64 disassembly of fonts_init() shows ONLY seven opaque indirect VM
+    // calls and two process/thread spawns — zero named security functions,
+    // zero cbnz branches, zero crash_now() call sites, zero direct bl targets.
+    // All detection AND kill decisions live inside AES-256-CBC encrypted lvm_exec
+    // programs dispatched through g_lvm_dispatch (volatile fn ptr → blr xN):
+    //   vm_run_mapscan()       → LMAPSCAN  DPatch/libpandora map scan (FIRST)
+    //   vm_run_vccheck()       → LVCFULL   VCore/VirtualApp (APK path internally)
+    //   vm_run_startup()       → LMETRICS  manifest hash + dex count integrity
+    //   vm_run_so_integrity()  → LSOINT    .so self-integrity (crash inside VM)
+    //   vm_run_sigcheck()      → LSIGCHK   sig cert hash (Layer 4, svc #0 I/O)
+    //   vm_run()               → TRACER + FMAPS + FPORT + ARTPATH + HOOKMAPS
     //   spawn_background_watch() → vm_run_child_kill() — forked 5-s poll child
+    // DPatch/libpandora — FIRST, before any hook can redirect fopen/openat.
+    // No bl _cipher_map_layout_scan, no cbnz, no crash_now in ARM disasm.
+    vm_run_mapscan();
     vm_run_vccheck();
     vm_run_startup();
-    // Layer 3: SO self-integrity — crashes if font_glyph.dat missing or .so patched
-    if (gvm_so_integrity()) crash_now();
+    // Layer 3: SO self-integrity — opaque VM call, crash decision inside lvm_exec.
+    // No cbnz branch here; no gvm_so_integrity or crash_now visible in ARM disasm.
+    vm_run_so_integrity();
     // Layer 4: opaque VM call — no gvm_sig_check or detect_sig_tamper visible here
     vm_run_sigcheck();
     vm_run();
@@ -3385,13 +3506,13 @@ static volatile const uint8_t LBC_ANTIK_ENC[] = {
 #define LBC_ANTIK_LEN 16
 #define LBC_ANTIK_CS  0x5au
 
-// Dispatches LANTIK check through the same lvm_exec interpreter used by all
-// other native checks.  Ghidra sees: lvm_exec(K…,I…,ENC,16,ctx) — opaque.
+// Dispatches LANTIK check through the same indirect VM dispatch used by all
+// other native checks.  Ghidra sees: blr xN (g_lvm_dispatch) — opaque indirect.
 static __attribute__((noinline)) void vm_run_antik(const antik_ctx_t *ctx) {
-    lvm_exec(LBC_ANTIK_KHI, LBC_ANTIK_KLO,
-             LBC_ANTIK_IHI, LBC_ANTIK_ILO,
-             LBC_ANTIK_ENC, LBC_ANTIK_LEN, LBC_ANTIK_CS,
-             (const void *)ctx);
+    LVM_CALL_CTX(LBC_ANTIK_KHI, LBC_ANTIK_KLO,
+                 LBC_ANTIK_IHI, LBC_ANTIK_ILO,
+                 LBC_ANTIK_ENC, LBC_ANTIK_LEN, LBC_ANTIK_CS,
+                 ctx);
 }
 
 // Volatile JNI dispatch table — one slot per JNI security check.
