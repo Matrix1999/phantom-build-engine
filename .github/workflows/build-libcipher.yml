@@ -108,12 +108,11 @@ jobs:
           AMICE_PASSES=(
             # ── VMP ───────────────────────────────────────────────────────────
             AMICE_VM_VIRTUALIZE=true
-            AMICE_CUSTOM_CALLING_CONV=true
 
             # ── Control flow ───────────────────────────────────────────────────
             AMICE_FLATTEN=true
             AMICE_FLATTEN_MODE=dominator
-            AMICE_FLATTEN_LOOP_COUNT=7
+            AMICE_FLATTEN_LOOP_COUNT=3
             AMICE_FLATTEN_ALWAYS_INLINE=true
 
             AMICE_BOGUS_CONTROL_FLOW=true
@@ -123,20 +122,20 @@ jobs:
 
             AMICE_LOWER_SWITCH=true
             AMICE_SPLIT_BASIC_BLOCK=true
-            AMICE_SPLIT_BASIC_BLOCK_NUMS=5
+            AMICE_SPLIT_BASIC_BLOCK_NUMS=6
             AMICE_SHUFFLE_BLOCKS=true
             AMICE_BASIC_BLOCK_OUTLINING=true
 
             # ── Indirect flow ──────────────────────────────────────────────────
             AMICE_INDIRECT_CALL=true
             AMICE_INDIRECT_BRANCH=true
-            AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,shuffle_table
+            AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,chained_dummy_blocks,encrypt_block_index,shuffle_table
 
             # ── Arithmetic & data ──────────────────────────────────────────────
             AMICE_MBA=true
             AMICE_MBA_AUX_COUNT=4
-            AMICE_MBA_REWRITE_OPS=24
-            AMICE_MBA_REWRITE_DEPTH=3
+            AMICE_MBA_REWRITE_OPS=48
+            AMICE_MBA_REWRITE_DEPTH=5
 
             AMICE_ALIAS_ACCESS=true
             AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
