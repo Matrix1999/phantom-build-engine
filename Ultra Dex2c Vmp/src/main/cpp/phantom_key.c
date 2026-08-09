@@ -389,6 +389,7 @@ typedef struct {
     unsigned long startAddrinMem;
 } execSection;
 
+#define NUM_LIBS 2  // libphantom.so (idx 0) + libc.so (idx 1)
 static execSection *elfSectionArr[NUM_LIBS] = {NULL};
 
 #if defined(__LP64__)
@@ -979,7 +980,6 @@ static inline void detect_frida_namedpipe(void) {
             if (_linj_found) {
                 PH_NUKE("Frida named pipe detected — fd link: %s", buf);
                 closedir(dir); nuke_app();
-            }
             }
         }
     }
