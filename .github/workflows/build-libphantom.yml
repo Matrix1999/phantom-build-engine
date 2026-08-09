@@ -105,6 +105,7 @@ jobs:
 
           AMICE_PASSES=(
             AMICE_VM_VIRTUALIZE=true
+            AMICE_VM_FLATTEN=true
             AMICE_VM_EMIT_MARKERS=true
             AMICE_VM_DUMP_BYTECODE=true
 
