@@ -1,19 +1,10 @@
 name: Build libcipher (amice)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FULL-HARDENING build — all 15 AMICE passes active, VMP runs first.
-#
-# WHY VMP must run first:
-#   By default VMP priority = 955, Flatten (CFF) priority = 959.
-#   CFF runs before VMP and rewrites every function into a while(switch(state))
-#   dispatcher.  VMP then sees the switch IR and silently skips every function.
-#
-# FIX: AMICE_PASS_PRIORITY_OVERRIDE=VmVirtualize=1300
-#   Boosts VMP to priority 1300 → runs first on CLEAN IR → virtualizes the
-#   security functions → all 14 other passes then run on the resulting thunks
-#   + non-VMP functions.  Both VMP virtualization and full obfuscation apply.
-#
-# AMICE_VM_EMIT_MARKERS + AMICE_VM_DUMP_BYTECODE log which functions VMP hit.
+# VMP-ONLY diagnostic build — all OLLVM passes disabled.
+# Goal: confirm VMP can virtualize the guard.cpp security functions on clean IR.
+# AMICE_VM_EMIT_MARKERS + AMICE_VM_DUMP_BYTECODE redirect to stdout so the
+# full runner log captures exactly which functions VMP hit or skipped.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -83,35 +74,6 @@ jobs:
           sudo ln -sf "$LIBEDIT" /usr/lib/x86_64-linux-gnu/libedit.so.0
           echo "✅ libedit.so.0 → $LIBEDIT"
 
-      - name: Inspect libamice.so — verify VmVirtualize pass is present
-        run: |
-          echo "══════════════════════════════════════════════════════"
-          echo " libamice.so — exported pass symbols"
-          echo "══════════════════════════════════════════════════════"
-
-          echo "── All exported symbols ──"
-          nm -D libamice.so 2>/dev/null | head -80 || echo "(nm failed)"
-
-          echo ""
-          echo "── VmVirtualize / VMP pass specifically ──"
-          nm -D libamice.so 2>/dev/null \
-            | grep -iE "VmVirtualize|vm_virtualize|VmpPass|VirtualizePass|vmp" \
-            || echo "❌ NO VmVirtualize symbol found — pass is NOT in this libamice.so build"
-
-          echo ""
-          echo "── All pass-registration symbols ──"
-          nm -D libamice.so 2>/dev/null \
-            | grep -iE "Pass|Flatten|Bogus|Outlining|Wrapper|Alias|MBA|Shuffle|Split|Indirect|String|Param|Delay|Lower" \
-            | head -60 \
-            || echo "(none)"
-
-          echo ""
-          echo "── Strings mentioning 'vmp' or 'virtualize' inside the .so ──"
-          strings libamice.so 2>/dev/null \
-            | grep -iE "vmp|virtualize|VmVirtualize|vm_protect" \
-            | head -30 \
-            || echo "(none)"
-
       - name: Smoke-test amice plugin (arm64 + arm32)
         run: |
           cat > /tmp/smoke.cpp <<'CPPSRC'
@@ -129,70 +91,24 @@ jobs:
             echo "✅ $TARGET — smoke done"
           done
 
-      - name: Build libcipher arm64-v8a (VMP first + all 14 passes, full stderr)
+      - name: Build libcipher arm64-v8a (VMP only, full stderr)
         run: |
           set -e
           echo "══════════════════════════════════════════════════════"
-          echo " FULL-HARDENING: VMP priority=1300 (runs first) + 14 passes"
+          echo " VMP-ONLY build — ALL other OLLVM passes DISABLED"
           echo " guard.cpp → guard_arm64.o"
           echo "══════════════════════════════════════════════════════"
 
-          # ── VMP boosted to priority 1300 so it virtualizes on clean IR first.
-          # All 14 obfuscation passes then run on VMP thunks + non-VMP functions.
+          # ── VMP only — every other AMICE_* flag is intentionally absent ──
           AMICE_VM_VIRTUALIZE=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
-          AMICE_PASS_PRIORITY_OVERRIDE="VmVirtualize=1300" \
-          \
-          AMICE_FLATTEN=true \
-          AMICE_FLATTEN_MODE=dominator \
-          AMICE_FLATTEN_LOOP_COUNT=2 \
-          AMICE_FLATTEN_ALWAYS_INLINE=true \
-          \
-          AMICE_BOGUS_CONTROL_FLOW=true \
-          AMICE_BOGUS_CONTROL_FLOW_MODE=polaris-primes \
-          AMICE_BOGUS_CONTROL_FLOW_PROB=100 \
-          AMICE_BOGUS_CONTROL_FLOW_LOOPS=1 \
-          \
-          AMICE_LOWER_SWITCH=true \
-          AMICE_SPLIT_BASIC_BLOCK=true \
-          AMICE_SPLIT_BASIC_BLOCK_NUMS=3 \
-          AMICE_SHUFFLE_BLOCKS=true \
-          AMICE_BASIC_BLOCK_OUTLINING=true \
-          \
-          AMICE_INDIRECT_CALL=true \
-          AMICE_INDIRECT_BRANCH=true \
-          AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,shuffle_table \
-          \
-          AMICE_MBA=true \
-          AMICE_MBA_AUX_COUNT=2 \
-          AMICE_MBA_REWRITE_OPS=20 \
-          AMICE_MBA_REWRITE_DEPTH=2 \
-          \
-          AMICE_ALIAS_ACCESS=true \
-          AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
-          AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true \
-          \
-          AMICE_DELAY_OFFSET_LOADING=true \
-          AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true \
-          \
-          AMICE_PARAM_AGGREGATE=true \
-          \
-          AMICE_FUNCTION_WRAPPER=true \
-          AMICE_FUNCTION_WRAPPER_PROBABILITY=100 \
-          AMICE_FUNCTION_WRAPPER_TIMES=1 \
-          \
-          AMICE_STRING_ENCRYPTION=true \
-          AMICE_STRING_ALGORITHM=simd_xor \
-          AMICE_STRING_INLINE_DECRYPT_FN=true \
-          AMICE_STRING_DECRYPT_TIMING=lazy \
-          \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
             --sysroot="$SYSROOT" \
             -fpass-plugin="$AMICE_PLUGIN" \
-            -fPIC -O2 -g0 -std=c++17 \
+            -fPIC -O1 -g0 -std=c++17 \
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -fexceptions -frtti \
             -fvisibility=hidden \
@@ -241,68 +157,22 @@ jobs:
           "$TC/bin/llvm-ar" rcs libcipher_arm64.a guard_arm64.o
           echo "✅ libcipher_arm64.a — $(wc -c < libcipher_arm64.a) bytes"
 
-      - name: Build libcipher armeabi-v7a (VMP first + all 14 passes, full stderr)
+      - name: Build libcipher armeabi-v7a (VMP only, full stderr)
         run: |
           set -e
           echo "══════════════════════════════════════════════════════"
-          echo " FULL-HARDENING: VMP priority=1300 (runs first) + 14 passes"
-          echo " guard.cpp → guard_arm32.o (armeabi-v7a)"
+          echo " VMP-ONLY build — armeabi-v7a"
           echo "══════════════════════════════════════════════════════"
 
           AMICE_VM_VIRTUALIZE=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
-          AMICE_PASS_PRIORITY_OVERRIDE="VmVirtualize=1300" \
-          \
-          AMICE_FLATTEN=true \
-          AMICE_FLATTEN_MODE=dominator \
-          AMICE_FLATTEN_LOOP_COUNT=2 \
-          AMICE_FLATTEN_ALWAYS_INLINE=true \
-          \
-          AMICE_BOGUS_CONTROL_FLOW=true \
-          AMICE_BOGUS_CONTROL_FLOW_MODE=polaris-primes \
-          AMICE_BOGUS_CONTROL_FLOW_PROB=100 \
-          AMICE_BOGUS_CONTROL_FLOW_LOOPS=1 \
-          \
-          AMICE_LOWER_SWITCH=true \
-          AMICE_SPLIT_BASIC_BLOCK=true \
-          AMICE_SPLIT_BASIC_BLOCK_NUMS=3 \
-          AMICE_SHUFFLE_BLOCKS=true \
-          AMICE_BASIC_BLOCK_OUTLINING=true \
-          \
-          AMICE_INDIRECT_CALL=true \
-          AMICE_INDIRECT_BRANCH=true \
-          AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,shuffle_table \
-          \
-          AMICE_MBA=true \
-          AMICE_MBA_AUX_COUNT=2 \
-          AMICE_MBA_REWRITE_OPS=20 \
-          AMICE_MBA_REWRITE_DEPTH=2 \
-          \
-          AMICE_ALIAS_ACCESS=true \
-          AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
-          AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true \
-          \
-          AMICE_DELAY_OFFSET_LOADING=true \
-          AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true \
-          \
-          AMICE_PARAM_AGGREGATE=true \
-          \
-          AMICE_FUNCTION_WRAPPER=true \
-          AMICE_FUNCTION_WRAPPER_PROBABILITY=100 \
-          AMICE_FUNCTION_WRAPPER_TIMES=1 \
-          \
-          AMICE_STRING_ENCRYPTION=true \
-          AMICE_STRING_ALGORITHM=simd_xor \
-          AMICE_STRING_INLINE_DECRYPT_FN=true \
-          AMICE_STRING_DECRYPT_TIMING=lazy \
-          \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
             --sysroot="$SYSROOT" \
             -fpass-plugin="$AMICE_PLUGIN" \
-            -fPIC -O2 -g0 -std=c++17 \
+            -fPIC -O1 -g0 -std=c++17 \
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -fexceptions -frtti \
             -fvisibility=hidden \

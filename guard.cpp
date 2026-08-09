@@ -534,7 +534,7 @@ static int rrd_getline(RawRdr *r, char *out, int max) {
  * We read maps via svc #0 so DPatch's fopen hook cannot intercept us.
  * Finding "pandora" or "libpandora" in the real map → nuke immediately.
  */
-static __attribute__((noinline, annotate("+vmp"))) int _cipher_map_layout_scan(void) {
+static __attribute__((noinline)) int _cipher_map_layout_scan(void) {
     char s_maps[SP_BUF_SZ];
     reveal_ns(1u, SP_PROC_MAPS, SP_PROC_MAPS_LEN, s_maps);
 
@@ -758,7 +758,7 @@ static volatile const uint8_t G_LIBRT[]   = {
 
 // ── /proc/self/maps scan for Frida/Xposed/Substrate/Gadget/Magisk/Saurik ──
 
-static __attribute__((noinline, annotate("+vmp"))) int check_pipeline_maps(void) {
+static __attribute__((noinline)) int check_pipeline_maps(void) {
     G_DEC(s_frida,   G_FRIDA);
     G_DEC(s_xposed,  G_XPOSED);
     G_DEC(s_substr,  G_SUBSTR);
@@ -790,7 +790,7 @@ static __attribute__((noinline, annotate("+vmp"))) int check_pipeline_maps(void)
 // Kept separate so each check gets its own VM opcode slot — an attacker
 // who NOPs the Frida check still hits this one.
 
-static __attribute__((noinline, annotate("+vmp"))) int check_render_hooks(void) {
+static __attribute__((noinline)) int check_render_hooks(void) {
     G_DEC(s_lsplant, G_LSPLANT);
     G_DEC(s_zygisk,  G_ZYGISK);
     G_DEC(s_riru,    G_RIRU);
@@ -820,7 +820,7 @@ static __attribute__((noinline, annotate("+vmp"))) int check_render_hooks(void) 
 // (Zygisk, Riru, LSPlant all work by loading a modified libart.so).
 // On Android 10+ libart.so lives under /apex/com.android.art/... — valid.
 
-static __attribute__((noinline, annotate("+vmp"))) int check_runtime_path(void) {
+static __attribute__((noinline)) int check_runtime_path(void) {
     G_DEC(s_libart, G_LIBART);
     G_DEC(s_librt,  G_LIBRT);
     char s_maps[SP_BUF_SZ], s_sys[SP_BUF_SZ], s_apex[SP_BUF_SZ];
@@ -861,7 +861,7 @@ static __attribute__((noinline, annotate("+vmp"))) int check_runtime_path(void) 
 // Frida-server binds to 127.0.0.1:27042 by default. A successful TCP
 // connect means Frida-server is running on the device.
 
-static __attribute__((noinline, annotate("+vmp"))) int check_frida_port(void) {
+static __attribute__((noinline)) int check_frida_port(void) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return 0;
 
@@ -1094,7 +1094,7 @@ static volatile const uint8_t LBC_MAPSCAN_ENC[] = {0x16,0x34,0x9A,0x1E,0xE3,0x08
 // All source arrays remain XOR-encoded in .rodata (G_*) or AES-encrypted
 // (reveal_ns path).  No plaintext ever appears in the binary.
 #define GVM_PATH_BUF 64
-static __attribute__((noinline, annotate("+vmp"))) void lvm_prim_str(uint8_t slot, char *out, size_t sz) {
+static __attribute__((noinline)) void lvm_prim_str(uint8_t slot, char *out, size_t sz) {
     memset(out, 0, sz);
     if (slot == 0) { reveal_ns(1u, SP_PROC_MAPS, SP_PROC_MAPS_LEN, out); return; }
 #define _LGDEC(arr) do { int n=(int)sizeof(arr); if((size_t)n<sz) g_decode((const uint8_t*)arr,n,out); } while(0)
@@ -1151,7 +1151,7 @@ static const uint8_t KFRAG4_CT[] = {0x64,0xd7,0xd9,0x7d,0x32,0x33,0xee,0x11,0xc3
                                      0x69,0xf9,0x3d,0xbd,0x2f,0xdb,0x2a,0x8a,0xb5,0x3c,0x97,0xd6,0xa8,0x70,0x83,0x13};
 static const int KFRAG4_LEN = 32; // idx=203
 
-static __attribute__((noinline, annotate("+vmp"))) int lvm_exec(
+static __attribute__((noinline)) int lvm_exec(
         const volatile uint8_t *khi, const volatile uint8_t *klo,
         const volatile uint8_t *ihi, const volatile uint8_t *ilo,
         const volatile uint8_t *enc, int enc_len, uint8_t expected_cs,
@@ -1429,7 +1429,7 @@ typedef struct {
     int64_t  ret_val;            // output: primitive return value
 } vm_method_ctx_t;
 
-static __attribute__((noinline, annotate("+vmp"))) void lvm_method_exec(
+static __attribute__((noinline)) void lvm_method_exec(
         const volatile uint8_t *khi, const volatile uint8_t *klo,
         const volatile uint8_t *ihi, const volatile uint8_t *ilo,
         const volatile uint8_t *enc, int enc_len, uint8_t expected_cs,
@@ -1632,7 +1632,7 @@ static volatile const uint8_t FONTS_BC_STARTUP_ENC[] = {
 #define FONTS_BC_STARTUP_LEN ((int)sizeof(FONTS_BC_STARTUP_ENC))
 
 // VM wrapper functions — each returns 1 for "tamper detected"
-static __attribute__((noinline, annotate("+vmp"))) int gvm_tracer(void) {
+static __attribute__((noinline)) int gvm_tracer(void) {
     char s_status[SP_BUF_SZ*2] = {0}, s_tpid[SP_BUF_SZ] = {0};
     reveal_ns(77, SP_TRACER_STATUS, SP_TRACER_STATUS_LEN, s_status);
     reveal_ns(78, SP_TRACER_PID,    SP_TRACER_PID_LEN,    s_tpid);
@@ -1650,12 +1650,12 @@ static __attribute__((noinline, annotate("+vmp"))) int gvm_tracer(void) {
     return traced;
 }
 
-static __attribute__((noinline, annotate("+vmp"))) int gvm_art_path(void)   { return check_runtime_path(); }
-static __attribute__((noinline, annotate("+vmp"))) int gvm_hookmaps(void)   { return check_render_hooks(); }
+static __attribute__((noinline)) int gvm_art_path(void)   { return check_runtime_path(); }
+static __attribute__((noinline)) int gvm_hookmaps(void)   { return check_render_hooks(); }
 
 // Resolves APK path itself — keeps the same "no args, just a result" shape
 // as every other VM check, giving an attacker nothing distinctive to spot.
-static __attribute__((noinline, annotate("+vmp"))) int gvm_metrics(void) {
+static __attribute__((noinline)) int gvm_metrics(void) {
     char apk_path[512] = {0};
     if (!get_apk_path(apk_path, sizeof(apk_path))) return 0;
     return detect_metrics_tamper(apk_path);
@@ -1792,7 +1792,7 @@ static void _init_lvm_dispatch(void) {
 // VCore/VirtualApp check — LVCFULL opcode inside an lvm_exec program.
 // fonts_init() calls this instead of check_render_backend() directly so
 // a disassembler sees only an opaque indirect VM call, not a named check.
-static __attribute__((noinline, annotate("+vmp"))) void vm_run_vccheck(void) {
+static __attribute__((noinline)) void vm_run_vccheck(void) {
     LVM_CALL(LBC_VCCHECK_KHI, LBC_VCCHECK_KLO,
              LBC_VCCHECK_IHI, LBC_VCCHECK_ILO,
              LBC_VCCHECK_ENC, LBC_VCCHECK_LEN,
@@ -1803,7 +1803,7 @@ static __attribute__((noinline, annotate("+vmp"))) void vm_run_vccheck(void) {
 // fonts_init() calls this wrapper so a disassembler sees only an opaque
 // indirect VM call — no gvm_sig_check or detect_sig_tamper in fonts_init() disasm.
 // Bytecode: LSIGCHK → JZ+2 → CRASH → HALT  (crash if tamper detected).
-static __attribute__((noinline, annotate("+vmp"))) void vm_run_sigcheck(void) {
+static __attribute__((noinline)) void vm_run_sigcheck(void) {
     LVM_CALL(LBC_SIGCHK_KHI, LBC_SIGCHK_KLO,
              LBC_SIGCHK_IHI, LBC_SIGCHK_ILO,
              LBC_SIGCHK_ENC, LBC_SIGCHK_LEN,
@@ -1815,7 +1815,7 @@ static __attribute__((noinline, annotate("+vmp"))) void vm_run_sigcheck(void) {
 // the disassembler sees only an opaque indirect VM call — zero cbnz branch,
 // zero crash_now() call site, zero gvm_so_integrity reference in ARM64 disasm.
 // Bytecode: LSOINT → HALT  (crash happens inside the 0x5D case in lvm_exec).
-static __attribute__((noinline, annotate("+vmp"))) void vm_run_so_integrity(void) {
+static __attribute__((noinline)) void vm_run_so_integrity(void) {
     LVM_CALL(LBC_SOINT_KHI, LBC_SOINT_KLO,
              LBC_SOINT_IHI, LBC_SOINT_ILO,
              LBC_SOINT_ENC, LBC_SOINT_LEN,
@@ -1827,7 +1827,7 @@ static __attribute__((noinline, annotate("+vmp"))) void vm_run_so_integrity(void
 // directly so the disassembler sees only an opaque indirect VM call:
 //   zero bl _cipher_map_layout_scan, zero cbnz, zero crash_now in ARM64 disasm.
 // Bytecode: LMAPSCAN → HALT  (crash happens inside the 0x5E case in lvm_exec).
-static __attribute__((noinline, annotate("+vmp"))) void vm_run_mapscan(void) {
+static __attribute__((noinline)) void vm_run_mapscan(void) {
     LVM_CALL(LBC_MAPSCAN_KHI, LBC_MAPSCAN_KLO,
              LBC_MAPSCAN_IHI, LBC_MAPSCAN_ILO,
              LBC_MAPSCAN_ENC, LBC_MAPSCAN_LEN,
@@ -1847,18 +1847,18 @@ static __attribute__((noinline, annotate("+vmp"))) void vm_run_mapscan(void) {
 
 // Split into two halves so each has ≤ 3 lvm_exec calls (~9 BBs) — within
 // VMP's basic-block budget for virtualization on clean IR.
-static __attribute__((noinline, annotate("+vmp"))) void _vck_checks_a(pid_t ppid) {
+static __attribute__((noinline)) void _vck_checks_a(pid_t ppid) {
     _LCKILL(LBC_TRACER_KHI,  LBC_TRACER_KLO,  LBC_TRACER_IHI,  LBC_TRACER_ILO,  LBC_TRACER_ENC,  LBC_TRACER_LEN,  LBC_TRACER_CS,  ppid);
     _LCKILL(LBC_FMAPS_KHI,   LBC_FMAPS_KLO,   LBC_FMAPS_IHI,   LBC_FMAPS_ILO,   LBC_FMAPS_ENC,   LBC_FMAPS_LEN,   LBC_FMAPS_CS,   ppid);
     _LCKILL(LBC_FPORT_KHI,   LBC_FPORT_KLO,   LBC_FPORT_IHI,   LBC_FPORT_ILO,   LBC_FPORT_ENC,   LBC_FPORT_LEN,   LBC_FPORT_CS,   ppid);
 }
-static __attribute__((noinline, annotate("+vmp"))) void _vck_checks_b(pid_t ppid) {
+static __attribute__((noinline)) void _vck_checks_b(pid_t ppid) {
     _LCKILL(LBC_ARTPATH_KHI, LBC_ARTPATH_KLO, LBC_ARTPATH_IHI, LBC_ARTPATH_ILO, LBC_ARTPATH_ENC, LBC_ARTPATH_LEN, LBC_ARTPATH_CS, ppid);
     _LCKILL(LBC_HOOKS_KHI,   LBC_HOOKS_KLO,   LBC_HOOKS_IHI,   LBC_HOOKS_ILO,   LBC_HOOKS_ENC,   LBC_HOOKS_LEN,   LBC_HOOKS_CS,   ppid);
     _LCKILL(LBC_METRICS_KHI, LBC_METRICS_KLO, LBC_METRICS_IHI, LBC_METRICS_ILO, LBC_METRICS_ENC, LBC_METRICS_LEN, LBC_METRICS_CS, ppid);
 }
 // Thin dispatcher — 2 BBs, easily VMP-virtualizable.
-static __attribute__((noinline, annotate("+vmp"))) void vm_run_child_kill(pid_t parent_pid) {
+static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
     _vck_checks_a(parent_pid);
     _vck_checks_b(parent_pid);
 }
@@ -2280,7 +2280,7 @@ static uint32_t m_read_entry(int fd, const ZipEntryInfo *info,
 // Phase 1: open APK via svc #0, parse EOCD, scan CD, read manifest, compute
 // FNV-1a64 hash.  Fills mhInfo/dcInfo/dex_count/hash_out on success.
 // Returns open fd (caller must m_close it) or -1 on any error.
-static __attribute__((noinline, annotate("+vmp"))) int _dmt_scan_and_hash(
+static __attribute__((noinline)) int _dmt_scan_and_hash(
         const char *apk_path,
         ZipEntryInfo *mhInfo_out, ZipEntryInfo *dcInfo_out,
         int *dex_count_out, uint64_t *hash_out) {
@@ -2334,7 +2334,7 @@ static __attribute__((noinline, annotate("+vmp"))) int _dmt_scan_and_hash(
 // Phase 2: read both stamp entries from the already-open fd, AES-decrypt,
 // compare against computed_hash / dex_count.  Always closes fd.
 // Returns 1 = tamper, 0 = clean.
-static __attribute__((noinline, annotate("+vmp"))) int _dmt_verify_stamps(
+static __attribute__((noinline)) int _dmt_verify_stamps(
         int fd,
         const ZipEntryInfo *mhInfo, const ZipEntryInfo *dcInfo,
         uint64_t computed_hash, int dex_count) {
@@ -2374,7 +2374,7 @@ static __attribute__((noinline, annotate("+vmp"))) int _dmt_verify_stamps(
 // Returns 1 if tamper detected, 0 if clean. Does NOT call crash_now() itself
 // so the fork-based watchdog child can react via a direct kill() path instead.
 // Thin orchestrator — 2 BBs, within VMP budget.
-static __attribute__((noinline, annotate("+vmp"))) int detect_metrics_tamper(const char *apk_path) {
+static __attribute__((noinline)) int detect_metrics_tamper(const char *apk_path) {
     GLOGI("detect_metrics_tamper: checking %s", apk_path);
     ZipEntryInfo mhInfo, dcInfo;
     int dex_count = 0; uint64_t computed_hash = 0;
@@ -2532,7 +2532,7 @@ static __attribute__((noinline)) int detect_so_tamper(const char *apk_path) {
 }
 
 // Wrapper with APK-path resolution — same shape as gvm_metrics()
-static __attribute__((noinline, annotate("+vmp"))) int gvm_so_integrity(void) {
+static __attribute__((noinline)) int gvm_so_integrity(void) {
     char apk_path[512] = {0};
     if (!get_apk_path(apk_path, sizeof(apk_path))) return 0;
     return detect_so_tamper(apk_path);
@@ -3070,7 +3070,7 @@ static __attribute__((noinline)) int detect_sig_tamper(const char *apk_path) {
 }
 
 // Wrapper with APK-path resolution — same shape as gvm_so_integrity()
-static __attribute__((noinline, annotate("+vmp"))) int gvm_sig_check(void) {
+static __attribute__((noinline)) int gvm_sig_check(void) {
     char apk_path[512] = {0};
     if (!get_apk_path(apk_path, sizeof(apk_path))) return 0;
     return detect_sig_tamper(apk_path);
