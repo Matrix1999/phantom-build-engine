@@ -120,7 +120,7 @@ jobs:
 
             AMICE_LOWER_SWITCH=true
             AMICE_SPLIT_BASIC_BLOCK=true
-            AMICE_SPLIT_BASIC_BLOCk_NUMS=6
+            AMICE_SPLIT_BASIC_BLOCK_NUMS=6
             AMICE_SHUFFLE_BLOCKS=true
             AMICE_BASIC_BLOCK_OUTLINING=true
 
