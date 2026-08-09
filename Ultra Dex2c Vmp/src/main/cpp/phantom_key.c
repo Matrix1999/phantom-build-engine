@@ -381,6 +381,50 @@ static const uint8_t _K_FRIDA_WS_REQ[] = {0xB4,0xD3,0x7C,0x19};
 
 // ── All strings are stack-local (PH_STK) — no .bss buffers ─────────────────
 
+// ── Anti-emulator encrypted strings ─────────────────────────────────────────
+static const uint8_t _E_CPUINFO[13]   = {0x3E,0x52,0x41,0x2B,0x72,0x0D,0x50,0x34,0x64,0x4B,0x5D,0x22,0x7E};
+static const uint8_t _K_CPUINFO[]     = {0x11,0x22,0x33,0x44};
+static const uint8_t _E_HARDWARE[8]   = {0x1D,0x07,0x05,0xEC,0x22,0x07,0x05,0xED};
+static const uint8_t _K_HARDWARE[]    = {0x55,0x66,0x77,0x88};
+static const uint8_t _E_GOLDFISH[8]   = {0xCD,0xD4,0xA0,0xB9,0xCC,0xD2,0xBF,0xB5};
+static const uint8_t _K_GOLDFISH[]    = {0xAA,0xBB,0xCC,0xDD};
+static const uint8_t _E_RANCHU[6]     = {0x8C,0xBD,0xD4,0xFB,0x96,0xA9};
+static const uint8_t _K_RANCHU[]      = {0xFE,0xDC,0xBA,0x98};
+static const uint8_t _E_VBOX[4]       = {0x65,0x55,0x9F,0x75};
+static const uint8_t _K_VBOX[]        = {0x13,0x37,0xF0,0x0D};
+static const uint8_t _E_GENY[10]      = {0xAD,0x9B,0xBE,0x74,0xA7,0x91,0xA4,0x64,0xA5,0x90};
+static const uint8_t _K_GENY[]        = {0xCA,0xFE,0xD0,0x0D};
+static const uint8_t _E_QEMU_PIPE[14] = {0x59,0x30,0x57,0x66,0x59,0x25,0x57,0x7D,0x03,0x0B,0x42,0x79,0x06,0x31};
+static const uint8_t _K_QEMU_PIPE[]   = {0x76,0x54,0x32,0x10};
+static const uint8_t _E_QEMU_SOCK[17] = {0x0C,0x21,0x02,0xFF,0x0C,0x36,0x08,0xEA,0x48,0x20,0x13,0xA6,0x52,0x20,0x0A,0xFC,0x47};
+static const uint8_t _K_QEMU_SOCK[]   = {0x23,0x45,0x67,0x89};
+static const uint8_t _E_GENY_SOCK[17] = {0x84,0xA9,0x8A,0x64,0x84,0xBE,0x80,0x71,0xC0,0xA8,0x9B,0x3D,0xCC,0xA8,0x81,0x6B,0xCF};
+static const uint8_t _K_GENY_SOCK[]   = {0xAB,0xCD,0xEF,0x12};
+
+// ── MBA (Mixed Boolean Arithmetic) macros ────────────────────────────────────
+// Rewrites arithmetic/boolean ops into equivalent but decompiler-hostile forms.
+// IDA/Ghidra pseudocode becomes unreadable; no public un-MBA tool targets AMICE.
+// MBA_ADD(a,b)  = a+b  via (a^b) + 2*(a&b)
+// MBA_EQ0(x)   = x==0 via sign bit of (x|-x) in unsigned 64-bit
+// MBA_NEQ0(x)  = x!=0
+// MBA_AND(a,b) = a&b  via ~(~a|~b)
+// MBA_OR(a,b)  = a|b  via ~(~a&~b)
+// MBA_XOR(a,b) = a^b  via a+b-2*(a&b)
+#define MBA_ADD(a,b)    (((a)^(b)) + (((a)&(b))<<1))
+#define MBA_EQ0(x)      ((((uint64_t)((int64_t)(x)|-(int64_t)(x)))>>63)==0)
+#define MBA_NEQ0(x)     ((((uint64_t)((int64_t)(x)|-(int64_t)(x)))>>63)!=0)
+#define MBA_AND(a,b)    (~(~(a)|~(b)))
+#define MBA_OR(a,b)     (~(~(a)&~(b)))
+#define MBA_XOR(a,b)    ((a)+(b)-(((a)&(b))<<1))
+
+// ── Indirect function call dispatch table ────────────────────────────────────
+// All hot-path detection calls go through this XOR-encrypted pointer table.
+// The key is the address of a stack variable (unique per run via ASLR).
+// Static analysis cannot resolve targets; Frida auto-hook by symbol fails.
+#define PH_FN_COUNT 6
+static volatile uintptr_t g_fn_table[PH_FN_COUNT];
+static volatile uintptr_t g_fn_key;
+
 typedef struct {
     int           execSectionCount;
     unsigned long offset[2];
@@ -1205,6 +1249,132 @@ static void detect_root(void) {
 }
 
 // ?
+// detect_emulator -- QEMU / Genymotion / VirtualBox sandbox detection
+//
+// Signal sources:
+//   1. /proc/cpuinfo Hardware field — "goldfish" / "ranchu" (QEMU) / "vbox"
+//   2. QEMU device nodes: /dev/qemu_pipe, /dev/socket/qemud
+//   3. Genymotion device node: /dev/socket/genyd
+//
+// All strings stack-decrypted per use (PH_STK), wiped immediately after.
+// MBA_NEQ0 used on fd result to confuse decompiler branch analysis.
+// ?
+static void detect_emulator(void) {
+    // 1. /proc/cpuinfo Hardware field
+    {
+        PH_STK(_cpu, _E_CPUINFO, 13, _K_CPUINFO);
+        int fd = my_openat(AT_FDCWD, _cpu, O_RDONLY | O_CLOEXEC, 0);
+        PH_ZERO(_cpu, 14);
+        if (MBA_NEQ0(fd + 1)) {
+            char buf[2048]; my_memset(buf, 0, sizeof(buf));
+            ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
+            my_close(fd);
+            if (n > 0) {
+                buf[n] = '\0';
+                PH_STK(_hw, _E_HARDWARE, 8, _K_HARDWARE);
+                char *hw = my_strstr(buf, _hw);
+                PH_ZERO(_hw, 9);
+                if (hw) {
+                    PH_STK(_gf, _E_GOLDFISH, 8, _K_GOLDFISH);
+                    PH_STK(_rc, _E_RANCHU,   6, _K_RANCHU);
+                    PH_STK(_vb, _E_VBOX,     4, _K_VBOX);
+                    PH_STK(_gn, _E_GENY,    10, _K_GENY);
+                    int hit = MBA_OR(MBA_OR(my_strstr(hw, _gf) != NULL,
+                                           my_strstr(hw, _rc) != NULL),
+                                    MBA_OR(my_strstr(hw, _vb) != NULL,
+                                           my_strstr(hw, _gn) != NULL));
+                    PH_ZERO(_gf,9); PH_ZERO(_rc,7); PH_ZERO(_vb,5); PH_ZERO(_gn,11);
+                    if (hit) nuke_app();
+                }
+            }
+        } else { my_close(fd); }
+    }
+    // 2. QEMU device nodes
+    {
+        PH_STK(_qp, _E_QEMU_PIPE, 14, _K_QEMU_PIPE);
+        int fd = my_openat(AT_FDCWD, _qp, O_RDONLY | O_CLOEXEC, 0);
+        PH_ZERO(_qp, 15);
+        if (MBA_NEQ0(fd + 1)) { my_close(fd); nuke_app(); }
+    }
+    {
+        PH_STK(_qs, _E_QEMU_SOCK, 17, _K_QEMU_SOCK);
+        int fd = my_openat(AT_FDCWD, _qs, O_RDONLY | O_CLOEXEC, 0);
+        PH_ZERO(_qs, 18);
+        if (MBA_NEQ0(fd + 1)) { my_close(fd); nuke_app(); }
+    }
+    // 3. Genymotion
+    {
+        PH_STK(_gs, _E_GENY_SOCK, 17, _K_GENY_SOCK);
+        int fd = my_openat(AT_FDCWD, _gs, O_RDONLY | O_CLOEXEC, 0);
+        PH_ZERO(_gs, 18);
+        if (MBA_NEQ0(fd + 1)) { my_close(fd); nuke_app(); }
+    }
+}
+
+// ?
+// detect_timing -- execution-time anomaly detection
+//
+// A tight 50000-iteration loop takes ~0.5-5 ms on bare metal.
+// Under a debugger / Frida every instruction boundary adds latency:
+//   - GDB single-step: +1-10 ms per iteration
+//   - Frida JS hook:   +50-500 µs per hooked call
+// Threshold: 500 ms = ~100x normal. If exceeded → debugger is attached.
+//
+// Uses raw clock_gettime syscall (bypasses any libc hook on clock functions):
+//   ARM64: __NR_clock_gettime = 113
+//   ARM32: __NR_clock_gettime = 263
+// ?
+static void detect_timing(void) {
+    struct timespec t0, t1;
+#if defined(__aarch64__)
+    raw_syscall_3(113 /*__NR_clock_gettime*/, 1 /*CLOCK_MONOTONIC*/, (long)&t0, 0);
+    volatile uint64_t acc = 0;
+    for (volatile int i = 0; i < 50000; i++) {
+        acc = MBA_XOR(acc, (uint64_t)i * 0xDEADBEEFULL);
+        acc = MBA_ADD(acc, (uint64_t)(i ^ 0xCAFEU));
+    }
+    (void)acc;
+    raw_syscall_3(113, 1, (long)&t1, 0);
+#else
+    syscall(263 /*__NR_clock_gettime*/, 1 /*CLOCK_MONOTONIC*/, &t0);
+    volatile uint32_t acc32 = 0;
+    for (volatile int i = 0; i < 50000; i++) acc32 ^= (uint32_t)i * 0xDEADBEEFU;
+    (void)acc32;
+    syscall(263, 1, &t1);
+#endif
+    long long delta_ns = (long long)(t1.tv_sec  - t0.tv_sec)  * 1000000000LL
+                       + (long long)(t1.tv_nsec - t0.tv_nsec);
+    // Detect delta_ns > 500ms (debugger overhead) using MBA:
+    // diff = delta - threshold
+    // diff > 0  ⟺  sign bit == 0  AND  diff != 0
+    long long _diff = delta_ns - 500000000LL;
+    if (MBA_EQ0((uint64_t)((int64_t)_diff >> 63)) && MBA_NEQ0(_diff)) {
+        nuke_app();
+    }
+}
+
+// ?
+// ph_fn_init -- build the encrypted indirect call table
+//
+// Uses the address of a stack-local variable as the one-time XOR key.
+// ASLR ensures the key (and thus table values) differ on every run.
+// A static-analysis attacker reading g_fn_table sees only XOR'd addresses;
+// a dynamic attacker must find g_fn_key first, then XOR each entry.
+// ?
+static void ph_fn_init(void) {
+    volatile uintptr_t sentinel = 0xC0FFEE42ULL;
+    g_fn_key      = MBA_XOR((uintptr_t)&sentinel, (uintptr_t)0xDEADC0DEULL);
+    g_fn_table[0] = MBA_XOR((uintptr_t)detect_ptrace,           g_fn_key);
+    g_fn_table[1] = MBA_XOR((uintptr_t)detect_frida_threads,    g_fn_key);
+    g_fn_table[2] = MBA_XOR((uintptr_t)detect_frida_namedpipe,  g_fn_key);
+    g_fn_table[3] = MBA_XOR((uintptr_t)detect_frida_websocket,  g_fn_key);
+    g_fn_table[4] = MBA_XOR((uintptr_t)detect_ebpf_uprobe,      g_fn_key);
+    g_fn_table[5] = MBA_XOR((uintptr_t)detect_emulator,         g_fn_key);
+}
+// Indirect call: decode pointer at runtime then invoke
+#define PH_CALL(idx) ((void(*)(void))(MBA_XOR(g_fn_table[(idx)], g_fn_key)))()
+
+// ?
 // detect_frida_loop -- 5-second cadence
 // Frida thread names, named pipes, binary checksums, ptrace, eBPF uprobes.
 // ?
@@ -1222,13 +1392,15 @@ static void *detect_frida_loop(void *args) {
     timereq.tv_sec  = 5;
     timereq.tv_nsec = 0;
     while (1) {
-        detect_frida_threads();                   // JDWP + per-task TracerPid + gum-js-loop/gmain
-        detect_frida_namedpipe();
-        detect_frida_websocket();                 // WebSocket fingerprint: tyZql/Y8dNFFyopTrHadWzvbvRs=
-        detect_frida_memdiskcompare();
-        detect_ptrace();
-        detect_ebpf_uprobe();
-        if (g_block_rooted) detect_riru_zygisk();  // Riru/Zygisk/Xposed: maps + phdr + paths — only if toggle ON
+        PH_CALL(1);                               // detect_frida_threads (indirect)
+        PH_CALL(2);                               // detect_frida_namedpipe (indirect)
+        PH_CALL(3);                               // detect_frida_websocket (indirect)
+        detect_frida_memdiskcompare();            // disk vs mem ELF checksum
+        PH_CALL(0);                               // detect_ptrace (indirect)
+        PH_CALL(4);                               // detect_ebpf_uprobe (indirect)
+        PH_CALL(5);                               // detect_emulator (indirect) [NEW]
+        detect_timing();                          // timing anomaly — debugger slowdown [NEW]
+        if (g_block_rooted) detect_riru_zygisk(); // Riru/Zygisk/Xposed — only if toggle ON
         if (g_block_rooted) detect_root();        // su binaries + Magisk mounts — only if toggle ON
         my_nanosleep(&timereq, NULL);
     }
@@ -1378,6 +1550,8 @@ static void check_rooted(void) {
 __attribute__((constructor))
 void detect_frida_init(void) {
     prctl(PR_SET_DUMPABLE, 0);
+    /* Build encrypted indirect call table before any detection runs */
+    ph_fn_init();
     /* check_rooted() is NOT called here — it runs inside nativeDecryptShard
        when the Java-side blockRooted flag is true. */
     char *filePaths[NUM_LIBS] = {NULL, NULL};
