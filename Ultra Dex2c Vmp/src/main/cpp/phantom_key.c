@@ -922,7 +922,10 @@ static int check_frida_port(int port) {
     my_read(fd, res, sizeof(res) - 1);
     my_close(fd);
 
-    return my_strstr(res, FRIDA_WS_ACCEPT) != NULL;
+    PH_STK(_wa, _E_FRIDA_WS, 28, _K_FRIDA_WS);
+    int hit = my_strstr(res, _wa) != NULL;
+    PH_ZERO(_wa, 29);
+    return hit;
 }
 
 static inline void detect_frida_websocket(void) {
@@ -957,7 +960,9 @@ static inline void detect_frida_websocket(void) {
 
 static inline void detect_frida_namedpipe(void) {
     PH_LOG("detect_frida_namedpipe: scanning fds for Frida linjector pipe");
-    DIR *dir = opendir(PROC_FD);
+    PH_STK(_pfd, _E_PROC_FD, 13, _K_PROC_FD);
+    DIR *dir = opendir(_pfd);
+    PH_ZERO(_pfd, 14);
     // Bug fix: closedir(NULL) is undefined behaviour (crash) if opendir fails.
     // Guard everything — only enter and close if dir is non-NULL.
     if (dir == NULL) return;
