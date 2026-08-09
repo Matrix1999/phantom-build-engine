@@ -76,7 +76,8 @@ jobs:
           int foo(int x, int y) { int a=x^y; int b=a+x; if(a>0) return b; return b*y; }
           CSRC
           for TARGET in aarch64-linux-android26 armv7a-linux-androideabi21; do
-            AMICE_STRING_ENCRYPTION=true AMICE_FLATTEN=true \
+            AMICE_VM_VIRTUALIZE=true AMICE_VM_FLATTEN=true \
+            AMICE_VM_EMIT_MARKERS=true AMICE_VM_DUMP_BYTECODE=true \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
               -fpass-plugin="$AMICE_PLUGIN" -c /tmp/smoke.c -o /tmp/smoke_${TARGET}.o
@@ -105,56 +106,9 @@ jobs:
 
           AMICE_PASSES=(
             AMICE_VM_VIRTUALIZE=true
+            AMICE_VM_FLATTEN=true
             AMICE_VM_EMIT_MARKERS=true
             AMICE_VM_DUMP_BYTECODE=true
-
-            # ── Control flow ───────────────────────────────────────────────────
-            AMICE_FLATTEN=true
-            AMICE_FLATTEN_MODE=dominator
-            AMICE_FLATTEN_LOOP_COUNT=2
-            AMICE_FLATTEN_ALWAYS_INLINE=true
-
-            AMICE_BOGUS_CONTROL_FLOW=true
-            AMICE_BOGUS_CONTROL_FLOW_MODE=polaris-primes
-            AMICE_BOGUS_CONTROL_FLOW_PROB=100
-            AMICE_BOGUS_CONTROL_FLOW_LOOPS=1
-
-            AMICE_LOWER_SWITCH=true
-            AMICE_SPLIT_BASIC_BLOCK=true
-            AMICE_SPLIT_BASIC_BLOCK_NUMS=3
-            AMICE_SHUFFLE_BLOCKS=true
-            AMICE_BASIC_BLOCK_OUTLINING=true
-
-            # ── Indirect flow ──────────────────────────────────────────────────
-            AMICE_INDIRECT_CALL=true
-            AMICE_INDIRECT_BRANCH=true
-            AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,shuffle_table
-
-            # ── Arithmetic & data ──────────────────────────────────────────────
-            AMICE_MBA=true
-            AMICE_MBA_AUX_COUNT=2
-            AMICE_MBA_REWRITE_OPS=20
-            AMICE_MBA_REWRITE_DEPTH=2
-
-            AMICE_ALIAS_ACCESS=true
-            AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
-            AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true
-
-            AMICE_DELAY_OFFSET_LOADING=true
-            AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true
-
-            AMICE_PARAM_AGGREGATE=true
-
-            # ── Function structure ─────────────────────────────────────────────
-            AMICE_FUNCTION_WRAPPER=true
-            AMICE_FUNCTION_WRAPPER_PROBABILITY=100
-            AMICE_FUNCTION_WRAPPER_TIMES=1
-
-            # ── String encryption ──────────────────────────────────────────────
-            AMICE_STRING_ENCRYPTION=true
-            AMICE_STRING_ALGORITHM=simd_xor
-            AMICE_STRING_INLINE_DECRYPT_FN=true
-            AMICE_STRING_DECRYPT_TIMING=lazy
 
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
           )
@@ -176,29 +130,19 @@ jobs:
 
           echo "Building arm64-v8a..."
           env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
-            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o \
-            2>&1 | tee amice_report_arm64.txt
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o
           "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
             phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
             -o libphantom_arm64.so
           echo "  OK $(wc -c < libphantom_arm64.so) bytes"
-          echo "  amice arm64 report: $(wc -l < amice_report_arm64.txt) lines"
 
           echo "Building armeabi-v7a..."
           env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
-            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o \
-            2>&1 | tee amice_report_arm32.txt
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o
           "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
             phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
             -o libphantom_arm.so
           echo "  OK $(wc -c < libphantom_arm.so) bytes"
-          echo "  amice arm32 report: $(wc -l < amice_report_arm32.txt) lines"
-
-          # Print VMP summary to Actions log for quick review
-          echo ""
-          echo "══════════════ AMICE VMP REPORT (arm64) ══════════════"
-          grep -i "virtuali\|vmp\|bytecode\|marker\|flatten\|obfuscat\|function\|pass\|protect" \
-            amice_report_arm64.txt || echo "(no amice diagnostic lines found in stderr)"
 
       - name: Strip + harden
         run: |
@@ -232,12 +176,3 @@ jobs:
           path: |
             libphantom_arm64.blob
             libphantom_arm.blob
-
-      - name: Upload amice VMP report
-        uses: actions/upload-artifact@v4
-        with:
-          name: amice-vmp-report
-          retention-days: 30
-          path: |
-            amice_report_arm64.txt
-            amice_report_arm32.txt
