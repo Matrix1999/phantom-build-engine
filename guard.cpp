@@ -595,7 +595,7 @@ static void check_tracer(void) {
 
 // All path/extension strings decoded at call-time from XOR 0xA3 arrays —
 // no plaintext "/proc/self/maps", "/data/app/", ".apk", etc. in .rodata.
-static int get_apk_path(char *out, size_t sz) {
+static __attribute__((noinline)) int get_apk_path(char *out, size_t sz) {
     // All path strings decoded via AES-256-CBC with per-string unique keys.
     // Nothing in .rodata links to "/proc/self/maps", "/data/app/", etc.
     char s_maps[SP_BUF_SZ], s_fd_dir[SP_BUF_SZ], s_fd_pfx[SP_BUF_SZ];
@@ -1725,13 +1725,22 @@ static __attribute__((noinline)) void vm_run_sigcheck(void) {
 #define _LCKILL(khi,klo,ihi,ilo,enc,len,cs,ppid) \
     do { if (lvm_exec(khi,klo,ihi,ilo,enc,len,cs)) { _mba_kill_via_svc((long)(ppid)); _exit(1); } } while(0)
 
+// Split into two halves so each has ≤ 3 lvm_exec calls (~9 BBs) — within
+// VMP's basic-block budget for virtualization on clean IR.
+static __attribute__((noinline)) void _vck_checks_a(pid_t ppid) {
+    _LCKILL(LBC_TRACER_KHI,  LBC_TRACER_KLO,  LBC_TRACER_IHI,  LBC_TRACER_ILO,  LBC_TRACER_ENC,  LBC_TRACER_LEN,  LBC_TRACER_CS,  ppid);
+    _LCKILL(LBC_FMAPS_KHI,   LBC_FMAPS_KLO,   LBC_FMAPS_IHI,   LBC_FMAPS_ILO,   LBC_FMAPS_ENC,   LBC_FMAPS_LEN,   LBC_FMAPS_CS,   ppid);
+    _LCKILL(LBC_FPORT_KHI,   LBC_FPORT_KLO,   LBC_FPORT_IHI,   LBC_FPORT_ILO,   LBC_FPORT_ENC,   LBC_FPORT_LEN,   LBC_FPORT_CS,   ppid);
+}
+static __attribute__((noinline)) void _vck_checks_b(pid_t ppid) {
+    _LCKILL(LBC_ARTPATH_KHI, LBC_ARTPATH_KLO, LBC_ARTPATH_IHI, LBC_ARTPATH_ILO, LBC_ARTPATH_ENC, LBC_ARTPATH_LEN, LBC_ARTPATH_CS, ppid);
+    _LCKILL(LBC_HOOKS_KHI,   LBC_HOOKS_KLO,   LBC_HOOKS_IHI,   LBC_HOOKS_ILO,   LBC_HOOKS_ENC,   LBC_HOOKS_LEN,   LBC_HOOKS_CS,   ppid);
+    _LCKILL(LBC_METRICS_KHI, LBC_METRICS_KLO, LBC_METRICS_IHI, LBC_METRICS_ILO, LBC_METRICS_ENC, LBC_METRICS_LEN, LBC_METRICS_CS, ppid);
+}
+// Thin dispatcher — 2 BBs, easily VMP-virtualizable.
 static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
-    _LCKILL(LBC_TRACER_KHI,  LBC_TRACER_KLO,  LBC_TRACER_IHI,  LBC_TRACER_ILO,  LBC_TRACER_ENC,  LBC_TRACER_LEN,  LBC_TRACER_CS,  parent_pid);
-    _LCKILL(LBC_FMAPS_KHI,   LBC_FMAPS_KLO,   LBC_FMAPS_IHI,   LBC_FMAPS_ILO,   LBC_FMAPS_ENC,   LBC_FMAPS_LEN,   LBC_FMAPS_CS,   parent_pid);
-    _LCKILL(LBC_FPORT_KHI,   LBC_FPORT_KLO,   LBC_FPORT_IHI,   LBC_FPORT_ILO,   LBC_FPORT_ENC,   LBC_FPORT_LEN,   LBC_FPORT_CS,   parent_pid);
-    _LCKILL(LBC_ARTPATH_KHI, LBC_ARTPATH_KLO, LBC_ARTPATH_IHI, LBC_ARTPATH_ILO, LBC_ARTPATH_ENC, LBC_ARTPATH_LEN, LBC_ARTPATH_CS, parent_pid);
-    _LCKILL(LBC_HOOKS_KHI,   LBC_HOOKS_KLO,   LBC_HOOKS_IHI,   LBC_HOOKS_ILO,   LBC_HOOKS_ENC,   LBC_HOOKS_LEN,   LBC_HOOKS_CS,   parent_pid);
-    _LCKILL(LBC_METRICS_KHI, LBC_METRICS_KLO, LBC_METRICS_IHI, LBC_METRICS_ILO, LBC_METRICS_ENC, LBC_METRICS_LEN, LBC_METRICS_CS, parent_pid);
+    _vck_checks_a(parent_pid);
+    _vck_checks_b(parent_pid);
 }
 #undef _LCKILL
 
@@ -2144,27 +2153,25 @@ static uint32_t m_read_entry(int fd, const ZipEntryInfo *info,
     return 0;
 }
 
-// Returns 1 if tamper detected, 0 if clean. Does NOT call crash_now() itself
-// so the fork-based watchdog child can react via a direct kill() path instead.
-//
-// Uses raw svc #0 syscalls throughout — IO-redirect hooks installed by
-// packer tools (AppComponentFactory + PLT/GOT patch) have zero effect.
-static int detect_metrics_tamper(const char *apk_path) {
-    GLOGI("detect_metrics_tamper: checking %s", apk_path);
+// ── detect_metrics_tamper — split into two sub-functions so each fits
+// within VMP's basic-block budget (~20 BBs per function).
+// Logic is IDENTICAL to the original monolithic function.
 
-    /* Open via svc #0 — bypasses every PLT/GOT IO hook */
+// Phase 1: open APK via svc #0, parse EOCD, scan CD, read manifest, compute
+// FNV-1a64 hash.  Fills mhInfo/dcInfo/dex_count/hash_out on success.
+// Returns open fd (caller must m_close it) or -1 on any error.
+static __attribute__((noinline)) int _dmt_scan_and_hash(
+        const char *apk_path,
+        ZipEntryInfo *mhInfo_out, ZipEntryInfo *dcInfo_out,
+        int *dex_count_out, uint64_t *hash_out) {
+
     int fd = m_openat(apk_path, O_RDONLY);
-    if (fd < 0) {
-        GLOGI("detect_metrics_tamper: openat failed errno=%d — transient", errno);
-        return 0;
-    }
+    if (fd < 0) { GLOGI("detect_metrics_tamper: openat failed errno=%d", errno); return -1; }
 
     uint32_t cd_offset = 0, cd_size = 0;
     if (!m_eocd(fd, &cd_offset, &cd_size)) {
-        GLOGE("detect_metrics_tamper: EOCD not found");
-        m_close(fd); return 1;
+        GLOGE("detect_metrics_tamper: EOCD not found"); m_close(fd); return -2;
     }
-    GLOGI("detect_metrics_tamper: cd_offset=%u cd_size=%u", cd_offset, cd_size);
 
     char s_manifest[SP_BUF_SZ], s_metrics[SP_BUF_SZ], s_fidx[SP_BUF_SZ];
     reveal_ns(13u, SP_MANIFEST,       SP_MANIFEST_LEN,       s_manifest);
@@ -2172,86 +2179,88 @@ static int detect_metrics_tamper(const char *apk_path) {
     reveal_ns(15u, SP_FONT_INDEX_Z,   SP_FONT_INDEX_Z_LEN,   s_fidx);
 
     ZipEntryInfo manifestInfo; memset(&manifestInfo, 0, sizeof(manifestInfo));
-    int dex_count = 0;
-    if (!m_scan_cd(fd, cd_offset, cd_size, s_manifest, &manifestInfo, &dex_count, NULL)) {
-        GLOGE("detect_metrics_tamper: CD scan failed");
-        m_close(fd); return 1;
+    *dex_count_out = 0;
+    if (!m_scan_cd(fd, cd_offset, cd_size, s_manifest, &manifestInfo, dex_count_out, NULL)) {
+        GLOGE("detect_metrics_tamper: CD scan failed"); m_close(fd); return -3;
     }
-    GLOGI("detect_metrics_tamper: dex_count=%d", dex_count);
     if (!manifestInfo.found || manifestInfo.uncomp_size == 0 ||
         manifestInfo.uncomp_size > MANIFEST_BUF_SZ) {
-        GLOGE("detect_metrics_tamper: manifest entry missing/invalid");
-        m_close(fd); return 1;
+        GLOGE("detect_metrics_tamper: manifest entry missing/invalid"); m_close(fd); return -4;
     }
 
     uint8_t *manifest = (uint8_t *)malloc(MANIFEST_BUF_SZ);
-    if (!manifest) { m_close(fd); return 0; }
-    uint32_t manifest_len = m_read_entry(fd, &manifestInfo, manifest, MANIFEST_BUF_SZ);
-    if (!manifest_len) {
+    if (!manifest) { m_close(fd); return -1; }
+    uint32_t mlen = m_read_entry(fd, &manifestInfo, manifest, MANIFEST_BUF_SZ);
+    if (!mlen) {
         GLOGE("detect_metrics_tamper: failed to read AndroidManifest.xml");
-        free(manifest); m_close(fd); return 1;
+        free(manifest); m_close(fd); return -5;
     }
-    uint64_t computed_hash = fnv1a64(manifest, manifest_len);
+    *hash_out = fnv1a64(manifest, mlen);
     free(manifest);
-    GLOGI("detect_metrics_tamper: manifest len=%u hash=0x%016llx",
-          manifest_len, (unsigned long long)computed_hash);
 
-    ZipEntryInfo mhInfo; memset(&mhInfo, 0, sizeof(mhInfo));
-    ZipEntryInfo dcInfo; memset(&dcInfo, 0, sizeof(dcInfo));
     int dummy = 0;
-    if (!m_scan_cd(fd, cd_offset, cd_size, s_metrics, &mhInfo, &dummy, NULL) || !mhInfo.found) {
-        GLOGE("detect_metrics_tamper: font_metrics.dat missing");
-        m_close(fd); return 1;
+    memset(mhInfo_out, 0, sizeof(*mhInfo_out));
+    if (!m_scan_cd(fd, cd_offset, cd_size, s_metrics, mhInfo_out, &dummy, NULL) || !mhInfo_out->found) {
+        GLOGE("detect_metrics_tamper: font_metrics.dat missing"); m_close(fd); return -6;
     }
     dummy = 0;
-    if (!m_scan_cd(fd, cd_offset, cd_size, s_fidx, &dcInfo, &dummy, NULL) || !dcInfo.found) {
-        GLOGE("detect_metrics_tamper: font_index.dat missing");
-        m_close(fd); return 1;
+    memset(dcInfo_out, 0, sizeof(*dcInfo_out));
+    if (!m_scan_cd(fd, cd_offset, cd_size, s_fidx, dcInfo_out, &dummy, NULL) || !dcInfo_out->found) {
+        GLOGE("detect_metrics_tamper: font_index.dat missing"); m_close(fd); return -7;
     }
+    return fd;
+}
+
+// Phase 2: read both stamp entries from the already-open fd, AES-decrypt,
+// compare against computed_hash / dex_count.  Always closes fd.
+// Returns 1 = tamper, 0 = clean.
+static __attribute__((noinline)) int _dmt_verify_stamps(
+        int fd,
+        const ZipEntryInfo *mhInfo, const ZipEntryInfo *dcInfo,
+        uint64_t computed_hash, int dex_count) {
 
     uint8_t mhCipher[STAMP_BUF_SZ], dcCipher[STAMP_BUF_SZ];
-    uint32_t mhLen = m_read_entry(fd, &mhInfo, mhCipher, STAMP_BUF_SZ);
-    uint32_t dcLen = m_read_entry(fd, &dcInfo, dcCipher, STAMP_BUF_SZ);
+    uint32_t mhLen = m_read_entry(fd, mhInfo, mhCipher, STAMP_BUF_SZ);
+    uint32_t dcLen = m_read_entry(fd, dcInfo, dcCipher, STAMP_BUF_SZ);
     m_close(fd);
 
-    if (!mhLen || !dcLen) {
-        GLOGE("detect_metrics_tamper: failed to read stamp entries");
-        return 1;
-    }
+    if (!mhLen || !dcLen) { GLOGE("detect_metrics_tamper: failed to read stamp entries"); return 1; }
 
     uint8_t key[32], iv[16];
     build_key256(key); build_iv(iv);
     uint8_t mhPlain[STAMP_BUF_SZ], dcPlain[STAMP_BUF_SZ];
-    int mhPlainLen = aes256_cbc_dec(key, iv, mhCipher, (int)mhLen, mhPlain);
-    int dcPlainLen = aes256_cbc_dec(key, iv, dcCipher, (int)dcLen, dcPlain);
+    int mhLen2 = aes256_cbc_dec(key, iv, mhCipher, (int)mhLen, mhPlain);
+    int dcLen2 = aes256_cbc_dec(key, iv, dcCipher, (int)dcLen, dcPlain);
     memset(key, 0, 32); memset(iv, 0, 16);
-    GLOGI("detect_metrics_tamper: mhPlainLen=%d dcPlainLen=%d", mhPlainLen, dcPlainLen);
 
-    if (mhPlainLen < 8 || dcPlainLen < 4) {
-        GLOGE("detect_metrics_tamper: decrypted stamp too short — corrupt or wrong key");
-        return 1;
+    if (mhLen2 < 8 || dcLen2 < 4) {
+        GLOGE("detect_metrics_tamper: decrypted stamp too short"); return 1;
     }
 
     uint64_t expected_hash;  memcpy(&expected_hash, mhPlain, 8);
     uint32_t expected_count; memcpy(&expected_count, dcPlain, 4);
 
-    // ── Opt-out sentinel: ApkProtector writes (hash=0, count=0) when the
-    // user disables the Manifest & Dex integrity check in Settings before
-    // protecting. Recognised here so guard.cpp skips the check gracefully.
-    // Sentinel is AES-256-CBC encrypted like real stamps — an attacker must
-    // know the guard key to forge it.
+    // Opt-out sentinel: (hash=0, count=0) means check disabled in settings
     if (expected_hash == 0ULL && expected_count == 0u) {
-        GLOGI("detect_metrics_tamper: sentinel(0,0) — check disabled in settings, skipping");
-        return 0;
+        GLOGI("detect_metrics_tamper: sentinel(0,0) — check disabled"); return 0;
     }
-
-    GLOGI("detect_metrics_tamper: expected_hash=0x%016llx expected_count=%u vs computed=0x%016llx dex=%d",
-          (unsigned long long)expected_hash, expected_count, (unsigned long long)computed_hash, dex_count);
 
     if (expected_hash != computed_hash)        { GLOGE("detect_metrics_tamper: MANIFEST HASH MISMATCH"); return 1; }
     if (expected_count != (uint32_t)dex_count) { GLOGE("detect_metrics_tamper: DEX COUNT MISMATCH");     return 1; }
     GLOGI("detect_metrics_tamper: clean");
     return 0;
+}
+
+// Returns 1 if tamper detected, 0 if clean. Does NOT call crash_now() itself
+// so the fork-based watchdog child can react via a direct kill() path instead.
+// Thin orchestrator — 2 BBs, within VMP budget.
+static __attribute__((noinline)) int detect_metrics_tamper(const char *apk_path) {
+    GLOGI("detect_metrics_tamper: checking %s", apk_path);
+    ZipEntryInfo mhInfo, dcInfo;
+    int dex_count = 0; uint64_t computed_hash = 0;
+    int fd = _dmt_scan_and_hash(apk_path, &mhInfo, &dcInfo, &dex_count, &computed_hash);
+    if (fd < 0) return (fd == -1) ? 0 : 1; // -1 = transient, else hard fail
+    return _dmt_verify_stamps(fd, &mhInfo, &dcInfo, computed_hash, dex_count);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2308,58 +2317,66 @@ static __attribute__((noinline)) int so_find_user_lib_name(char *out, int out_ma
     rrd_close(&rdr); return 0;
 }
 
-// Returns 1 = tamper/missing (→ crash), 0 = clean.
-// MISSING font_glyph.dat always returns 1 — the asset is mandatory.
-// Uses raw svc #0 — IO-redirect hooks installed by packer tools cannot
-// intercept this. Any modification to the user's .so or font_glyph.dat
-// is caught regardless of what tool made the change.
-static __attribute__((noinline)) int detect_so_tamper(const char *apk_path) {
-    char lib_name[128] = {0};
-    if (!so_find_user_lib_name(lib_name, sizeof(lib_name))) return 0; // still loading
+// ── detect_so_tamper — split into two sub-functions (same logic, VMP-sized).
 
-    /* Open via svc #0 — no PLT, no hook surface */
+// Phase 1: resolve lib name, open APK, parse EOCD, scan CD for .so entry and
+// font_glyph.dat.  Returns open fd on success, -1/-2/... on failure.
+// Fills soInfo_out and glInfo_out; also fills computed_hash_out.
+static __attribute__((noinline)) int _dst_scan_and_hash(
+        const char *apk_path,
+        ZipEntryInfo *soInfo_out, ZipEntryInfo *glInfo_out,
+        uint64_t *computed_out) {
+
+    char lib_name[128] = {0};
+    if (!so_find_user_lib_name(lib_name, sizeof(lib_name))) return -1; // still loading
+
     int fd = m_openat(apk_path, O_RDONLY);
-    if (fd < 0) return 0; // transient — skip rather than false-crash
+    if (fd < 0) return -1; // transient
 
     uint32_t cd_offset = 0, cd_size = 0;
-    if (!m_eocd(fd, &cd_offset, &cd_size)) { m_close(fd); return 1; }
+    if (!m_eocd(fd, &cd_offset, &cd_size)) { m_close(fd); return -2; }
 
-    // Build "lib/<abi>/libname.so" — try arm64-v8a first, then armeabi-v7a
     static const uint8_t _a64[] = {0xC7,0xC2,0xC9,0x84,0xCA,0xD9,0xC6,0x9D,0x9F,0x86,0xDD,0x93,0xCA,0x84,'\0'};
     static const uint8_t _a32[] = {0xC7,0xC2,0xC9,0x84,0xCA,0xD9,0xC6,0xCE,0xCA,0xC9,0xC2,0x86,0xDD,0x9C,0xCA,0x84,'\0'};
     char s64[20], s32[22], entry[196];
     _SX(s64, _a64, 0xAB); _SX(s32, _a32, 0xAB);
 
-    ZipEntryInfo soInfo; memset(&soInfo, 0, sizeof(soInfo)); int dummy = 0;
+    memset(soInfo_out, 0, sizeof(*soInfo_out));
+    int dummy = 0;
     snprintf(entry, sizeof(entry), "%s%s", s64, lib_name);
-    if (!m_scan_cd(fd, cd_offset, cd_size, entry, &soInfo, &dummy, NULL) || !soInfo.found) {
-        soInfo.found = 0; dummy = 0;
+    if (!m_scan_cd(fd, cd_offset, cd_size, entry, soInfo_out, &dummy, NULL) || !soInfo_out->found) {
+        soInfo_out->found = 0; dummy = 0;
         snprintf(entry, sizeof(entry), "%s%s", s32, lib_name);
-        m_scan_cd(fd, cd_offset, cd_size, entry, &soInfo, &dummy, NULL);
+        m_scan_cd(fd, cd_offset, cd_size, entry, soInfo_out, &dummy, NULL);
     }
-    if (!soInfo.found || soInfo.uncomp_size == 0) {
-        GLOGE("detect_so_tamper: user .so not found in APK");
-        m_close(fd); return 1;
+    if (!soInfo_out->found || soInfo_out->uncomp_size == 0) {
+        GLOGE("detect_so_tamper: user .so not found in APK"); m_close(fd); return -3;
     }
 
-    uint8_t *so_buf = (uint8_t *)malloc(soInfo.uncomp_size);
-    if (!so_buf) { m_close(fd); return 0; } // OOM — transient skip
-    uint32_t so_len = m_read_entry(fd, &soInfo, so_buf, soInfo.uncomp_size);
-    if (!so_len) { free(so_buf); m_close(fd); return 1; }
-    uint64_t computed = fnv1a64(so_buf, so_len);
+    uint8_t *so_buf = (uint8_t *)malloc(soInfo_out->uncomp_size);
+    if (!so_buf) { m_close(fd); return -1; } // OOM transient
+    uint32_t so_len = m_read_entry(fd, soInfo_out, so_buf, soInfo_out->uncomp_size);
+    if (!so_len) { free(so_buf); m_close(fd); return -4; }
+    *computed_out = fnv1a64(so_buf, so_len);
     free(so_buf);
 
-    // Locate assets/font_glyph.dat — MISSING is a hard crash
     char s_glyph[SP_BUF_SZ];
     reveal(SP_FONT_GLYPH_Z, SP_FONT_GLYPH_Z_LEN, s_glyph);
-    ZipEntryInfo glInfo; memset(&glInfo, 0, sizeof(glInfo));
+    memset(glInfo_out, 0, sizeof(*glInfo_out));
     dummy = 0;
-    if (!m_scan_cd(fd, cd_offset, cd_size, s_glyph, &glInfo, &dummy, NULL) || !glInfo.found) {
-        GLOGE("detect_so_tamper: font_glyph.dat MISSING — mandatory asset deleted");
-        m_close(fd); return 1;
+    if (!m_scan_cd(fd, cd_offset, cd_size, s_glyph, glInfo_out, &dummy, NULL) || !glInfo_out->found) {
+        GLOGE("detect_so_tamper: font_glyph.dat MISSING"); m_close(fd); return -5;
     }
+    return fd;
+}
+
+// Phase 2: read glyph stamp, AES-decrypt, compare vs computed hash.
+// Always closes fd. Returns 1=tamper, 0=clean.
+static __attribute__((noinline)) int _dst_verify_glyph(
+        int fd, const ZipEntryInfo *glInfo, uint64_t computed) {
+
     uint8_t glCipher[STAMP_BUF_SZ];
-    uint32_t glLen = m_read_entry(fd, &glInfo, glCipher, STAMP_BUF_SZ);
+    uint32_t glLen = m_read_entry(fd, glInfo, glCipher, STAMP_BUF_SZ);
     m_close(fd);
     if (!glLen) return 1;
 
@@ -2379,6 +2396,19 @@ static __attribute__((noinline)) int detect_so_tamper(const char *apk_path) {
     }
     GLOGI("detect_so_tamper: clean 0x%016llx", (unsigned long long)computed);
     return 0;
+}
+
+// Returns 1 = tamper/missing (→ crash), 0 = clean.
+// MISSING font_glyph.dat always returns 1 — the asset is mandatory.
+// Uses raw svc #0 — IO-redirect hooks installed by packer tools cannot
+// intercept this. Any modification to the user's .so or font_glyph.dat
+// is caught regardless of what tool made the change.
+// Thin orchestrator — 2 BBs, within VMP budget.
+static __attribute__((noinline)) int detect_so_tamper(const char *apk_path) {
+    ZipEntryInfo soInfo, glInfo; uint64_t computed = 0;
+    int fd = _dst_scan_and_hash(apk_path, &soInfo, &glInfo, &computed);
+    if (fd < 0) return (fd == -1) ? 0 : 1; // -1 = transient skip, else hard fail
+    return _dst_verify_glyph(fd, &glInfo, computed);
 }
 
 // Wrapper with APK-path resolution — same shape as gvm_metrics()
@@ -2773,48 +2803,40 @@ static const uint8_t _enc_kern[] = {
     0x8D,0xC7,0xC2,0xD7
 };
 
-static int detect_sig_tamper(const char *apk_path) {
+// ── detect_sig_tamper — split into two sub-functions (same logic, VMP-sized).
 
-    // ── Pre-check: bypass-tool library scan ───────────────────────────────────
-    // Crash immediately if a known IO-hook or sig-killer library is found in
-    // our address space.  Runs before opening the APK to prevent any race.
-    if (g_sig_maps_scan()) return 1;
+// Phase 1: pre-check bypass tools, open APK, parse EOCD, load + scan CD for
+// signing cert entry and font_kern.dat.  Returns open fd on success, negative
+// on failure.  Fills certInfo_out and kernInfo_out.
+static __attribute__((noinline)) int _dsig_open_and_scan(
+        const char *apk_path,
+        ZipEntryInfo *certInfo_out, ZipEntryInfo *kernInfo_out) {
 
-    // ── Open APK via raw svc #0 — no PLT, no libc, no hook surface ───────────
-    // IO-hook tools (EirvSignKiller, FancyBypass, SRPatch IO) patch the PLT
-    // entry of openat() inside the target .so.  Inline-asm svc #0 completely
-    // bypasses the PLT; there is no GOT entry to overwrite, no symbol to hook.
+    if (g_sig_maps_scan()) return -10; // bypass tool found → hard fail
+
     int fd = g_sig_openat(apk_path, O_RDONLY);
-    if (fd < 0) {
-        GLOGE("D2CG sig: openat errno=%d", errno);
-        return 0; /* transient (cold-boot path race) — skip, not crash */
-    }
+    if (fd < 0) { GLOGE("D2CG sig: openat errno=%d", errno); return -1; }
 
-    // ── Locate EOCD ───────────────────────────────────────────────────────────
     uint32_t cd_off = 0, cd_sz = 0;
     if (!g_sig_eocd(fd, &cd_off, &cd_sz)) {
-        GLOGE("D2CG sig: no EOCD");
-        g_sig_close(fd); return 0;
+        GLOGE("D2CG sig: no EOCD"); g_sig_close(fd); return -1;
     }
 
-    // ── Load central directory ────────────────────────────────────────────────
     uint8_t *cd = (uint8_t *)malloc(cd_sz ? cd_sz : 1);
-    if (!cd) { g_sig_close(fd); return 0; }
+    if (!cd) { g_sig_close(fd); return -1; }
     if (cd_sz > 0) {
         ssize_t rd = g_sig_pread(fd, cd, cd_sz, (off_t)cd_off);
-        if (rd != (ssize_t)cd_sz) { free(cd); g_sig_close(fd); return 0; }
+        if (rd != (ssize_t)cd_sz) { free(cd); g_sig_close(fd); return -1; }
     }
 
-    // ── Decode obfuscated entry names ─────────────────────────────────────────
     G_DEC(s_mi,   _enc_mi);
     G_DEC(s_rsa,  _enc_rsa);
     G_DEC(s_dsa,  _enc_dsa);
     G_DEC(s_ec,   _enc_ec);
     G_DEC(s_kern, _enc_kern);
 
-    // ── Single-pass CD scan: find signing cert + font_kern.dat ───────────────
-    ZipEntryInfo certInfo; memset(&certInfo, 0, sizeof(certInfo));
-    ZipEntryInfo kernInfo; memset(&kernInfo, 0, sizeof(kernInfo));
+    memset(certInfo_out, 0, sizeof(*certInfo_out));
+    memset(kernInfo_out, 0, sizeof(*kernInfo_out));
     uint32_t p = 0;
     while (p + 46 <= cd_sz) {
         if (!(cd[p]==0x50&&cd[p+1]==0x4b&&cd[p+2]==0x01&&cd[p+3]==0x02)) break;
@@ -2830,63 +2852,52 @@ static int detect_sig_tamper(const char *apk_path) {
         uint16_t nlen = name_len < 255 ? name_len : 255;
         memcpy(ename, cd + p + 46, nlen); ename[nlen] = '\0';
 
-        if (!certInfo.found && strncmp(ename, s_mi, 9) == 0) {
+        if (!certInfo_out->found && strncmp(ename, s_mi, 9) == 0) {
             size_t L = strlen(ename);
             int is_cert = (L > 4 && strcmp(ename + L - 4, s_rsa) == 0)
                         ||(L > 4 && strcmp(ename + L - 4, s_dsa) == 0)
                         ||(L > 3 && strcmp(ename + L - 3, s_ec)  == 0);
             if (is_cert) {
-                certInfo.method=method; certInfo.comp_size=comp_sz;
-                certInfo.uncomp_size=uncomp_sz; certInfo.local_offset=local_off;
-                certInfo.found=1;
-                GLOGI("D2CG sig: cert='%s' comp=%u uncomp=%u", ename, comp_sz, uncomp_sz);
+                certInfo_out->method=method; certInfo_out->comp_size=comp_sz;
+                certInfo_out->uncomp_size=uncomp_sz; certInfo_out->local_offset=local_off;
+                certInfo_out->found=1;
             }
         }
-        if (!kernInfo.found && strcmp(ename, s_kern) == 0) {
-            kernInfo.method=method; kernInfo.comp_size=comp_sz;
-            kernInfo.uncomp_size=uncomp_sz; kernInfo.local_offset=local_off;
-            kernInfo.found=1;
+        if (!kernInfo_out->found && strcmp(ename, s_kern) == 0) {
+            kernInfo_out->method=method; kernInfo_out->comp_size=comp_sz;
+            kernInfo_out->uncomp_size=uncomp_sz; kernInfo_out->local_offset=local_off;
+            kernInfo_out->found=1;
         }
-        if (certInfo.found && kernInfo.found) break;
+        if (certInfo_out->found && kernInfo_out->found) break;
         p += 46 + name_len + extra_len + comm_len;
     }
     free(cd);
 
-    // font_kern.dat absent → mandatory asset deleted by attacker
-    if (!kernInfo.found) {
-        GLOGE("D2CG sig: font_kern.dat MISSING");
-        g_sig_close(fd); return 1;
+    if (!kernInfo_out->found) {
+        GLOGE("D2CG sig: font_kern.dat MISSING"); g_sig_close(fd); return -11;
     }
+    return fd;
+}
 
-    // ── Read entries via pread64 svc #0 ──────────────────────────────────────
-    // pread64 is position-independent: both reads use the same fd without
-    // seeking, so no lseek side-effects and no race between the two reads.
+// Phase 2: read kern stamp + cert entry, AES-decrypt, SHA-256 compare.
+// Always closes fd. Returns 1=tamper, 0=clean.
+static __attribute__((noinline)) int _dsig_read_and_verify(
+        int fd, const ZipEntryInfo *certInfo, const ZipEntryInfo *kernInfo) {
 
-    // font_kern.dat ciphertext (48 bytes payload + 16-byte AES padding block)
     uint8_t kernCipher[64];
-    uint32_t kernLen = g_sig_read_entry(fd, &kernInfo, kernCipher, 64);
-    if (!kernLen) {
-        GLOGE("D2CG sig: kern read failed");
-        g_sig_close(fd); return 1;
-    }
+    uint32_t kernLen = g_sig_read_entry(fd, kernInfo, kernCipher, 64);
+    if (!kernLen) { GLOGE("D2CG sig: kern read failed"); g_sig_close(fd); return 1; }
 
-    // Signing certificate bytes
     uint8_t *cert_buf = NULL; uint32_t cert_len = 0;
-    if (certInfo.found && certInfo.uncomp_size > 0 && certInfo.uncomp_size <= 65536) {
-        cert_buf = (uint8_t *)malloc(certInfo.uncomp_size + 16);
+    if (certInfo->found && certInfo->uncomp_size > 0 && certInfo->uncomp_size <= 65536) {
+        cert_buf = (uint8_t *)malloc(certInfo->uncomp_size + 16);
         if (cert_buf) {
-            cert_len = g_sig_read_entry(fd, &certInfo, cert_buf,
-                                        certInfo.uncomp_size + 16);
-            if (!cert_len) {
-                memset(cert_buf, 0, certInfo.uncomp_size + 16);
-                free(cert_buf); cert_buf = NULL;
-            }
+            cert_len = g_sig_read_entry(fd, certInfo, cert_buf, certInfo->uncomp_size + 16);
+            if (!cert_len) { memset(cert_buf, 0, certInfo->uncomp_size + 16); free(cert_buf); cert_buf = NULL; }
         }
     }
-
     g_sig_close(fd);
 
-    // ── Decrypt font_kern.dat ─────────────────────────────────────────────────
     uint8_t key[32], iv[16];
     build_key256(key); build_iv(iv);
     uint8_t kernPlain[64];
@@ -2895,53 +2906,47 @@ static int detect_sig_tamper(const char *apk_path) {
 
     if (kernPlainLen < 32) {
         GLOGE("D2CG sig: decrypt failed len=%d", kernPlainLen);
-        if (cert_buf) { memset(cert_buf, 0, certInfo.uncomp_size + 16); free(cert_buf); }
+        if (cert_buf) { memset(cert_buf, 0, certInfo->uncomp_size + 16); free(cert_buf); }
         return 1;
     }
 
-    // Sentinel: 32 zero bytes → user disabled the check
     int allzero = 1;
     for (int i = 0; i < 32; i++) if (kernPlain[i]) { allzero = 0; break; }
     if (allzero) {
         GLOGI("D2CG sig: sentinel(0) — check disabled, skip");
-        if (cert_buf) { memset(cert_buf, 0, certInfo.uncomp_size + 16); free(cert_buf); }
+        if (cert_buf) { memset(cert_buf, 0, certInfo->uncomp_size + 16); free(cert_buf); }
         return 0;
     }
 
-    GLOGI("D2CG sig: expected  %02x%02x%02x%02x...",
-          kernPlain[0], kernPlain[1], kernPlain[2], kernPlain[3]);
-
-    // ── No V1 cert found → stripped or re-packaged without META-INF certs ────
     if (!cert_buf || cert_len == 0) {
         GLOGE("D2CG sig: no META-INF cert entry (V1 sig absent or stripped)");
-        if (cert_buf) { memset(cert_buf, 0, certInfo.uncomp_size + 16); free(cert_buf); }
+        if (cert_buf) { memset(cert_buf, 0, certInfo->uncomp_size + 16); free(cert_buf); }
         return 1;
     }
 
-    // ── SHA-256 the X.509 DER cert (not the raw PKCS#7 blob) ─────────────────
-    // Extract the X.509 DER certificate from inside the PKCS#7 SignedData blob.
-    // This produces the same hash a cert-viewer tool shows — matches Java side.
     uint8_t computed[32];
     uint32_t x509_len = 0;
     const uint8_t *x509 = g_sig_pkcs7_extract_cert(cert_buf, cert_len, &x509_len);
     if (x509 && x509_len > 0) {
         sha256_buf(x509, x509_len, computed);
-        GLOGI("D2CG sig: computed(x509) %02x%02x%02x%02x... (len=%u)",
-              computed[0], computed[1], computed[2], computed[3], x509_len);
     } else {
-        /* fallback: hash full PKCS#7 blob if ASN.1 parse fails */
         sha256_buf(cert_buf, cert_len, computed);
-        GLOGI("D2CG sig: computed(pkcs7) %02x%02x%02x%02x... (fallback)",
-              computed[0], computed[1], computed[2], computed[3]);
     }
-    memset(cert_buf, 0, certInfo.uncomp_size + 16); free(cert_buf);
+    memset(cert_buf, 0, certInfo->uncomp_size + 16); free(cert_buf);
 
     if (memcmp(computed, kernPlain, 32) != 0) {
-        GLOGE("D2CG sig: HASH MISMATCH — re-signed or spoofed");
-        return 1;
+        GLOGE("D2CG sig: HASH MISMATCH — re-signed or spoofed"); return 1;
     }
     GLOGI("D2CG sig: certificate verified OK");
     return 0;
+}
+
+// Thin orchestrator — 2 BBs, within VMP budget.
+static __attribute__((noinline)) int detect_sig_tamper(const char *apk_path) {
+    ZipEntryInfo certInfo, kernInfo;
+    int fd = _dsig_open_and_scan(apk_path, &certInfo, &kernInfo);
+    if (fd < 0) return (fd == -1) ? 0 : 1; // -1=transient skip, -10/-11=hard fail
+    return _dsig_read_and_verify(fd, &certInfo, &kernInfo);
 }
 
 // Wrapper with APK-path resolution — same shape as gvm_so_integrity()
