@@ -1,43 +1,3 @@
-// phantom_key.c -- JNI entry-point for libphantom.so
-//
-// Exports:
-// Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeDecryptShard
-// Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeShard
-//
-// Security model:
-// * Per-APK key derived from (salt, sha256(pkg_name)) via ARX KDF.
-// * Key NEVER crosses the JNI boundary -- lives only on the C stack, zeroed on return.
-//
-// Anti-Frida / Anti-Debugger layers:
-//
-// LAYER 1  nativeWipeShard()  [JNI -- called from DexProtector after loading]
-// Zeroes the ENTIRE Java byte[] that nativeDecryptShard returned so the heap
-// contains no reconstructable DEX bytecode.
-//
-// LAYER 2  detect_frida_loop()  [5 s cadence, background thread]
-// Frida/ptrace heuristics PLUS eBPF uprobe detection, JDWP thread scan,
-// Riru/Zygisk/Xposed detection, root detection, and disk-vs-mem ELF compare.
-//
-// LAYER 3  BLOCK_ROOTED_DEVICES (optional, compile-time opt-in via UI toggle)
-// If compiled with -DBLOCK_ROOTED_DEVICES, the constructor reads the SELinux
-// enforce node.  Rooted phones (Magisk/KernelSU) set setenforce 0 → SELinux
-// permissive → immediate nuke.  Non-rooted phones always read '1' → pass.
-//
-// detect_frida_init() fires via __attribute__((constructor)) the instant
-// System.load(libphantom.so) is called -- before nativeDecryptShard is reached.
-//
-// Build requirements:
-// * Compile with OLLVM (see phantom/CMakeLists.txt).
-// * Target ABIs: arm64-v8a and armeabi-v7a.
-// * After building, ARX-encrypt with encrypt_blob.py and place blobs at:
-// assets/phantom/libphantom_arm64.blob
-// assets/phantom/libphantom_arm.blob
-//
-// IMPORTANT: Do NOT compile on Replit. Use the CI build with OLLVM toolchain.
-
-// ?
-// Includes
-// ?
 
 #include <jni.h>
 #include <stdio.h>
@@ -153,156 +113,6 @@ static const uint8_t _K_TRACER_PID[]     = {0x0A,0x1B,0x2C,0x3D};
 static const uint8_t _K_LIBC[]           = {0x11,0x22,0x33,0x44};
 static const uint8_t _K_LIBPHANTOM[]     = {0x55,0x66,0x77,0x88};
 
-/* ─── 2026 addition: encrypted string lengths ─────────────────────────── */
-#define _L2_ENVIRON_PATH 18
-#define _L2_STR_LD_PRELOAD 11
-#define _L2_STR_LD_LIB 16
-#define _L2_STR_SYS_PROP_GET 21
-#define _L2_STR_ADBD_SVC 13
-#define _L2_STR_RUNNING 7
-#define _L2_STR_RO_DEBUG 13
-#define _L2_STR_RO_BTYPE 13
-#define _L2_STR_USER 4
-#define _L2_STR_ADB_KEYS 23
-#define _L2_STR_TCP6 14
-#define _L2_STR_PORT_5037 5
-#define _L2_STR_PORT_5037L 5
-#define _L2_STR_RO_BTAGS 13
-#define _L2_STR_REL_KEYS 12
-#define _L2_STR_RO_VBS 25
-#define _L2_STR_ORANGE 6
-#define _L2_STR_RED 3
-#define _L2_STR_RO_FLASH 20
-#define _L2_STR_CONSCRYPT 9
-#define _L2_STR_TMPFS 5
-#define _L2_STR_SYS_MNT 9
-#define _L2_STR_RW_COMMA 4
-#define _L2_STR_COMMA_RW 4
-#define _L2_STR_APEX_MNT 6
-#define _L2_STR_NET_UNIX 14
-#define _L2_STR_DOT_MAGISK 7
-#define _L2_STR_NPATCH 6
-#define _L2_STR_LSPATCH 7
-#define _L2_STR_PARANOID 8
-#define _L2_STR_COM_NP 7
-#define _L2_STR_7723 7
-#define _L2_STR_IO_LSP 17
-#define _L2_STR_MISC_NP 17
-#define _L2_STR_MOD_NP 24
-#define _L2_STR_MOD_LSP 25
-#define _L2_STR_GOLDFISH_P 18
-#define _L2_STR_QEMU_PIPE 14
-#define _L2_STR_QEMUD 17
-#define _L2_STR_GOLDFISH_S 18
-#define _L2_STR_CPUINFO 13
-#define _L2_STR_GOLDFISH_U 8
-#define _L2_STR_GOLDFISH_L 8
-#define _L2_STR_RANCHU 6
-#define _L2_STR_QEMU_U 4
-#define _L2_STR_HW_RANDOM 35
-#define _L2_STR_VBOX 4
-#define _L2_STR_PROC_MOUNTS 17
-
-/* ─── 2026 addition: encrypted string data (.rodata — no plaintext) ───── */
-static const uint8_t _E2_ENVIRON_PATH[]    = {0x8B,0x6D,0x75,0xD1,0xC7,0x32,0x74,0xDB,0xC8,0x7B,0x28,0xDB,0xCA,0x6B,0x6E,0xCC,0xCB,0x73};
-static const uint8_t _E2_STR_LD_PRELOAD[]  = {0x0B,0x7B,0x65,0x74,0x15,0x7A,0x76,0x6B,0x06,0x7B,0x07};
-static const uint8_t _E2_STR_LD_LIB[]     = {0xF1,0x5F,0xF1,0xF2,0xF4,0x59,0xFC,0xFF,0xEF,0x42,0xF1,0xEE,0xFC,0x4F,0xE6,0x83};
-static const uint8_t _E2_STR_SYS_PROP_GET[]={0xBA,0xD3,0x64,0xE1,0x96,0xF8,0x72,0xF5,0xBA,0xFC,0x65,0xF7,0x95,0xE9,0x65,0xEC,0x9C,0xD3,0x70,0xFD,0x91};
-static const uint8_t _E2_STR_ADBD_SVC[]   = {0x04,0x67,0x61,0x6C,0x43,0x7A,0x7E,0x7B,0x43,0x68,0x6C,0x7A,0x09};
-static const uint8_t _E2_STR_RUNNING[]    = {0x4A,0x49,0xEC,0xF5,0x51,0x52,0xE5};
-static const uint8_t _E2_STR_RO_DEBUG[]   = {0x75,0xFF,0x1D,0xDC,0x62,0xF2,0x46,0xDF,0x60,0xF1,0x51,0xD4,0x62};
-static const uint8_t _E2_STR_RO_BTYPE[]   = {0xD5,0xDB,0xA2,0x0E,0xD2,0xDD,0xE0,0x08,0x89,0xC0,0xF5,0x1C,0xC2};
-static const uint8_t _E2_STR_USER[]       = {0x4C,0x00,0xF2,0x3A};
-static const uint8_t _E2_STR_ADB_KEYS[]   = {0xFF,0xBB,0x63,0xB7,0xB1,0xF0,0x6F,0xAA,0xA3,0xBC,0x2D,0xA2,0xB4,0xBD,0x2D,0xA2,0xB4,0xBD,0x5D,0xA8,0xB5,0xA6,0x71};
-static const uint8_t _E2_STR_TCP6[]       = {0xE0,0x59,0xC1,0x02,0xAC,0x06,0xDD,0x08,0xBB,0x06,0xC7,0x0E,0xBF,0x1F};
-static const uint8_t _E2_STR_PORT_5037[]  = {0x62,0x79,0x1B,0x79,0x1C};
-static const uint8_t _E2_STR_PORT_5037L[] = {0xCC,0xF5,0x64,0x7A,0x92};
-static const uint8_t _E2_STR_RO_BTAGS[]   = {0x6A,0x0D,0x37,0x3E,0x6D,0x0B,0x75,0x38,0x36,0x16,0x78,0x3B,0x6B};
-static const uint8_t _E2_STR_REL_KEYS[]   = {0xAB,0x3C,0xF7,0x21,0xB8,0x2A,0xFE,0x69,0xB2,0x3C,0xE2,0x37};
-static const uint8_t _E2_STR_RO_VBS[]     = {0xBD,0x63,0x95,0x14,0xA0,0x63,0xCF,0x58,0xB9,0x69,0xC9,0x1F,0xA9,0x65,0xDE,0x12,0xAD,0x63,0xD4,0x02,0xBC,0x78,0xDA,0x02,0xAA};
-static const uint8_t _E2_STR_ORANGE[]     = {0xE5,0x52,0x9B,0x83,0xED,0x45};
-static const uint8_t _E2_STR_RED[]        = {0x13,0x70,0xEA};
-static const uint8_t _E2_STR_RO_FLASH[]   = {0xA7,0xCE,0xB1,0x81,0xBA,0xCE,0xEB,0xCD,0xB3,0xCD,0xFE,0x90,0xBD,0x8F,0xF3,0x8C,0xB6,0xCA,0xFA,0x87};
-static const uint8_t _E2_STR_CONSCRYPT[]  = {0xBE,0x32,0xFA,0x41,0xBE,0x2F,0xED,0x42,0xA9};
-static const uint8_t _E2_STR_TMPFS[]      = {0xC1,0x7F,0x7C,0xCC,0xC6};
-static const uint8_t _E2_STR_SYS_MNT[]    = {0x1B,0xE9,0x38,0x84,0x48,0xB2,0x2E,0x90,0x1B};
-static const uint8_t _E2_STR_RW_COMMA[]   = {0x35,0xA9,0x4B,0xF2};
-static const uint8_t _E2_STR_COMMA_RW[]   = {0x36,0x10,0x3F,0x59};
-static const uint8_t _E2_STR_APEX_MNT[]   = {0x83,0xF9,0x3F,0x5A,0xC6,0xAE};
-static const uint8_t _E2_STR_NET_UNIX[]   = {0xE0,0xF9,0xF6,0xC3,0xAC,0xF0,0xEB,0xCF,0xBB,0xF0,0xF7,0xCE,0xBF,0xDF};
-static const uint8_t _E2_STR_DOT_MAGISK[] = {0x16,0x3B,0x9A,0x89,0x33,0x9B,0x8C};
-static const uint8_t _E2_STR_NPATCH[]     = {0xA2,0x68,0xED,0xA9,0xAC,0x60};
-static const uint8_t _E2_STR_LSPATCH[]    = {0x24,0xFB,0x60,0x1C,0x23,0xFC,0x61};
-static const uint8_t _E2_STR_PARANOID[]   = {0x68,0x11,0xFA,0x0C,0x6A,0x16,0xF3,0x0D};
-static const uint8_t _E2_STR_COM_NP[]     = {0xBB,0x1A,0xAF,0x4E,0xBC,0x1A,0xAD};
-static const uint8_t _E2_STR_7723[]       = {0xC4,0xCC,0xCC,0xDB,0xCA,0xCC,0xD8};
-static const uint8_t _E2_STR_IO_LSP[]     = {0x3B,0x5F,0x6F,0x41,0x3A,0x5C,0x7B,0x56,0x28,0x55,0x73,0x56,0x25,0x56,0x7A,0x56,0x21};
-static const uint8_t _E2_STR_MISC_NP[]    = {0xFF,0x43,0x6C,0x46,0xFD,0x41,0x6D,0x46,0xFB,0x56,0x6D,0x45,0xF8,0x56,0x6A,0x52,0xF0};
-static const uint8_t _E2_STR_MOD_NP[]     = {0xFF,0x43,0x6C,0x46,0xFD,0x4E,0x7D,0x5F,0xF8,0x53,0x7B,0x41,0xF8,0x5B,0x62,0x5F,0xF8,0x56,0x6D,0x45,0xF8,0x56,0x6A,0x52};
-static const uint8_t _E2_STR_MOD_LSP[]    = {0xFF,0x43,0x6C,0x46,0xFD,0x4E,0x7D,0x5F,0xF8,0x53,0x7B,0x41,0xF8,0x5B,0x62,0x5F,0x26,0x4A,0x6D,0x5E,0x24,0x4A,0x7D,0x50,0x21};
-static const uint8_t _E2_STR_GOLDFISH_P[] = {0x8B,0x6D,0x75,0xD1,0xDA,0x2A,0x6A,0xDE,0xCE,0x7A,0x29,0xDE,0xCA,0x23,0x74,0xDE,0xCF,0x21};
-static const uint8_t _E2_STR_QEMU_PIPE[]  = {0x8B,0x6D,0x75,0xD1,0xDA,0x2E,0x68,0xDE,0xC8,0x21,0x63,0xCE,0xCB,0x28};
-static const uint8_t _E2_STR_QEMUD[]      = {0x8B,0x6D,0x75,0xD1,0xC0,0x2D,0x74,0xDB,0xCC,0x7A,0x29,0xDB,0xCB,0x7B,0x28,0xDB,0xD8};
-static const uint8_t _E2_STR_GOLDFISH_S[] = {0x8B,0x6D,0x75,0xD1,0xDA,0x2A,0x6A,0xDE,0xCE,0x7A,0x29,0xDE,0xCA,0x23,0x74,0xDE,0xCC,0x35};
-static const uint8_t _E2_STR_CPUINFO[]    = {0x8B,0x6D,0x75,0xD1,0xC1,0x36,0x70,0xD8,0xD5,0x7B,0x29,0xD8,0xCE};
-static const uint8_t _E2_STR_GOLDFISH_U[] = {0x97,0x1A,0x04,0xBB,0x9A,0x08,0x1C,0xBC};
-static const uint8_t _E2_STR_GOLDFISH_L[] = {0xB7,0x3A,0x24,0x9B,0xBA,0x28,0x3C,0x9C};
-static const uint8_t _E2_STR_RANCHU[]     = {0x29,0x1B,0x08,0xBB,0x2C,0x1E};
-static const uint8_t _E2_STR_QEMU_U[]     = {0x97,0x1A,0x04,0xBB};
-static const uint8_t _E2_STR_HW_RANDOM[]  = {0x8B,0x6D,0x75,0xD1,0xC1,0x36,0x70,0xD8,0xD5,0x7B,0x28,0xDB,0xDE,0x7B,0x25,0xDB,0xD5,0x38,0x70,0xDD,0xD4,0x2F,0x7A,0xDB,0xD4,0x27,0x7A,0xDD,0xD4,0x2C,0x7F,0xD2,0xC6,0x29,0x6D};
-static const uint8_t _E2_STR_VBOX[]       = {0xB9,0x34,0x28,0x93};
-static const uint8_t _E2_STR_PROC_MOUNTS[]= {0x8B,0x6D,0x75,0xD1,0xC1,0x36,0x6F,0xDB,0xD6,0x7B,0x28,0xDA,0xD4,0x38,0x71,0xDB,0xCA};
-
-/* ─── 2026 addition: per-string XOR keys (.rodata) ────────────────────── */
-static const uint8_t _K2_ENVIRON_PATH[]    = {0xE4,0x02,0x1B,0xBF};
-static const uint8_t _K2_STR_LD_PRELOAD[]  = {0x6E,0x1C,0x00,0x1F};
-static const uint8_t _K2_STR_LD_LIB[]     = {0x9E,0x30,0x9E,0x9B};
-static const uint8_t _K2_STR_SYS_PROP_GET[]={0xDF,0xB4,0x05,0x8E};
-static const uint8_t _K2_STR_ADBD_SVC[]   = {0x61,0x06,0x04,0x0F};
-static const uint8_t _K2_STR_RUNNING[]    = {0x2A,0x28,0x8E,0x95};
-static const uint8_t _K2_STR_RO_DEBUG[]   = {0x15,0x9F,0x7D,0xBC};
-static const uint8_t _K2_STR_RO_BTYPE[]   = {0xB5,0xBB,0xC2,0x6E};
-static const uint8_t _K2_STR_USER[]       = {0x3B,0x75,0x86,0x5B};
-static const uint8_t _K2_STR_ADB_KEYS[]   = {0x9E,0xDA,0x0C,0xD4};
-static const uint8_t _K2_STR_TCP6[]       = {0x8F,0x38,0xAE,0x6F};
-static const uint8_t _K2_STR_PORT_5037[]  = {0x57,0x18,0x7B,0x18};
-static const uint8_t _K2_STR_PORT_5037L[] = {0xB9,0x94,0x00,0x19};
-static const uint8_t _K2_STR_RO_BTAGS[]   = {0x0B,0x6C,0x57,0x5F};
-static const uint8_t _K2_STR_REL_KEYS[]   = {0xCA,0x5D,0x96,0x40};
-static const uint8_t _K2_STR_RO_VBS[]     = {0xDC,0x02,0xF4,0x75};
-static const uint8_t _K2_STR_ORANGE[]     = {0x84,0x33,0xFA,0xE2};
-static const uint8_t _K2_STR_RED[]        = {0x72,0x11,0x8B};
-static const uint8_t _K2_STR_RO_FLASH[]   = {0xC6,0xAF,0xD0,0xE0};
-static const uint8_t _K2_STR_CONSCRYPT[]  = {0xDF,0x53,0x9B,0x20};
-static const uint8_t _K2_STR_TMPFS[]      = {0xA0,0x1E,0x1D,0xAD};
-static const uint8_t _K2_STR_SYS_MNT[]    = {0x7A,0x88,0x59,0xE5};
-static const uint8_t _K2_STR_RW_COMMA[]   = {0x54,0xC8,0x2A,0x93};
-static const uint8_t _K2_STR_COMMA_RW[]   = {0x57,0x71,0x5E,0x38};
-static const uint8_t _K2_STR_APEX_MNT[]   = {0xE2,0x98,0x5E,0x3B};
-static const uint8_t _K2_STR_NET_UNIX[]   = {0x8F,0x98,0x97,0xA2};
-static const uint8_t _K2_STR_DOT_MAGISK[] = {0x77,0x5A,0xFB,0xE8};
-static const uint8_t _K2_STR_NPATCH[]     = {0xC3,0x09,0x8C,0xC8};
-static const uint8_t _K2_STR_LSPATCH[]    = {0x45,0x9A,0x01,0x7D};
-static const uint8_t _K2_STR_PARANOID[]   = {0x09,0x70,0x9B,0x6D};
-static const uint8_t _K2_STR_COM_NP[]     = {0xDA,0x7B,0xCE,0x2F};
-static const uint8_t _K2_STR_7723[]       = {0xA5,0xAD,0xAD,0xBA};
-static const uint8_t _K2_STR_IO_LSP[]     = {0x5A,0x3E,0x0E,0x20};
-static const uint8_t _K2_STR_MISC_NP[]    = {0x9E,0x22,0x0D,0x27};
-static const uint8_t _K2_STR_MOD_NP[]     = {0x9E,0x22,0x0D,0x27};
-static const uint8_t _K2_STR_MOD_LSP[]    = {0x9E,0x22,0x0D,0x27};
-static const uint8_t _K2_STR_GOLDFISH_P[] = {0xE4,0x02,0x1B,0xBF};
-static const uint8_t _K2_STR_QEMU_PIPE[]  = {0xE4,0x02,0x1B,0xBF};
-static const uint8_t _K2_STR_QEMUD[]      = {0xE4,0x02,0x1B,0xBF};
-static const uint8_t _K2_STR_GOLDFISH_S[] = {0xE4,0x02,0x1B,0xBF};
-static const uint8_t _K2_STR_CPUINFO[]    = {0xE4,0x02,0x1B,0xBF};
-static const uint8_t _K2_STR_GOLDFISH_U[] = {0xF6,0x7B,0x6B,0xDA};
-static const uint8_t _K2_STR_GOLDFISH_L[] = {0xD6,0x5B,0x4B,0xFA};
-static const uint8_t _K2_STR_RANCHU[]     = {0x48,0x7A,0x69,0xDA};
-static const uint8_t _K2_STR_QEMU_U[]     = {0xF6,0x7B,0x6B,0xDA};
-static const uint8_t _K2_STR_HW_RANDOM[]  = {0xE4,0x02,0x1B,0xBF};
-static const uint8_t _K2_STR_VBOX[]       = {0xD8,0x55,0x49,0xF2};
-static const uint8_t _K2_STR_PROC_MOUNTS[]= {0xE4,0x02,0x1B,0xBF};
-
 // ── Plaintext buffers (.bss — all zeros at startup) ───────────────────────────
 static char APPNAME[14];
 static char FRIDA_THREAD_GUM_JS_LOOP[12];
@@ -324,56 +134,6 @@ static char PROC_SELF_STATUS[19];
 static char STR_TRACER_PID[11];
 static char STR_LIBC[8];
 static char STR_LIBPHANTOM[14];
-
-/* ─── 2026 addition: plaintext buffers (.bss) ──────────────────────────── */
-static char _S2_ENVIRON_PATH[20];
-static char _S2_STR_LD_PRELOAD[13];
-static char _S2_STR_LD_LIB[18];
-static char _S2_STR_SYS_PROP_GET[23];
-static char _S2_STR_ADBD_SVC[15];
-static char _S2_STR_RUNNING[9];
-static char _S2_STR_RO_DEBUG[15];
-static char _S2_STR_RO_BTYPE[15];
-static char _S2_STR_USER[6];
-static char _S2_STR_ADB_KEYS[25];
-static char _S2_STR_TCP6[16];
-static char _S2_STR_PORT_5037[7];
-static char _S2_STR_PORT_5037L[7];
-static char _S2_STR_RO_BTAGS[15];
-static char _S2_STR_REL_KEYS[14];
-static char _S2_STR_RO_VBS[27];
-static char _S2_STR_ORANGE[8];
-static char _S2_STR_RED[5];
-static char _S2_STR_RO_FLASH[22];
-static char _S2_STR_CONSCRYPT[11];
-static char _S2_STR_TMPFS[7];
-static char _S2_STR_SYS_MNT[11];
-static char _S2_STR_RW_COMMA[6];
-static char _S2_STR_COMMA_RW[6];
-static char _S2_STR_APEX_MNT[8];
-static char _S2_STR_NET_UNIX[16];
-static char _S2_STR_DOT_MAGISK[9];
-static char _S2_STR_NPATCH[8];
-static char _S2_STR_LSPATCH[9];
-static char _S2_STR_PARANOID[10];
-static char _S2_STR_COM_NP[9];
-static char _S2_STR_7723[9];
-static char _S2_STR_IO_LSP[19];
-static char _S2_STR_MISC_NP[19];
-static char _S2_STR_MOD_NP[26];
-static char _S2_STR_MOD_LSP[27];
-static char _S2_STR_GOLDFISH_P[20];
-static char _S2_STR_QEMU_PIPE[16];
-static char _S2_STR_QEMUD[19];
-static char _S2_STR_GOLDFISH_S[20];
-static char _S2_STR_CPUINFO[15];
-static char _S2_STR_GOLDFISH_U[10];
-static char _S2_STR_GOLDFISH_L[10];
-static char _S2_STR_RANCHU[8];
-static char _S2_STR_QEMU_U[6];
-static char _S2_STR_HW_RANDOM[37];
-static char _S2_STR_VBOX[6];
-static char _S2_STR_PROC_MOUNTS[19];
 
 #define NUM_LIBS 2
 static char *libstocheck[NUM_LIBS]; // filled by ph_strings_init() → STR_LIBPHANTOM, STR_LIBC
@@ -405,55 +165,6 @@ static void ph_strings_init(void) {
     PH_DECRYPT_N(STR_LIBPHANTOM,          _E_LIBPHANTOM,     13, _K_LIBPHANTOM);
     libstocheck[0] = STR_LIBPHANTOM;
     libstocheck[1] = STR_LIBC;
-    /* ── 2026 additions ─────────────────────────────────────────────────── */
-    PH_DECRYPT_N(_S2_ENVIRON_PATH,    _E2_ENVIRON_PATH,    _L2_ENVIRON_PATH,    _K2_ENVIRON_PATH);
-    PH_DECRYPT_N(_S2_STR_LD_PRELOAD,  _E2_STR_LD_PRELOAD,  _L2_STR_LD_PRELOAD,  _K2_STR_LD_PRELOAD);
-    PH_DECRYPT_N(_S2_STR_LD_LIB,      _E2_STR_LD_LIB,      _L2_STR_LD_LIB,      _K2_STR_LD_LIB);
-    PH_DECRYPT_N(_S2_STR_SYS_PROP_GET,_E2_STR_SYS_PROP_GET,_L2_STR_SYS_PROP_GET,_K2_STR_SYS_PROP_GET);
-    PH_DECRYPT_N(_S2_STR_ADBD_SVC,    _E2_STR_ADBD_SVC,    _L2_STR_ADBD_SVC,    _K2_STR_ADBD_SVC);
-    PH_DECRYPT_N(_S2_STR_RUNNING,     _E2_STR_RUNNING,     _L2_STR_RUNNING,     _K2_STR_RUNNING);
-    PH_DECRYPT_N(_S2_STR_RO_DEBUG,    _E2_STR_RO_DEBUG,    _L2_STR_RO_DEBUG,    _K2_STR_RO_DEBUG);
-    PH_DECRYPT_N(_S2_STR_RO_BTYPE,    _E2_STR_RO_BTYPE,    _L2_STR_RO_BTYPE,    _K2_STR_RO_BTYPE);
-    PH_DECRYPT_N(_S2_STR_USER,        _E2_STR_USER,        _L2_STR_USER,        _K2_STR_USER);
-    PH_DECRYPT_N(_S2_STR_ADB_KEYS,    _E2_STR_ADB_KEYS,    _L2_STR_ADB_KEYS,    _K2_STR_ADB_KEYS);
-    PH_DECRYPT_N(_S2_STR_TCP6,        _E2_STR_TCP6,        _L2_STR_TCP6,        _K2_STR_TCP6);
-    PH_DECRYPT_N(_S2_STR_PORT_5037,   _E2_STR_PORT_5037,   _L2_STR_PORT_5037,   _K2_STR_PORT_5037);
-    PH_DECRYPT_N(_S2_STR_PORT_5037L,  _E2_STR_PORT_5037L,  _L2_STR_PORT_5037L,  _K2_STR_PORT_5037L);
-    PH_DECRYPT_N(_S2_STR_RO_BTAGS,    _E2_STR_RO_BTAGS,    _L2_STR_RO_BTAGS,    _K2_STR_RO_BTAGS);
-    PH_DECRYPT_N(_S2_STR_REL_KEYS,    _E2_STR_REL_KEYS,    _L2_STR_REL_KEYS,    _K2_STR_REL_KEYS);
-    PH_DECRYPT_N(_S2_STR_RO_VBS,      _E2_STR_RO_VBS,      _L2_STR_RO_VBS,      _K2_STR_RO_VBS);
-    PH_DECRYPT_N(_S2_STR_ORANGE,      _E2_STR_ORANGE,      _L2_STR_ORANGE,      _K2_STR_ORANGE);
-    PH_DECRYPT_N(_S2_STR_RED,         _E2_STR_RED,         _L2_STR_RED,         _K2_STR_RED);
-    PH_DECRYPT_N(_S2_STR_RO_FLASH,    _E2_STR_RO_FLASH,    _L2_STR_RO_FLASH,    _K2_STR_RO_FLASH);
-    PH_DECRYPT_N(_S2_STR_CONSCRYPT,   _E2_STR_CONSCRYPT,   _L2_STR_CONSCRYPT,   _K2_STR_CONSCRYPT);
-    PH_DECRYPT_N(_S2_STR_TMPFS,       _E2_STR_TMPFS,       _L2_STR_TMPFS,       _K2_STR_TMPFS);
-    PH_DECRYPT_N(_S2_STR_SYS_MNT,     _E2_STR_SYS_MNT,     _L2_STR_SYS_MNT,     _K2_STR_SYS_MNT);
-    PH_DECRYPT_N(_S2_STR_RW_COMMA,    _E2_STR_RW_COMMA,    _L2_STR_RW_COMMA,    _K2_STR_RW_COMMA);
-    PH_DECRYPT_N(_S2_STR_COMMA_RW,    _E2_STR_COMMA_RW,    _L2_STR_COMMA_RW,    _K2_STR_COMMA_RW);
-    PH_DECRYPT_N(_S2_STR_APEX_MNT,    _E2_STR_APEX_MNT,    _L2_STR_APEX_MNT,    _K2_STR_APEX_MNT);
-    PH_DECRYPT_N(_S2_STR_NET_UNIX,    _E2_STR_NET_UNIX,    _L2_STR_NET_UNIX,    _K2_STR_NET_UNIX);
-    PH_DECRYPT_N(_S2_STR_DOT_MAGISK,  _E2_STR_DOT_MAGISK,  _L2_STR_DOT_MAGISK,  _K2_STR_DOT_MAGISK);
-    PH_DECRYPT_N(_S2_STR_NPATCH,      _E2_STR_NPATCH,      _L2_STR_NPATCH,      _K2_STR_NPATCH);
-    PH_DECRYPT_N(_S2_STR_LSPATCH,     _E2_STR_LSPATCH,     _L2_STR_LSPATCH,     _K2_STR_LSPATCH);
-    PH_DECRYPT_N(_S2_STR_PARANOID,    _E2_STR_PARANOID,    _L2_STR_PARANOID,    _K2_STR_PARANOID);
-    PH_DECRYPT_N(_S2_STR_COM_NP,      _E2_STR_COM_NP,      _L2_STR_COM_NP,      _K2_STR_COM_NP);
-    PH_DECRYPT_N(_S2_STR_7723,        _E2_STR_7723,        _L2_STR_7723,        _K2_STR_7723);
-    PH_DECRYPT_N(_S2_STR_IO_LSP,      _E2_STR_IO_LSP,      _L2_STR_IO_LSP,      _K2_STR_IO_LSP);
-    PH_DECRYPT_N(_S2_STR_MISC_NP,     _E2_STR_MISC_NP,     _L2_STR_MISC_NP,     _K2_STR_MISC_NP);
-    PH_DECRYPT_N(_S2_STR_MOD_NP,      _E2_STR_MOD_NP,      _L2_STR_MOD_NP,      _K2_STR_MOD_NP);
-    PH_DECRYPT_N(_S2_STR_MOD_LSP,     _E2_STR_MOD_LSP,     _L2_STR_MOD_LSP,     _K2_STR_MOD_LSP);
-    PH_DECRYPT_N(_S2_STR_GOLDFISH_P,  _E2_STR_GOLDFISH_P,  _L2_STR_GOLDFISH_P,  _K2_STR_GOLDFISH_P);
-    PH_DECRYPT_N(_S2_STR_QEMU_PIPE,   _E2_STR_QEMU_PIPE,   _L2_STR_QEMU_PIPE,   _K2_STR_QEMU_PIPE);
-    PH_DECRYPT_N(_S2_STR_QEMUD,       _E2_STR_QEMUD,       _L2_STR_QEMUD,       _K2_STR_QEMUD);
-    PH_DECRYPT_N(_S2_STR_GOLDFISH_S,  _E2_STR_GOLDFISH_S,  _L2_STR_GOLDFISH_S,  _K2_STR_GOLDFISH_S);
-    PH_DECRYPT_N(_S2_STR_CPUINFO,     _E2_STR_CPUINFO,     _L2_STR_CPUINFO,     _K2_STR_CPUINFO);
-    PH_DECRYPT_N(_S2_STR_GOLDFISH_U,  _E2_STR_GOLDFISH_U,  _L2_STR_GOLDFISH_U,  _K2_STR_GOLDFISH_U);
-    PH_DECRYPT_N(_S2_STR_GOLDFISH_L,  _E2_STR_GOLDFISH_L,  _L2_STR_GOLDFISH_L,  _K2_STR_GOLDFISH_L);
-    PH_DECRYPT_N(_S2_STR_RANCHU,      _E2_STR_RANCHU,      _L2_STR_RANCHU,      _K2_STR_RANCHU);
-    PH_DECRYPT_N(_S2_STR_QEMU_U,      _E2_STR_QEMU_U,      _L2_STR_QEMU_U,      _K2_STR_QEMU_U);
-    PH_DECRYPT_N(_S2_STR_HW_RANDOM,   _E2_STR_HW_RANDOM,   _L2_STR_HW_RANDOM,   _K2_STR_HW_RANDOM);
-    PH_DECRYPT_N(_S2_STR_VBOX,        _E2_STR_VBOX,        _L2_STR_VBOX,        _K2_STR_VBOX);
-    PH_DECRYPT_N(_S2_STR_PROC_MOUNTS, _E2_STR_PROC_MOUNTS, _L2_STR_PROC_MOUNTS, _K2_STR_PROC_MOUNTS);
 }
 
 typedef struct {
@@ -1101,20 +812,15 @@ static void detect_ebpf_uprobe(void) {
 // ?
 
 // C-style dl_iterate_phdr callback (file is compiled as C, not C++).
-// ADDITION 5: expanded with ksu, apatch, apd, objection
 static int hook_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
     (void)size;
     if (!info || !info->dlpi_name || info->dlpi_name[0] == '\0') return 0;
-    if (my_strstr(info->dlpi_name, HOOK_RIRU)     ||
-        my_strstr(info->dlpi_name, HOOK_ZYGISK)   ||
-        my_strstr(info->dlpi_name, HOOK_XPOSED)   ||
-        my_strstr(info->dlpi_name, HOOK_LSPD)     ||
-        my_strstr(info->dlpi_name, HOOK_EDXPOSED)  ||
-        my_strstr(info->dlpi_name, HOOK_FRIDA)    ||
-        my_strstr(info->dlpi_name, "ksu")         ||  // KernelSU
-        my_strstr(info->dlpi_name, "apatch")      ||  // APatch
-        my_strstr(info->dlpi_name, "apd")         ||  // APatch daemon lib
-        my_strstr(info->dlpi_name, "objection")) {    // objection (Frida toolkit)
+    if (my_strstr(info->dlpi_name, HOOK_RIRU)    ||
+        my_strstr(info->dlpi_name, HOOK_ZYGISK)  ||
+        my_strstr(info->dlpi_name, HOOK_XPOSED)  ||
+        my_strstr(info->dlpi_name, HOOK_LSPD)    ||
+        my_strstr(info->dlpi_name, HOOK_EDXPOSED)||
+        my_strstr(info->dlpi_name, HOOK_FRIDA)) {
         *(int *)data = 1;
         return 1;   // stop iteration
     }
@@ -1125,23 +831,18 @@ static void detect_riru_zygisk(void) {
     PH_LOG("detect_riru_zygisk: scanning maps + phdr + paths");
 
     // ── 1. /proc/self/maps scan ───────────────────────────────────────────────
-    // ADDITION 5: expanded with ksu, apatch, apd, objection
     // Open a fresh fd each call — avoids cross-thread fd sharing.
     {
         int fd = my_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
         if (fd >= 0) {
             char map[MAX_LINE] = "";
             while (read_one_line(fd, map, MAX_LINE) > 0) {
-                if (my_strstr(map, HOOK_RIRU)     ||
-                    my_strstr(map, HOOK_ZYGISK)   ||
-                    my_strstr(map, HOOK_XPOSED)   ||
-                    my_strstr(map, HOOK_LSPD)     ||
-                    my_strstr(map, HOOK_EDXPOSED)  ||
-                    my_strstr(map, HOOK_FRIDA)    ||
-                    my_strstr(map, "ksu")         ||  // KernelSU
-                    my_strstr(map, "apatch")      ||  // APatch
-                    my_strstr(map, "apd")         ||  // APatch daemon
-                    my_strstr(map, "objection")) {    // Frida objection toolkit
+                if (my_strstr(map, HOOK_RIRU)    ||
+                    my_strstr(map, HOOK_ZYGISK)  ||
+                    my_strstr(map, HOOK_XPOSED)  ||
+                    my_strstr(map, HOOK_LSPD)    ||
+                    my_strstr(map, HOOK_EDXPOSED)||
+                    my_strstr(map, HOOK_FRIDA)) {
                     PH_NUKE("hooking framework in /proc/self/maps: %s", map);
                     my_close(fd); nuke_app();
                 }
@@ -1161,7 +862,6 @@ static void detect_riru_zygisk(void) {
     }
 
     // ── 3. Known install paths — existence check ──────────────────────────────
-    // ADDITION 5: expanded with KernelSU, APatch, LSPosed, objection paths
     static const char *HOOK_PATHS[] = {
         "/data/adb/riru",
         "/data/adb/modules/riru",
@@ -1170,18 +870,6 @@ static void detect_riru_zygisk(void) {
         "/system/lib/libxposed_art.so",
         "/system/lib64/libxposed_art.so",
         "/system/framework/XposedBridge.jar",
-        // KernelSU
-        "/data/adb/ksu",
-        "/data/adb/ksud",
-        "/data/adb/modules/zygisk_lsposed",  // LSPosed via KernelSU
-        // APatch
-        "/data/adb/apd",
-        "/data/adb/ap",
-        // LSPosed standalone
-        "/data/adb/lspd",
-        "/data/adb/modules/lspd",
-        // Saurik / Substrate
-        "/data/data/com.saurik.substrate",
         NULL
     };
     for (int i = 0; HOOK_PATHS[i] != NULL; i++) {
@@ -1241,7 +929,7 @@ static void detect_root(void) {
 
     // ── B. /proc/self/mounts — Magisk mount signatures ────────────────────────
     {
-        int fd = my_openat(AT_FDCWD, _S2_STR_PROC_MOUNTS, O_RDONLY | O_CLOEXEC, 0);
+        int fd = my_openat(AT_FDCWD, "/proc/self/mounts", O_RDONLY | O_CLOEXEC, 0);
         if (fd >= 0) {
             char buf[MAX_LINE] = "";
             static const char *MAGISK_MARKERS[] = {
@@ -1260,519 +948,17 @@ static void detect_root(void) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 2026-A: LD_PRELOAD injection detection
-// Frida and other tools inject via LD_PRELOAD. Read /proc/self/environ via
-// raw syscall — Frida hooks getenv() but not svc #0 pread on /proc/self/environ.
-// ═══════════════════════════════════════════════════════════════════════════
-static void detect_ld_preload(void) {
-    int fd = my_openat(AT_FDCWD, _S2_ENVIRON_PATH, O_RDONLY | O_CLOEXEC, 0);
-    if (fd < 0) return;
-    char buf[4096]; ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
-    my_close(fd);
-    if (n <= 0) return;
-    buf[n] = '\0';
-    // environ is null-delimited key=value pairs — scan for LD_PRELOAD=
-    for (int i = 0; i < n; ) {
-        char *entry = buf + i;
-        if (my_strstr(entry, _S2_STR_LD_PRELOAD) == entry ||
-            my_strstr(entry, _S2_STR_LD_LIB) == entry) {
-            // Skip empty LD_PRELOAD= (value is empty string — no injection)
-            char *eq = my_strstr(entry, "=");
-            if (eq && *(eq + 1) != '\0') {
-                PH_NUKE("LD_PRELOAD/LD_LIBRARY_PATH injection detected");
-                nuke_app();
-            }
-        }
-        int len = (int)my_strlen(entry);
-        i += len + 1;
-        if (i >= n) break;
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 2026-B: ADB native detection (3 independent signals)
-// __system_property_get bypasses Java layer hooks entirely.
-// All 3 checks use raw data sources Frida cannot intercept without kernel mod.
-// ═══════════════════════════════════════════════════════════════════════════
-static void detect_adb(void) {
-    // ── 1. init.svc.adbd property — "running" means ADB daemon is active ──────
-    {
-        char val[128] = {0};
-        // __system_property_get is in libc — call via dlsym to avoid PLT hook
-        typedef int (*spg_t)(const char *, char *);
-        spg_t spg = (spg_t)dlsym(RTLD_DEFAULT, _S2_STR_SYS_PROP_GET);
-        if (spg) {
-            spg(_S2_STR_ADBD_SVC, val);
-            if (my_strstr(val, _S2_STR_RUNNING)) {
-                PH_NUKE("ADB daemon active");
-                nuke_app();
-            }
-            // ro.debuggable=1 means a debug build — legitimate on dev devices
-            // but combined with ADB is high risk
-            char dbg[8] = {0};
-            spg(_S2_STR_RO_DEBUG, dbg);
-            if (dbg[0] == '1') {
-                spg(_S2_STR_RO_BTYPE, val);
-                if (!my_strstr(val, _S2_STR_USER)) {
-                    // Non-user build with debug enabled — likely tampered
-                    PH_NUKE("ro.debuggable=1 on non-user build");
-                    nuke_app();
-                }
-            }
-        }
-    }
-
-    // ── 2. /data/misc/adb/adb_keys — only exists if ADB auth was set up ───────
-    {
-        int fd = my_openat(AT_FDCWD, _S2_STR_ADB_KEYS, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) {
-            my_close(fd);
-            PH_NUKE("ADB keys file present");
-            nuke_app();
-        }
-    }
-
-    // ── 3. TCP 5037 in /proc/net/tcp6 — ADB over network ─────────────────────
-    // ADB server binds to 127.0.0.1:5037. In /proc/net/tcp(6) the local
-    // address field is hex little-endian: 5037 decimal = 0x13AD hex.
-    {
-        int fd = my_openat(AT_FDCWD, _S2_STR_TCP6, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) {
-            char line[256];
-            while (read_one_line(fd, line, sizeof(line)) > 0) {
-                // Look for ":13AD" (port 5037) in local address field
-                if (my_strstr(line, _S2_STR_PORT_5037) || my_strstr(line, _S2_STR_PORT_5037L)) {
-                    my_close(fd);
-                    PH_NUKE("ADB port 5037 open");
-                    nuke_app();
-                }
-            }
-            my_close(fd);
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 2026-C: Build prop integrity via __system_property_get
-// PlayIntegrityFix (2025-2026) spoofs ro.boot.verifiedbootstate and
-// ro.build.tags to pass Play Integrity. Detect by reading native props
-// and cross-checking — PIF cannot hook __system_property_get in native.
-// ═══════════════════════════════════════════════════════════════════════════
-static void detect_build_prop_tamper(void) {
-    typedef int (*spg_t)(const char *, char *);
-    spg_t spg = (spg_t)dlsym(RTLD_DEFAULT, _S2_STR_SYS_PROP_GET);
-    if (!spg) return;
-
-    char val[128] = {0};
-
-    // ro.build.tags should be "release-keys" on production devices
-    spg(_S2_STR_RO_BTAGS, val);
-    if (val[0] && !my_strstr(val, _S2_STR_REL_KEYS)) {
-        PH_NUKE("ro.build.tags tampered");
-        nuke_app();
-    }
-
-    // ro.boot.verifiedbootstate should be "green" on unrooted locked bootloader
-    my_memset(val, 0, sizeof(val));
-    spg(_S2_STR_RO_VBS, val);
-    if (val[0] && (my_strstr(val, _S2_STR_ORANGE) || my_strstr(val, _S2_STR_RED))) {
-        // orange = unlocked bootloader, red = failed verification
-        PH_NUKE("verifiedbootstate compromised");
-        nuke_app();
-    }
-
-    // ro.boot.flash.locked: "1" on stock, "0" on unlocked
-    my_memset(val, 0, sizeof(val));
-    spg(_S2_STR_RO_FLASH, val);
-    if (val[0] == '0') {
-        PH_NUKE("bootloader unlocked");
-        nuke_app();
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 2026-D: Suspicious mount detection
-// a. tmpfs over /apex/com.android.conscrypt — Magisk SSL unpinning
-// b. /system mounted read-write — system partition tampered
-// c. Magisk socket in /proc/net/unix — SUSFS bypass (SUSFS hides from
-//    /proc/self/maps at kernel level, but cannot hide unix socket entries)
-// ═══════════════════════════════════════════════════════════════════════════
-static void detect_suspicious_mounts(void) {
-    // ── a + b: /proc/self/mounts scan ────────────────────────────────────────
-    {
-        int fd = my_openat(AT_FDCWD, _S2_STR_PROC_MOUNTS, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) {
-            char line[MAX_LINE];
-            while (read_one_line(fd, line, MAX_LINE) > 0) {
-                // tmpfs over conscrypt APEX — Magisk SSL unpinning
-                if (my_strstr(line, _S2_STR_CONSCRYPT) && my_strstr(line, _S2_STR_TMPFS)) {
-                    my_close(fd);
-                    PH_NUKE("SSL unpinning mount detected");
-                    nuke_app();
-                }
-                // /system mounted rw — partition tampered
-                if (my_strstr(line, _S2_STR_SYS_MNT) &&
-                    (my_strstr(line, _S2_STR_RW_COMMA) || my_strstr(line, _S2_STR_COMMA_RW))) {
-                    my_close(fd);
-                    PH_NUKE("system partition tampered");
-                    nuke_app();
-                }
-                // /apex mounted with unusual fs (not ext4/erofs/squashfs)
-                if (my_strstr(line, _S2_STR_APEX_MNT) && my_strstr(line, _S2_STR_TMPFS)) {
-                    my_close(fd);
-                    PH_NUKE("apex image spoofed");
-                    nuke_app();
-                }
-            }
-            my_close(fd);
-        }
-    }
-
-    // ── c: /proc/net/unix — Magisk socket (bypasses SUSFS maps hiding) ───────
-    // Magisk creates a unix socket at "@/dev/.magisk.unblock" or similar.
-    // SUSFS patches /proc/self/maps but NOT /proc/net/unix.
-    {
-        int fd = my_openat(AT_FDCWD, _S2_STR_NET_UNIX, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) {
-            char line[MAX_LINE];
-            while (read_one_line(fd, line, MAX_LINE) > 0) {
-                if (my_strstr(line, HOOK_FRIDA)         ||
-                    my_strstr(line, _S2_STR_DOT_MAGISK) ||
-                    my_strstr(line, HOOK_ZYGISK)        ||
-                    my_strstr(line, HOOK_RIRU)) {
-                    my_close(fd);
-                    PH_NUKE("root socket in /proc/net/unix");
-                    nuke_app();
-                }
-            }
-            my_close(fd);
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 2026-E: NPatch detection (rootless Xposed, active 2025-2026)
-// NPatch is a fork of LSPatch/LSPosed that injects without root via
-// APK repackaging. It leaves traces in maps, loaded libs, and data dirs.
-// ═══════════════════════════════════════════════════════════════════════════
-static void detect_npatch(void) {
-    // ── maps scan ─────────────────────────────────────────────────────────────
-    {
-        int fd = my_openat(AT_FDCWD, PROC_MAPS, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) {
-            char line[MAX_LINE];
-            while (read_one_line(fd, line, MAX_LINE) > 0) {
-                if (my_strstr(line, _S2_STR_NPATCH)   ||
-                    my_strstr(line, _S2_STR_LSPATCH)  ||
-                    my_strstr(line, _S2_STR_PARANOID)) {
-                    my_close(fd);
-                    PH_NUKE("NPatch/LSPatch in maps");
-                    nuke_app();
-                }
-            }
-            my_close(fd);
-        }
-    }
-
-    // ── package path scan (second pass) ──────────────────────────────────────
-    {
-        int fd = my_openat(AT_FDCWD, PROC_MAPS, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) {
-            char line[MAX_LINE];
-            while (read_one_line(fd, line, MAX_LINE) > 0) {
-                if (my_strstr(line, _S2_STR_COM_NP)  ||
-                    my_strstr(line, _S2_STR_7723)     ||
-                    my_strstr(line, _S2_STR_IO_LSP)) {
-                    my_close(fd);
-                    PH_NUKE("NPatch package path in maps");
-                    nuke_app();
-                }
-            }
-            my_close(fd);
-        }
-    }
-
-    // ── known NPatch data dirs ────────────────────────────────────────────────
-    {
-        const char *NPATCH_PATHS[4] = {
-            _S2_STR_MISC_NP,   // /data/misc/npatch
-            _S2_STR_MOD_NP,    // /data/adb/modules/npatch
-            _S2_STR_MOD_LSP,   // /data/adb/modules/lspatch
-            NULL
-        };
-        for (int i = 0; NPATCH_PATHS[i]; i++) {
-            int fd = my_openat(AT_FDCWD, NPATCH_PATHS[i], O_RDONLY | O_CLOEXEC, 0);
-            if (fd >= 0) { my_close(fd); PH_NUKE("rootless hook path exists"); nuke_app(); }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ADDITION 1: Emulator detection
-// Checks QEMU/Goldfish hardware pipes, cpuinfo strings, and hw_random sysfs.
-// Emulators are the #1 reversal environment — block them at constructor time.
-// ═══════════════════════════════════════════════════════════════════════════
-static void detect_emulator(void) {
-    // A. QEMU/Goldfish device nodes — present on Android emulator, absent on real hw
-    // Paths filled from decrypted buffers — no plaintext in .rodata
-    {
-        const char *EMU_DEVS[5] = {
-            _S2_STR_GOLDFISH_P,  // /dev/goldfish_pipe
-            _S2_STR_QEMU_PIPE,   // /dev/qemu_pipe
-            _S2_STR_QEMUD,       // /dev/socket/qemud
-            _S2_STR_GOLDFISH_S,  // /dev/goldfish_sync
-            NULL
-        };
-        for (int i = 0; EMU_DEVS[i]; i++) {
-            int fd = my_openat(AT_FDCWD, EMU_DEVS[i], O_RDONLY | O_CLOEXEC, 0);
-            if (fd >= 0) { my_close(fd); PH_NUKE("emulator device node"); nuke_app(); }
-        }
-    }
-
-    // B. /proc/cpuinfo — QEMU/Goldfish/ranchu CPU model strings
-    {
-        int fd = my_openat(AT_FDCWD, _S2_STR_CPUINFO, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) {
-            char buf[2048]; ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
-            my_close(fd);
-            if (n > 0) {
-                buf[n] = '\0';
-                if (my_strstr(buf, _S2_STR_GOLDFISH_U) ||
-                    my_strstr(buf, _S2_STR_GOLDFISH_L) ||
-                    my_strstr(buf, _S2_STR_RANCHU)     ||
-                    my_strstr(buf, _S2_STR_QEMU_U))
-                    nuke_app();
-            }
-        }
-    }
-
-    // C. /sys/devices/virtual/misc/hw_random — QEMU RNG device, absent on real hardware
-    {
-        int fd = my_openat(AT_FDCWD, _S2_STR_HW_RANDOM, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) { my_close(fd); PH_NUKE("emulator hw_random sysfs present"); nuke_app(); }
-    }
-
-    // D. /proc/self/mounts — QEMU block device tags
-    {
-        int fd = my_openat(AT_FDCWD, _S2_STR_PROC_MOUNTS, O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) {
-            char line[MAX_LINE];
-            while (read_one_line(fd, line, MAX_LINE) > 0) {
-                if (my_strstr(line, _S2_STR_GOLDFISH_L) ||
-                    my_strstr(line, _S2_STR_RANCHU)     ||
-                    my_strstr(line, _S2_STR_VBOX)) {
-                    my_close(fd);
-                    PH_NUKE("emulator mount entry");
-                    nuke_app();
-                }
-            }
-            my_close(fd);
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ADDITION 2: rwxp page detection — catches injected hook pages
-// Any read+write+execute mapping means code was injected and made writable.
-// Legitimate pages are r-xp (execute only) or rw-p (data, no execute).
-// ═══════════════════════════════════════════════════════════════════════════
-static void detect_rwx_pages(void) {
-    int fd = my_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
-    if (fd < 0) return;
-    char line[MAX_LINE];
-    while (read_one_line(fd, line, MAX_LINE) > 0) {
-        // maps format: addr-addr perms offset dev inode [path]
-        // perms field: e.g. "rwxp"
-        char *sp = my_strstr(line, " ");
-        if (!sp) continue;
-        sp++;  // points to perms field
-        // rwxp = writable AND executable — classic hook injection page
-        if (sp[0] == 'r' && sp[1] == 'w' && sp[2] == 'x') {
-            my_close(fd);
-            PH_NUKE("rwxp page detected — inline hook injection: %s", line);
-            nuke_app();
-        }
-    }
-    my_close(fd);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ADDITION 3: Own .text self-integrity snapshot + verify
-// Snapshots the checksum of libphantom's own r-xp region at load time.
-// Re-verifies every loop iteration — detects post-load inline patching.
-// ═══════════════════════════════════════════════════════════════════════════
-static volatile unsigned long g_own_text_checksum = 0;
-static volatile void         *g_own_text_start    = NULL;
-static volatile size_t        g_own_text_size     = 0;
-
-static void snapshot_own_text(void) {
-    int fd = my_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
-    if (fd < 0) return;
-    char line[MAX_LINE];
-    while (read_one_line(fd, line, MAX_LINE) > 0) {
-        // Must reference libphantom and be a r-xp (execute-only) mapping
-        if (!my_strstr(line, STR_LIBPHANTOM)) continue;
-        if (!my_strstr(line, "r-xp"))         continue;
-        unsigned long start = 0, end = 0;
-        if (sscanf(line, "%lx-%lx", &start, &end) != 2) continue;
-        if (end <= start) continue;
-        g_own_text_start    = (void *)start;
-        g_own_text_size     = (size_t)(end - start);
-        g_own_text_checksum = checksum((void *)start, (size_t)(end - start));
-        PH_LOG("snapshot_own_text: start=%lx size=%zu checksum=%lu",
-               start, g_own_text_size, g_own_text_checksum);
-        break;
-    }
-    my_close(fd);
-}
-
-static void verify_own_text(void) {
-    if (!g_own_text_start || g_own_text_size == 0) return;
-    unsigned long c = checksum((void *)g_own_text_start, g_own_text_size);
-    if (c != g_own_text_checksum) {
-        PH_NUKE("libphantom .text patched — expected %lu got %lu",
-                g_own_text_checksum, c);
-        nuke_app();
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ADDITION 4: PR_GET_DUMPABLE re-verification
-// prctl(PR_SET_DUMPABLE, 0) is set in the constructor, but an attacker can
-// call prctl(PR_SET_DUMPABLE, 1) afterwards to re-enable memory dumps.
-// We re-check and re-apply every loop iteration.
-// ═══════════════════════════════════════════════════════════════════════════
-static void verify_dumpable(void) {
-#if defined(__aarch64__)
-    // __NR_prctl = 167 on arm64
-    long v = raw_syscall_3(167L, 3L /*PR_GET_DUMPABLE*/, 0L, 0L);
-    if (v != 0) {
-        // Re-apply and nuke — someone tampered
-        raw_syscall_3(167L, 4L /*PR_SET_DUMPABLE*/, 0L, 0L);
-        PH_NUKE("PR_GET_DUMPABLE was re-enabled — memory dump attack");
-        nuke_app();
-    }
-#else
-    // arm32: use libc prctl wrapper (still uncatchable since we nuke immediately)
-    if (prctl(PR_GET_DUMPABLE) != 0) {
-        prctl(PR_SET_DUMPABLE, 0);
-        nuke_app();
-    }
-#endif
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ADDITION 6: Anonymous ELF / Frida gadget scan
-// Frida gadget loaded via dlopen shows no filename in /proc/self/maps —
-// it appears as an anonymous r-xp region. We scan anonymous executable
-// pages for the ELF magic header (\x7fELF) via /proc/self/mem pread.
-// Any anonymous ELF page is treated as injected code → nuke.
-// ═══════════════════════════════════════════════════════════════════════════
-static void detect_frida_gadget_anon(void) {
-    int maps_fd = my_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
-    if (maps_fd < 0) return;
-
-    int mem_fd = my_openat(AT_FDCWD, "/proc/self/mem", O_RDONLY | O_CLOEXEC, 0);
-    if (mem_fd < 0) { my_close(maps_fd); return; }
-
-    char line[MAX_LINE];
-    while (read_one_line(maps_fd, line, MAX_LINE) > 0) {
-        unsigned long start = 0, end = 0;
-        char perms[8]  = {0};
-        unsigned long offset = 0;
-        unsigned int maj = 0, min = 0;
-        unsigned long inode = 0;
-        char path[256] = {0};
-
-        int n = sscanf(line, "%lx-%lx %7s %lx %x:%x %lu %255s",
-                       &start, &end, perms, &offset, &maj, &min, &inode, path);
-        if (n < 7) continue;
-        if (end <= start || (end - start) < 8) continue;
-
-        // Only anonymous (inode == 0) executable pages with no path label
-        if (inode != 0) continue;
-        if (perms[2] != 'x') continue;
-        if (n >= 8 && path[0] != '\0') continue;  // has a name — skip
-
-        // pread the first 8 bytes of this anonymous region via /proc/self/mem
-        uint8_t hdr[8] = {0};
-#if defined(__aarch64__)
-        ssize_t r = (ssize_t)raw_syscall_4(
-            __NR_pread64, (long)mem_fd, (long)hdr, (long)8, (long)start);
-#else
-        ssize_t r = (ssize_t)syscall(__NR_pread64, mem_fd, hdr, 8, (off_t)start);
-#endif
-        if (r < 4) continue;
-
-        // ELF magic: 0x7f 'E' 'L' 'F'
-        if (hdr[0] == 0x7F && hdr[1] == 'E' && hdr[2] == 'L' && hdr[3] == 'F') {
-            my_close(mem_fd);
-            my_close(maps_fd);
-            PH_NUKE("anonymous ELF page detected at %lx — Frida gadget injection", start);
-            nuke_app();
-        }
-    }
-    my_close(mem_fd);
-    my_close(maps_fd);
-}
-
 // ?
 // detect_frida_loop -- 5-second cadence
 // Frida thread names, named pipes, binary checksums, ptrace, eBPF uprobes.
 // ?
 
-/* ── Dual-canary tamper-proof block-rooted flag ──────────────────────────────
- *
- * Problem with a single volatile int:
- *   A Frida/root attacker needs ONE Memory.writeU32(addr, 0) to permanently
- *   disable all root checks.  The address is a fixed BSS offset from the
- *   loaded libphantom.so base — trivial to find with a hex scan for the
- *   nativeLoadShards call that sets it.
- *
- * Solution — split flag across TWO variables, always kept complementary:
- *   g_block_rooted_val  ∈ { BLK_MAGIC_OFF(0x00000000), BLK_MAGIC_ON(0xA55A1234) }
- *   g_block_rooted_inv  = ~g_block_rooted_val  always
- *
- *   get_block_rooted() checks (val ^ inv) == 0xFFFFFFFF before trusting val.
- *   If anyone patches either variable without updating the other, XOR ≠ all-ones
- *   → nuke_app() fires before any root check is even skipped.
- *
- *   The attacker must patch BOTH locations in the same instant with consistent
- *   values — both are in BSS at unpredictable relative offsets (ASLR) and both
- *   set_block_rooted / get_block_rooted are VMP-virtualized so their logic is
- *   invisible in Ghidra / IDA.
- *
- *   Initial state: val=0x00000000, inv=0xFFFFFFFF  →  flag OFF, canary intact.
- */
-static volatile uint32_t g_block_rooted_val = 0x00000000u;
-static volatile uint32_t g_block_rooted_inv = 0xFFFFFFFFu; /* ~0x00000000 */
-
-#define BLK_MAGIC_ON  0xA55A1234u   /* arbitrary non-zero sentinel for ON  */
-#define BLK_MAGIC_OFF 0x00000000u   /* zero = OFF (also the BSS default)   */
-
-/* Write both halves atomically-as-possible.  VMP-virtualized so the store
- * sequence is opaque to static analysis. */
-__attribute__((annotate("+vm_virtualize")))
-static void set_block_rooted(int blk) {
-    uint32_t v = blk ? BLK_MAGIC_ON : BLK_MAGIC_OFF;
-    g_block_rooted_val = v;
-    g_block_rooted_inv = ~v;
-}
-
-/* Read and verify canary.  Any single-variable patch causes XOR ≠ 0xFFFFFFFF
- * → nuke_app() before the caller even sees the return value.
- * VMP-virtualized so the verification bytecode is hidden from disassemblers. */
-__attribute__((annotate("+vm_virtualize")))
-static int get_block_rooted(void) {
-    uint32_t v   = g_block_rooted_val;
-    uint32_t inv = g_block_rooted_inv;
-    if ((v ^ inv) != 0xFFFFFFFFu) {
-        /* Canary mismatch — g_block_rooted was memory-patched → kill now. */
-        nuke_app();
-    }
-    return (v == BLK_MAGIC_ON);
-}
+/* g_block_rooted — set to 1 the first time nativeDecryptShard reads
+   salt[0] bit-7 == 1 (block-rooted toggle ON).  Starts at 0 so that
+   detect_root() and detect_riru_zygisk() in the background loop are
+   suppressed until the salt is read and the flag is known.
+   Declared volatile so the compiler does not cache it across loop iterations. */
+static volatile int g_block_rooted = 0;
 
 static void *detect_frida_loop(void *args) {
     (void)args;
@@ -1780,24 +966,14 @@ static void *detect_frida_loop(void *args) {
     timereq.tv_sec  = 5;
     timereq.tv_nsec = 0;
     while (1) {
-        detect_frida_threads();                    // JDWP + per-task TracerPid + gum-js-loop/gmain
+        detect_frida_threads();                   // JDWP + per-task TracerPid + gum-js-loop/gmain
         detect_frida_namedpipe();
-        detect_frida_websocket();                  // WebSocket fingerprint: tyZql/Y8dNFFyopTrHadWzvbvRs=
+        detect_frida_websocket();                 // WebSocket fingerprint: tyZql/Y8dNFFyopTrHadWzvbvRs=
         detect_frida_memdiskcompare();
         detect_ptrace();
         detect_ebpf_uprobe();
-        detect_emulator();                         // ADDITION 1: QEMU/Goldfish/ranchu emulator
-        detect_rwx_pages();                        // ADDITION 2: rwxp pages = injected hook code
-        verify_own_text();                         // ADDITION 3: libphantom .text self-integrity
-        verify_dumpable();                         // ADDITION 4: PR_SET_DUMPABLE tamper check
-        detect_frida_gadget_anon();                // ADDITION 6: anonymous ELF = Frida gadget
-        detect_ld_preload();                       // 2026-A: LD_PRELOAD/LD_LIBRARY_PATH injection
-        detect_adb();                              // 2026-B: ADB daemon + adb_keys + TCP 5037
-        detect_build_prop_tamper();                // 2026-C: PlayIntegrityFix build prop spoof
-        detect_suspicious_mounts();               // 2026-D: tmpfs/conscrypt + system-RW + SUSFS bypass
-        detect_npatch();                           // 2026-E: NPatch / LSPatch rootless Xposed
-        if (get_block_rooted()) detect_riru_zygisk(); // Riru/Zygisk/Xposed/KSU/APatch + maps + phdr
-        if (get_block_rooted()) detect_root();         // su binaries + Magisk mounts
+        if (g_block_rooted) detect_riru_zygisk();  // Riru/Zygisk/Xposed: maps + phdr + paths — only if toggle ON
+        if (g_block_rooted) detect_root();        // su binaries + Magisk mounts — only if toggle ON
         my_nanosleep(&timereq, NULL);
     }
     return NULL;
@@ -1860,7 +1036,7 @@ static void check_rooted(void) {
     static const char * const MNT[] = {
         "magisk","core/mirror","core/img","lspd","zygisk","xposed", NULL
     };
-    int mfd = my_openat(AT_FDCWD, _S2_STR_PROC_MOUNTS, O_RDONLY | O_CLOEXEC, 0);
+    int mfd = my_openat(AT_FDCWD, "/proc/self/mounts", O_RDONLY | O_CLOEXEC, 0);
     if (mfd >= 0) {
         char buf[512]; int pos = 0; ssize_t n;
         while ((n = my_read(mfd, buf + pos, (ssize_t)sizeof(buf) - pos - 1)) > 0) {
@@ -1918,8 +1094,6 @@ static void check_rooted(void) {
 __attribute__((constructor))
 void detect_frida_init(void) {
     prctl(PR_SET_DUMPABLE, 0);
-    // ADDITION 1: block emulators immediately at load time (before any Java runs)
-    detect_emulator();
     /* check_rooted() is NOT called here — it runs inside nativeDecryptShard
        when the Java-side blockRooted flag is true. */
     char *filePaths[NUM_LIBS] = {NULL, NULL};
@@ -1930,9 +1104,6 @@ void detect_frida_init(void) {
             free(filePaths[i]);
         }
     }
-    // ADDITION 3: snapshot own .text checksum before background thread starts
-    ph_strings_init();
-    snapshot_own_text();
     pthread_t t;
     pthread_create(&t, NULL, detect_frida_loop, NULL);
 }
@@ -2347,7 +1518,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
     {
         int blk = (salt[0] & 0x80) != 0;
         salt[0] &= 0x7F;
-        set_block_rooted(blk);   /* dual-canary: writes val + ~val */
+        g_block_rooted = blk;
         if (blk) check_rooted();
     }
 
@@ -2818,8 +1989,8 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeDecryptShard(
     // thread) knows whether to run detect_root() on each 5-second cycle.
     {
         int block_rooted = (salt[0] & 0x80) != 0;
-        salt[0] &= 0x7F;              /* clear flag bit — KDF uses clean salt */
-        set_block_rooted(block_rooted); /* dual-canary: writes val + ~val */
+        salt[0] &= 0x7F;          /* clear flag bit — KDF uses clean salt */
+        g_block_rooted = block_rooted;  /* tell background loop */
         if (block_rooted) check_rooted();
     }
 
