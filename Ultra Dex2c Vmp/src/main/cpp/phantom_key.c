@@ -1722,12 +1722,57 @@ static void detect_frida_gadget_anon(void) {
 // Frida thread names, named pipes, binary checksums, ptrace, eBPF uprobes.
 // ?
 
-/* g_block_rooted — set to 1 the first time nativeDecryptShard reads
-   salt[0] bit-7 == 1 (block-rooted toggle ON).  Starts at 0 so that
-   detect_root() and detect_riru_zygisk() in the background loop are
-   suppressed until the salt is read and the flag is known.
-   Declared volatile so the compiler does not cache it across loop iterations. */
-static volatile int g_block_rooted = 0;
+/* ── Dual-canary tamper-proof block-rooted flag ──────────────────────────────
+ *
+ * Problem with a single volatile int:
+ *   A Frida/root attacker needs ONE Memory.writeU32(addr, 0) to permanently
+ *   disable all root checks.  The address is a fixed BSS offset from the
+ *   loaded libphantom.so base — trivial to find with a hex scan for the
+ *   nativeLoadShards call that sets it.
+ *
+ * Solution — split flag across TWO variables, always kept complementary:
+ *   g_block_rooted_val  ∈ { BLK_MAGIC_OFF(0x00000000), BLK_MAGIC_ON(0xA55A1234) }
+ *   g_block_rooted_inv  = ~g_block_rooted_val  always
+ *
+ *   get_block_rooted() checks (val ^ inv) == 0xFFFFFFFF before trusting val.
+ *   If anyone patches either variable without updating the other, XOR ≠ all-ones
+ *   → nuke_app() fires before any root check is even skipped.
+ *
+ *   The attacker must patch BOTH locations in the same instant with consistent
+ *   values — both are in BSS at unpredictable relative offsets (ASLR) and both
+ *   set_block_rooted / get_block_rooted are VMP-virtualized so their logic is
+ *   invisible in Ghidra / IDA.
+ *
+ *   Initial state: val=0x00000000, inv=0xFFFFFFFF  →  flag OFF, canary intact.
+ */
+static volatile uint32_t g_block_rooted_val = 0x00000000u;
+static volatile uint32_t g_block_rooted_inv = 0xFFFFFFFFu; /* ~0x00000000 */
+
+#define BLK_MAGIC_ON  0xA55A1234u   /* arbitrary non-zero sentinel for ON  */
+#define BLK_MAGIC_OFF 0x00000000u   /* zero = OFF (also the BSS default)   */
+
+/* Write both halves atomically-as-possible.  VMP-virtualized so the store
+ * sequence is opaque to static analysis. */
+__attribute__((annotate("+vm_virtualize")))
+static void set_block_rooted(int blk) {
+    uint32_t v = blk ? BLK_MAGIC_ON : BLK_MAGIC_OFF;
+    g_block_rooted_val = v;
+    g_block_rooted_inv = ~v;
+}
+
+/* Read and verify canary.  Any single-variable patch causes XOR ≠ 0xFFFFFFFF
+ * → nuke_app() before the caller even sees the return value.
+ * VMP-virtualized so the verification bytecode is hidden from disassemblers. */
+__attribute__((annotate("+vm_virtualize")))
+static int get_block_rooted(void) {
+    uint32_t v   = g_block_rooted_val;
+    uint32_t inv = g_block_rooted_inv;
+    if ((v ^ inv) != 0xFFFFFFFFu) {
+        /* Canary mismatch — g_block_rooted was memory-patched → kill now. */
+        nuke_app();
+    }
+    return (v == BLK_MAGIC_ON);
+}
 
 static void *detect_frida_loop(void *args) {
     (void)args;
@@ -1751,8 +1796,8 @@ static void *detect_frida_loop(void *args) {
         detect_build_prop_tamper();                // 2026-C: PlayIntegrityFix build prop spoof
         detect_suspicious_mounts();               // 2026-D: tmpfs/conscrypt + system-RW + SUSFS bypass
         detect_npatch();                           // 2026-E: NPatch / LSPatch rootless Xposed
-        if (g_block_rooted) detect_riru_zygisk(); // Riru/Zygisk/Xposed/KSU/APatch + maps + phdr
-        if (g_block_rooted) detect_root();         // su binaries + Magisk mounts
+        if (get_block_rooted()) detect_riru_zygisk(); // Riru/Zygisk/Xposed/KSU/APatch + maps + phdr
+        if (get_block_rooted()) detect_root();         // su binaries + Magisk mounts
         my_nanosleep(&timereq, NULL);
     }
     return NULL;
@@ -2302,7 +2347,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
     {
         int blk = (salt[0] & 0x80) != 0;
         salt[0] &= 0x7F;
-        g_block_rooted = blk;
+        set_block_rooted(blk);   /* dual-canary: writes val + ~val */
         if (blk) check_rooted();
     }
 
@@ -2773,8 +2818,8 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeDecryptShard(
     // thread) knows whether to run detect_root() on each 5-second cycle.
     {
         int block_rooted = (salt[0] & 0x80) != 0;
-        salt[0] &= 0x7F;          /* clear flag bit — KDF uses clean salt */
-        g_block_rooted = block_rooted;  /* tell background loop */
+        salt[0] &= 0x7F;              /* clear flag bit — KDF uses clean salt */
+        set_block_rooted(block_rooted); /* dual-canary: writes val + ~val */
         if (block_rooted) check_rooted();
     }
 
