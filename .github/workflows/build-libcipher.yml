@@ -108,7 +108,6 @@ jobs:
           AMICE_STRING_ALGORITHM=simd_xor \
           AMICE_STRING_DECRYPT_TIMING=lazy \
           AMICE_STRING_INLINE_DECRYPT_FN=true \
-          AMICE_MBA=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
@@ -179,7 +178,6 @@ jobs:
           AMICE_STRING_ALGORITHM=simd_xor \
           AMICE_STRING_DECRYPT_TIMING=lazy \
           AMICE_STRING_INLINE_DECRYPT_FN=true \
-          AMICE_MBA=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
