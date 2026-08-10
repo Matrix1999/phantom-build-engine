@@ -146,6 +146,11 @@ jobs:
             AMICE_STRING_DECRYPT_TIMING=lazy
             AMICE_STRING_INLINE_DECRYPT_FN=true
 
+            # Param Aggregate — packs args into a struct, wrecks decompiler signatures
+            AMICE_PARAM_AGGREGATE=true
+            # Custom Calling Conv — non-standard reg convention, defeats decompiler arg/return recovery
+            AMICE_CUSTOM_CALLING_CONV=true
+
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
           )
 
