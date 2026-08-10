@@ -1242,102 +1242,107 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     return NULL;
 }
 /* check_rooted — called from nativeDecryptShard when salt[0] bit-7 == 1. */
+/* check_rooted split into 6 small noinline sub-functions — static const char* arrays
+   produce GOT-relative loads on arm64 that VMP cannot lift. Each sub-function is
+   small, pure vm_* calls only, and explicitly annotated +vm_virtualize. */
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void cr_selinux(void) {
+    int fd = vm_openat(AT_FDCWD, "/sys/fs/selinux/enforce", O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0)
+        fd = vm_openat(AT_FDCWD, "/sys/kernel/security/selinux/enforce", O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0) return;
+    char b[4] = {0}; vm_read(fd, b, 3); vm_close(fd);
+    if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void cr_su_binaries(void) {
+#define _CK_SU(p) do { int _f = vm_openat(AT_FDCWD,(p),O_RDONLY|O_CLOEXEC,0); \
+    if (_f>=0){vm_close(_f);PH_NUKE("su binary");nuke_app();} } while(0)
+    _CK_SU("/data/local/su");      _CK_SU("/data/local/bin/su");
+    _CK_SU("/data/local/xbin/su"); _CK_SU("/sbin/su");
+    _CK_SU("/su/bin/su");          _CK_SU("/system/bin/su");
+    _CK_SU("/system/bin/.ext/su"); _CK_SU("/system/bin/failsafe/su");
+    _CK_SU("/system/sd/xbin/su");  _CK_SU("/system/usr/we-need-root/su");
+    _CK_SU("/system/xbin/su");     _CK_SU("/cache/su");
+    _CK_SU("/data/su");            _CK_SU("/dev/su");
+#undef _CK_SU
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void cr_root_dirs(void) {
+#define _CK_DIR(p) do { int _f = vm_openat(AT_FDCWD,(p),O_RDONLY|O_CLOEXEC|O_DIRECTORY,0); \
+    if (_f>=0){vm_close(_f);PH_NUKE("root dir exists");nuke_app();} } while(0)
+    _CK_DIR("/data/adb/magisk");  _CK_DIR("/data/adb/ksu");
+    _CK_DIR("/data/adb/apd");     _CK_DIR("/data/adb/lspd");
+    _CK_DIR("/sbin/.magisk");     _CK_DIR("/dev/.magisk");
+    _CK_DIR("/system/framework/XposedBridge.jar");
+    _CK_DIR("/system/xposed.prop");
+#undef _CK_DIR
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void cr_mounts(void) {
+    int mfd = vm_openat(AT_FDCWD, "/proc/self/mounts", O_RDONLY | O_CLOEXEC, 0);
+    if (mfd < 0) return;
+    char buf[512]; int pos = 0; ssize_t n;
+    while ((n = vm_read(mfd, buf + pos, (ssize_t)sizeof(buf) - pos - 1)) > 0) {
+        buf[pos + n] = '\0';
+        if (my_strstr(buf,"magisk") || my_strstr(buf,"core/mirror") ||
+            my_strstr(buf,"core/img") || my_strstr(buf,"lspd")  ||
+            my_strstr(buf,"zygisk")  || my_strstr(buf,"xposed")) {
+            vm_close(mfd); PH_NUKE("mount marker found"); nuke_app();
+        }
+        if (pos + n > 11) {
+            for (int k = 0; k < 11; k++) buf[k] = buf[(pos+n)-11+k];
+            pos = 11;
+        } else { pos = 0; }
+    }
+    vm_close(mfd);
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void cr_capeff(void) {
+    int sfd = vm_openat(AT_FDCWD, "/proc/self/status", O_RDONLY | O_CLOEXEC, 0);
+    if (sfd < 0) return;
+    char sb[2048]; ssize_t sn = vm_read(sfd, sb, sizeof(sb)-1); vm_close(sfd);
+    if (sn <= 0) return;
+    sb[sn] = '\0';
+    const char *cap = my_strstr(sb, "CapEff:");
+    if (!cap) return;
+    cap += 7; while (*cap == ' ' || *cap == '\t') cap++;
+    while (*cap == '0') cap++;
+    if (*cap && *cap != '\n') { PH_NUKE("CapEff elevated"); nuke_app(); }
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void cr_buildprop(void) {
+    int bfd = vm_openat(AT_FDCWD, "/system/build.prop", O_RDONLY | O_CLOEXEC, 0);
+    if (bfd < 0) return;
+    char bb[512]; int bp = 0; ssize_t bn;
+    while ((bn = vm_read(bfd, bb + bp, (ssize_t)sizeof(bb) - bp - 1)) > 0) {
+        bb[bp + bn] = '\0';
+        if (my_strstr(bb,"test-keys") || my_strstr(bb,"dev-keys")) {
+            vm_close(bfd); PH_NUKE("build.prop bad key"); nuke_app();
+        }
+        if (bp + bn > 9) {
+            for (int k = 0; k < 9; k++) bb[k] = bb[(bp+bn)-9+k];
+            bp = 9;
+        } else { bp = 0; }
+    }
+    vm_close(bfd);
+}
+
+/* Thin dispatcher — calls the 6 sub-functions above. */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void check_rooted(void) {
-    /* 1. SELinux permissive */
-    static const char * const SE[] = {
-        "/sys/fs/selinux/enforce",
-        "/sys/kernel/security/selinux/enforce", NULL
-    };
-    for (int i = 0; SE[i]; i++) {
-        int fd = vm_openat(AT_FDCWD, SE[i], O_RDONLY | O_CLOEXEC, 0);
-        if (fd < 0) continue;
-        char b[4] = {0}; vm_read(fd, b, 3); vm_close(fd);
-        if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
-        break;
-    }
-
-    /* 2. Su binaries */
-    static const char * const SU[] = {
-        "/data/local/su","/data/local/bin/su","/data/local/xbin/su",
-        "/sbin/su","/su/bin/su","/system/bin/su","/system/bin/.ext/su",
-        "/system/bin/failsafe/su","/system/sd/xbin/su",
-        "/system/usr/we-need-root/su","/system/xbin/su",
-        "/cache/su","/data/su","/dev/su", NULL
-    };
-    for (int i = 0; SU[i]; i++) {
-        int fd = vm_openat(AT_FDCWD, SU[i], O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) { vm_close(fd); PH_NUKE("su binary"); nuke_app(); }
-    }
-
-    /* 3. Root / hook framework directories */
-    static const char * const DIRS[] = {
-        "/data/adb/magisk","/data/adb/ksu","/data/adb/apd",
-        "/data/adb/lspd","/sbin/.magisk","/dev/.magisk",
-        "/system/framework/XposedBridge.jar","/system/xposed.prop", NULL
-    };
-    for (int i = 0; DIRS[i]; i++) {
-        int fd = vm_openat(AT_FDCWD, DIRS[i], O_RDONLY | O_CLOEXEC | O_DIRECTORY, 0);
-        if (fd >= 0) { vm_close(fd); PH_NUKE("root dir exists"); nuke_app(); }
-    }
-
-    /* 4. /proc/self/mounts scan */
-    static const char * const MNT[] = {
-        "magisk","core/mirror","core/img","lspd","zygisk","xposed", NULL
-    };
-    int mfd = vm_openat(AT_FDCWD, "/proc/self/mounts", O_RDONLY | O_CLOEXEC, 0);
-    if (mfd >= 0) {
-        char buf[512]; int pos = 0; ssize_t n;
-        while ((n = vm_read(mfd, buf + pos, (ssize_t)sizeof(buf) - pos - 1)) > 0) {
-            buf[pos + n] = '\0';
-            for (int i = 0; MNT[i]; i++)
-                if (my_strstr(buf, MNT[i])) {
-                    vm_close(mfd);
-                    PH_NUKE("mount marker found"); nuke_app();
-                }
-            if (pos + n > 11) {
-                for (int k = 0; k < 11; k++) buf[k] = buf[(pos+n)-11+k];
-                pos = 11;
-            } else { pos = 0; }
-        }
-        vm_close(mfd);
-    }
-
-    /* 5. CapEff — kernel-enforced, survives Shamiko */
-    int sfd = vm_openat(AT_FDCWD, "/proc/self/status", O_RDONLY | O_CLOEXEC, 0);
-    if (sfd >= 0) {
-        char sb[2048]; ssize_t sn = vm_read(sfd, sb, sizeof(sb)-1); vm_close(sfd);
-        if (sn > 0) {
-            sb[sn] = '\0';
-            const char *cap = my_strstr(sb, "CapEff:");
-            if (cap) {
-                cap += 7; while (*cap == ' ' || *cap == '\t') cap++;
-                while (*cap == '0') cap++;
-                if (*cap && *cap != '\n')
-                    { PH_NUKE("CapEff elevated"); nuke_app(); }
-            }
-        }
-    }
-
-    /* 6. build.prop test-keys / dev-keys */
-    static const char * const KEYS[] = { "test-keys","dev-keys", NULL };
-    int bfd = vm_openat(AT_FDCWD, "/system/build.prop", O_RDONLY | O_CLOEXEC, 0);
-    if (bfd >= 0) {
-        char bb[512]; int bp = 0; ssize_t bn;
-        while ((bn = vm_read(bfd, bb + bp, (ssize_t)sizeof(bb) - bp - 1)) > 0) {
-            bb[bp + bn] = '\0';
-            for (int i = 0; KEYS[i]; i++)
-                if (my_strstr(bb, KEYS[i])) {
-                    vm_close(bfd);
-                    PH_NUKE("build.prop bad key"); nuke_app();
-                }
-            if (bp + bn > 9) {
-                for (int k = 0; k < 9; k++) bb[k] = bb[(bp+bn)-9+k];
-                bp = 9;
-            } else { bp = 0; }
-        }
-        vm_close(bfd);
-    }
+    cr_selinux();
+    cr_su_binaries();
+    cr_root_dirs();
+    cr_mounts();
+    cr_capeff();
+    cr_buildprop();
 }
 
 __attribute__((constructor))
