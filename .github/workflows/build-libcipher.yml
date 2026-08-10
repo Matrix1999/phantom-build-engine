@@ -102,6 +102,8 @@ jobs:
           AMICE_VM_VIRTUALIZE=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
+          AMICE_BOGUS_CONTROL_FLOW=true \
+          AMICE_BOGUS_CONTROL_FLOW_PROB=100 \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
@@ -166,6 +168,8 @@ jobs:
           AMICE_VM_VIRTUALIZE=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
+          AMICE_BOGUS_CONTROL_FLOW=true \
+          AMICE_BOGUS_CONTROL_FLOW_PROB=100 \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
