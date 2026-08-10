@@ -3076,6 +3076,13 @@ static __attribute__((noinline)) int gvm_sig_check(void) {
     return detect_sig_tamper(apk_path);
 }
 
+// ── VM gate forward declarations ──────────────────────────────────────────────
+static void vm_gate_mapscan(void);
+static void vm_gate_vccheck(void);
+static void vm_gate_so_integrity(void);
+static void vm_gate_sigcheck(void);
+static void vm_gate_antik(const antik_ctx_t *c);
+
 // ════════════════════════════════════════════════════════════════════════════
 // Constructor — runs when .so loads, before JNI_OnLoad, before any Java code
 // ════════════════════════════════════════════════════════════════════════════
