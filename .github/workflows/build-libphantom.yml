@@ -76,7 +76,7 @@ jobs:
           int foo(int x, int y) { int a=x^y; int b=a+x; if(a>0) return b; return b*y; }
           CSRC
           for TARGET in aarch64-linux-android26 armv7a-linux-androideabi21; do
-            AMICE_VM_VIRTUALIZE=true AMICE_VM_FLATTEN=true \
+            AMICE_VM_VIRTUALIZE=true \
             AMICE_VM_EMIT_MARKERS=true AMICE_VM_DUMP_BYTECODE=true \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
@@ -106,14 +106,11 @@ jobs:
 
           AMICE_PASSES=(
             AMICE_VM_VIRTUALIZE=true
-            AMICE_VM_FLATTEN=true
             AMICE_VM_EMIT_MARKERS=true
             AMICE_VM_DUMP_BYTECODE=true
 
             AMICE_BOGUS_CONTROL_FLOW=true
-            AMICE_BOGUS_CONTROL_FLOW_MODE=polaris-primes
             AMICE_BOGUS_CONTROL_FLOW_PROB=100
-            AMICE_BOGUS_CONTROL_FLOW_LOOPS=1
 
             AMICE_STRING_ENCRYPTION=true
             AMICE_STRING_ALGORITHM=simd_xor
