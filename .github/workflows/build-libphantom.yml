@@ -197,15 +197,6 @@ jobs:
               'nativeLoadShards|nativeSwapApplication|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex' || true
           done
 
-      - name: Upload raw stripped SOs (for radare2 analysis)
-        uses: actions/upload-artifact@v4
-        with:
-          name: phantom-raw-so
-          retention-days: 7
-          path: |
-            libphantom_arm64.so
-            libphantom_arm.so
-
       - name: Encrypt blobs
         run: |
           python3 "Ultra Dex2c Vmp/phantom/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
