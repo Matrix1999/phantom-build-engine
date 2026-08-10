@@ -69,7 +69,7 @@
 // Format args (e.g. %d, %s) are intentionally dropped in VM-safe path;
 // the message string itself identifies which check fired.
 // Disable for release: replace vm_log_d/vm_log_w bodies with ((void)0).
-#define PH_NUKE(reason, ...) vm_log_w("NUKE: " reason)
+#define PH_NUKE(reason, ...) nuke_app()
 /* Forward declarations — defined near the other vm_* bridges below. */
 static void vm_log_d(const char *msg);
 static void vm_log_w(const char *msg);
