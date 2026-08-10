@@ -1250,35 +1250,52 @@ static void *detect_frida_loop(void *args) {
 //   SELinux permissive → immediate nuke (rooted phone detected on launch).
 // ?
 
-/* ── check_rooted sub-functions ─────────────────────────────────────────────
-   Each section is split into its own noinline function so amice VM Virtualize
-   can lift them (the monolithic check_rooted was 37 KB — over amice's limit).
-   check_rooted() itself becomes a tiny dispatcher that calls all 7 and gets
-   VM-virtualized too. */
+/* ── VM Virtualize syscall bridges ──────────────────────────────────────────
+   amice translator.rs bails on any call whose callee is InlineAsm
+   (line 7617: "inline asm calls are not supported by vm_virtualize").
+   my_openat / my_read / my_close are always_inline wrappers around
+   raw_syscall_* which emits "svc #0" asm — so they trigger the bail.
+   Solution: wrap them in noinline stubs. The VM calls these as call_native
+   (native thunk, no bytecode needed for the callee). Full syscall semantics
+   are preserved; the VM just doesn't peek inside the thunk. */
+static __attribute__((noinline)) int vm_openat(int d, const char *p, int f, int m)
+    { return my_openat(d, p, f, m); }
+static __attribute__((noinline)) long vm_read(int fd, void *b, size_t n)
+    { return (long)my_read(fd, b, n); }
+static __attribute__((noinline)) int vm_close(int fd)
+    { return my_close(fd); }
 
+/* ── check_rooted sub-functions ─────────────────────────────────────────────
+   Split so each fits amice's per-function size limit and uses only
+   call_native (vm_openat/vm_read/vm_close) — no inline asm in the body.
+   Every sub-function is annotated +vm_virtualize so the pass lifts it.
+   check_rooted() dispatcher is also annotated and has no inline asm. */
+
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void _cr_selinux(void) {
     char b[4] = {0};
     PH_STK(_se1, _E_PATH_SELINUX1, 23, _K_PATH_SELINUX1);
-    int fd = my_openat(AT_FDCWD, _se1, O_RDONLY|O_CLOEXEC, 0);
+    int fd = vm_openat(AT_FDCWD, _se1, O_RDONLY|O_CLOEXEC, 0);
     PH_ZERO(_se1, 24);
     if (fd < 0) {
         PH_STK(_se2, _E_PATH_SELINUX2, 36, _K_PATH_SELINUX2);
-        fd = my_openat(AT_FDCWD, _se2, O_RDONLY|O_CLOEXEC, 0);
+        fd = vm_openat(AT_FDCWD, _se2, O_RDONLY|O_CLOEXEC, 0);
         PH_ZERO(_se2, 37);
     }
     if (fd >= 0) {
-        my_read(fd, b, 3); my_close(fd);
+        vm_read(fd, b, 3); vm_close(fd);
         if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
     }
 }
 
 #define _CHK_SU2(enc, n, key) do { \
     PH_STK(_su, enc, n, key); \
-    int _fd = my_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0); \
+    int _fd = vm_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0); \
     PH_ZERO(_su, (n)+1); \
-    if (_fd >= 0) { my_close(_fd); PH_NUKE("su"); nuke_app(); } \
+    if (_fd >= 0) { vm_close(_fd); PH_NUKE("su"); nuke_app(); } \
 } while(0)
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void _cr_su_a(void) {
     _CHK_SU2(_E_PATH_SU_LOCAL,       14, _K_PATH_SU_LOCAL);
     _CHK_SU2(_E_PATH_SU_LOCAL_BIN,   18, _K_PATH_SU_LOCAL_BIN);
@@ -1289,6 +1306,7 @@ static __attribute__((noinline)) void _cr_su_a(void) {
     _CHK_SU2(_E_PATH_SU_EXT,         19, _K_PATH_SU_EXT);
 }
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void _cr_su_b(void) {
     _CHK_SU2(_E_PATH_SU_FAILSAFE,    23, _K_PATH_SU_FAILSAFE);
     _CHK_SU2(_E_PATH_SU_SD,          18, _K_PATH_SU_SD);
@@ -1302,11 +1320,12 @@ static __attribute__((noinline)) void _cr_su_b(void) {
 
 #define _CHK_DIR(enc, n, key) do { \
     PH_STK(_d, enc, n, key); \
-    int _fd = my_openat(AT_FDCWD, _d, O_RDONLY|O_CLOEXEC|O_DIRECTORY, 0); \
+    int _fd = vm_openat(AT_FDCWD, _d, O_RDONLY|O_CLOEXEC|O_DIRECTORY, 0); \
     PH_ZERO(_d, (n)+1); \
-    if (_fd >= 0) { my_close(_fd); PH_NUKE("root dir"); nuke_app(); } \
+    if (_fd >= 0) { vm_close(_fd); PH_NUKE("root dir"); nuke_app(); } \
 } while(0)
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void _cr_root_dirs(void) {
     _CHK_DIR(_E_PATH_MAGISK,     16, _K_PATH_MAGISK);
     _CHK_DIR(_E_PATH_KSU,        13, _K_PATH_KSU);
@@ -1319,9 +1338,10 @@ static __attribute__((noinline)) void _cr_root_dirs(void) {
 }
 #undef _CHK_DIR
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void _cr_mounts(void) {
     PH_STK(_mnt, _E_PATH_PROC_MOUNTS, 17, _K_PATH_PROC_MOUNTS);
-    int mfd = my_openat(AT_FDCWD, _mnt, O_RDONLY|O_CLOEXEC, 0);
+    int mfd = vm_openat(AT_FDCWD, _mnt, O_RDONLY|O_CLOEXEC, 0);
     PH_ZERO(_mnt, 18);
     if (mfd >= 0) {
         PH_STK(_mg, _E_STR_MAGISK,      6, _K_STR_MAGISK);
@@ -1331,13 +1351,13 @@ static __attribute__((noinline)) void _cr_mounts(void) {
         PH_STK(_zy, _E_HOOK_ZYGISK,     6, _K_HOOK_ZYGISK);
         PH_STK(_xp, _E_HOOK_XPOSED,     6, _K_HOOK_XPOSED);
         char buf[512]; int pos = 0; ssize_t n;
-        while ((n = my_read(mfd, buf+pos, (ssize_t)sizeof(buf)-pos-1)) > 0) {
+        while ((n = (ssize_t)vm_read(mfd, buf+pos, (size_t)(sizeof(buf)-pos-1))) > 0) {
             buf[pos+n] = '\0';
             if (my_strstr(buf,_mg)||my_strstr(buf,_cm)||my_strstr(buf,_ci)||
                 my_strstr(buf,_ls)||my_strstr(buf,_zy)||my_strstr(buf,_xp)) {
                 PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
                 PH_ZERO(_ls,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
-                my_close(mfd); PH_NUKE("mount tamper"); nuke_app();
+                vm_close(mfd); PH_NUKE("mount tamper"); nuke_app();
             }
             if (pos+n > 11) {
                 for (int k=0;k<11;k++) buf[k]=buf[(pos+n)-11+k]; pos=11;
@@ -1345,16 +1365,17 @@ static __attribute__((noinline)) void _cr_mounts(void) {
         }
         PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
         PH_ZERO(_ls,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
-        my_close(mfd);
+        vm_close(mfd);
     }
 }
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void _cr_capeff(void) {
     PH_STK(_pss, _E_PROC_SELFSTATUS, 18, _K_PROC_SELFSTATUS);
-    int sfd = my_openat(AT_FDCWD, _pss, O_RDONLY|O_CLOEXEC, 0);
+    int sfd = vm_openat(AT_FDCWD, _pss, O_RDONLY|O_CLOEXEC, 0);
     PH_ZERO(_pss, 19);
     if (sfd >= 0) {
-        char sb[2048]; ssize_t sn = my_read(sfd, sb, sizeof(sb)-1); my_close(sfd);
+        char sb[2048]; ssize_t sn = (ssize_t)vm_read(sfd, sb, sizeof(sb)-1); vm_close(sfd);
         if (sn > 0) {
             sb[sn] = '\0';
             PH_STK(_cap, _E_STR_CAPEFF, 7, _K_STR_CAPEFF);
@@ -1369,31 +1390,33 @@ static __attribute__((noinline)) void _cr_capeff(void) {
     }
 }
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void _cr_buildprop(void) {
     PH_STK(_bp, _E_PATH_BUILD_PROP, 18, _K_PATH_BUILD_PROP);
-    int bfd = my_openat(AT_FDCWD, _bp, O_RDONLY|O_CLOEXEC, 0);
+    int bfd = vm_openat(AT_FDCWD, _bp, O_RDONLY|O_CLOEXEC, 0);
     PH_ZERO(_bp, 19);
     if (bfd >= 0) {
         PH_STK(_tk, _E_STR_TEST_KEYS, 9, _K_STR_TEST_KEYS);
         PH_STK(_dk, _E_STR_DEV_KEYS,  8, _K_STR_DEV_KEYS);
         char bb[512]; int bpos=0; ssize_t bn;
-        while ((bn=my_read(bfd, bb+bpos, (ssize_t)sizeof(bb)-bpos-1)) > 0) {
+        while ((bn=(ssize_t)vm_read(bfd, bb+bpos, (size_t)(sizeof(bb)-bpos-1))) > 0) {
             bb[bpos+bn]='\0';
             if (my_strstr(bb,_tk)||my_strstr(bb,_dk)) {
                 PH_ZERO(_tk,10);PH_ZERO(_dk,9);
-                my_close(bfd); PH_NUKE("build keys"); nuke_app();
+                vm_close(bfd); PH_NUKE("build keys"); nuke_app();
             }
             if (bpos+bn > 9) {
                 for (int k=0;k<9;k++) bb[k]=bb[(bpos+bn)-9+k]; bpos=9;
             } else { bpos=0; }
         }
         PH_ZERO(_tk,10);PH_ZERO(_dk,9);
-        my_close(bfd);
+        vm_close(bfd);
     }
 }
 
-/* Tiny dispatcher — each section is its own noinline sub-function above.
-   This function itself is now small enough for amice VM Virtualize. */
+/* Dispatcher: all 7 calls are noinline → no inline asm here.
+   No __asm__ volatile barrier needed (noinline calls already prevent TCO).
+   +vm_virtualize on both the dispatcher and each sub-function. */
 __attribute__((annotate("+vm_virtualize")))
 static void check_rooted(void) {
     _cr_selinux();
@@ -1403,7 +1426,6 @@ static void check_rooted(void) {
     _cr_mounts();
     _cr_capeff();
     _cr_buildprop();
-    __asm__ volatile("" ::: "memory");
 }
 
 __attribute__((constructor))
