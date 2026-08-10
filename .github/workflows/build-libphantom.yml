@@ -110,23 +110,10 @@ jobs:
             AMICE_VM_EMIT_MARKERS=true
             AMICE_VM_DUMP_BYTECODE=true
 
-            # ── Top-7 strongest anti-analysis passes (re-enabled) ──
-            # 1. MBA — unreadable decompiler output
-            AMICE_MBA=true
-            AMICE_MBA_AUX_COUNT=2
-            AMICE_MBA_REWRITE_OPS=20
-            AMICE_MBA_REWRITE_DEPTH=2
-            # 2. Bogus Control Flow — fake branches, PROB=100 (max)
             AMICE_BOGUS_CONTROL_FLOW=true
             AMICE_BOGUS_CONTROL_FLOW_MODE=polaris-primes
             AMICE_BOGUS_CONTROL_FLOW_PROB=100
             AMICE_BOGUS_CONTROL_FLOW_LOOPS=1
-            # 3. Indirect Call — hides call graph + Frida symbol hooks
-            AMICE_INDIRECT_CALL=true
-            # 4. Alias Access — defeats data-flow / taint tracking
-            AMICE_ALIAS_ACCESS=true
-            AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
-            AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true
 
             AMICE_STRING_ENCRYPTION=true
             AMICE_STRING_ALGORITHM=simd_xor
