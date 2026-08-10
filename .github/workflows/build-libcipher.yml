@@ -121,8 +121,6 @@ jobs:
           AMICE_ALIAS_ACCESS=true \
           AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
           AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true \
-          AMICE_SPLIT_BASIC_BLOCK=true \
-          AMICE_SPLIT_BASIC_BLOCK_NUMS=3 \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
@@ -206,8 +204,6 @@ jobs:
           AMICE_ALIAS_ACCESS=true \
           AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
           AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true \
-          AMICE_SPLIT_BASIC_BLOCK=true \
-          AMICE_SPLIT_BASIC_BLOCK_NUMS=3 \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
