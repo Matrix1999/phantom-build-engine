@@ -63,9 +63,17 @@
 #include <android/log.h>
 
 // ── Debug logging — ENABLED (adb logcat -s d2cg)
-// Disable for release: replace __android_log_print(...) with ((void)0)
-#define PH_LOG(fmt, ...)     __android_log_print(ANDROID_LOG_DEBUG, "d2cg", fmt, ##__VA_ARGS__)
-#define PH_NUKE(reason, ...) __android_log_print(ANDROID_LOG_WARN,  "d2cg", "NUKE: " reason, ##__VA_ARGS__)
+// PH_LOG / PH_NUKE use non-varargs bridges so amice can VM-virtualize callers.
+// __android_log_print is variadic — amice bails on varargs at the call site.
+// __android_log_write is a plain non-varargs call that amice handles fine.
+// Format args (e.g. %d, %s) are intentionally dropped in VM-safe path;
+// the message string itself identifies which check fired.
+// Disable for release: replace vm_log_d/vm_log_w bodies with ((void)0).
+#define PH_LOG(fmt, ...)     vm_log_d(fmt)
+#define PH_NUKE(reason, ...) vm_log_w("NUKE: " reason)
+/* Forward declarations — defined near the other vm_* bridges below. */
+static void vm_log_d(const char *msg);
+static void vm_log_w(const char *msg);
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ?
@@ -657,6 +665,12 @@ static __attribute__((noinline)) long vm_readlinkat(int d, const char *p, char *
 static __attribute__((noinline)) int vm_dl_iterate_phdr(
     int (*cb)(struct dl_phdr_info*, size_t, void*), void *data)
     { return dl_iterate_phdr(cb, data); }
+/* Non-varargs log bridges — amice lifts callers; varargs __android_log_print
+   would cause it to bail on every detection function. */
+static __attribute__((noinline)) void vm_log_d(const char *msg)
+    { __android_log_write(ANDROID_LOG_DEBUG, "d2cg", msg); }
+static __attribute__((noinline)) void vm_log_w(const char *msg)
+    { __android_log_write(ANDROID_LOG_WARN,  "d2cg", msg); }
 
 /* ── Extra vm_* bridges — no inline asm in body, amice lifts callers fine ───
    getdents64  : replaces opendir/readdir/closedir (those are libc, amice bails)
