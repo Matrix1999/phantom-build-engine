@@ -569,6 +569,32 @@ static __attribute__((noinline)) ssize_t read_one_line(int fd, char *buf, unsign
     return bytes_read;
 }
 
+/* ── VM Virtualize syscall bridges ──────────────────────────────────────────
+   amice translator.rs bails on any call whose callee is InlineAsm
+   (line 7617: "inline asm calls are not supported by vm_virtualize").
+   my_openat / my_read / my_close are always_inline wrappers around
+   raw_syscall_* which emits "svc #0" asm — so they trigger the bail.
+   Solution: wrap them in noinline stubs. The VM calls these as call_native
+   (native thunk, no bytecode needed for the callee). Full syscall semantics
+   are preserved; the VM just doesn't peek inside the thunk.
+   Defined HERE — before any detection function that uses them. */
+static __attribute__((noinline)) int vm_openat(int d, const char *p, int f, int m)
+    { return my_openat(d, p, f, m); }
+static __attribute__((noinline)) long vm_read(int fd, void *b, size_t n)
+    { return (long)my_read(fd, b, n); }
+static __attribute__((noinline)) int vm_close(int fd)
+    { return my_close(fd); }
+static __attribute__((noinline)) long vm_write(int fd, const void *b, size_t n)
+    { return (long)my_write(fd, b, n); }
+static __attribute__((noinline)) int vm_socket(int domain, int type, int protocol)
+    { return my_socket(domain, type, protocol); }
+static __attribute__((noinline)) int vm_connect(int fd, const struct sockaddr *addr, socklen_t len)
+    { return my_connect(fd, addr, len); }
+static __attribute__((noinline)) int vm_nanosleep(const struct timespec *r, struct timespec *e)
+    { return my_nanosleep(r, e); }
+static __attribute__((noinline)) long vm_readlinkat(int d, const char *p, char *b, size_t s)
+    { return (long)my_readlinkat(d, p, b, s); }
+
 static inline unsigned long checksum(void *buffer, size_t len) {
     unsigned long seed = 0;
     uint8_t *buf = (uint8_t *)buffer;
@@ -1252,31 +1278,6 @@ static void *detect_frida_loop(void *args) {
 // Optional (compile-time -DBLOCK_ROOTED_DEVICES):
 //   SELinux permissive → immediate nuke (rooted phone detected on launch).
 // ?
-
-/* ── VM Virtualize syscall bridges ──────────────────────────────────────────
-   amice translator.rs bails on any call whose callee is InlineAsm
-   (line 7617: "inline asm calls are not supported by vm_virtualize").
-   my_openat / my_read / my_close are always_inline wrappers around
-   raw_syscall_* which emits "svc #0" asm — so they trigger the bail.
-   Solution: wrap them in noinline stubs. The VM calls these as call_native
-   (native thunk, no bytecode needed for the callee). Full syscall semantics
-   are preserved; the VM just doesn't peek inside the thunk. */
-static __attribute__((noinline)) int vm_openat(int d, const char *p, int f, int m)
-    { return my_openat(d, p, f, m); }
-static __attribute__((noinline)) long vm_read(int fd, void *b, size_t n)
-    { return (long)my_read(fd, b, n); }
-static __attribute__((noinline)) int vm_close(int fd)
-    { return my_close(fd); }
-static __attribute__((noinline)) long vm_write(int fd, const void *b, size_t n)
-    { return (long)my_write(fd, b, n); }
-static __attribute__((noinline)) int vm_socket(int domain, int type, int protocol)
-    { return my_socket(domain, type, protocol); }
-static __attribute__((noinline)) int vm_connect(int fd, const struct sockaddr *addr, socklen_t len)
-    { return my_connect(fd, addr, len); }
-static __attribute__((noinline)) int vm_nanosleep(const struct timespec *r, struct timespec *e)
-    { return my_nanosleep(r, e); }
-static __attribute__((noinline)) long vm_readlinkat(int d, const char *p, char *b, size_t s)
-    { return (long)my_readlinkat(d, p, b, s); }
 
 /* ── check_rooted sub-functions ─────────────────────────────────────────────
    Split so each fits amice's per-function size limit and uses only
