@@ -699,14 +699,6 @@ static __attribute__((noinline)) int vm_mprotect(void *a, size_t l, int prot)
     { return my_mprotect(a, l, prot); }
 #endif
 
-/* vm_socket / vm_connect / vm_write — noinline bridges so callers (check_frida_port,
-   detect_frida_websocket) contain no inline asm and can be VMP-virtualized. */
-static __attribute__((noinline)) int vm_socket(int domain, int type, int protocol)
-    { return my_socket(domain, type, protocol); }
-static __attribute__((noinline)) int vm_connect(int fd, const struct sockaddr *addr, socklen_t len)
-    { return my_connect(fd, addr, len); }
-static __attribute__((noinline)) ssize_t vm_write(int fd, const void *b, size_t n)
-    { return my_write(fd, b, n); }
 
 // ?
 // Kill switch
