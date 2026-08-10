@@ -693,6 +693,8 @@ static __attribute__((noinline)) long vm_gettid(void)
 static __attribute__((noinline)) void vm_tgkill(long pid, long tid, long sig)
     { syscall(__NR_tgkill, pid, tid, sig); }
 static __attribute__((noinline)) void vm_kill(long pid, long sig)
+static __attribute__((noinline)) int vm_mprotect(void *a, size_t l, int prot)
+    { return my_mprotect(a, l, prot); }
     { syscall(__NR_kill, pid, sig); }
 #endif
 
@@ -744,10 +746,10 @@ static __attribute__((noinline)) void detect_ptrace(void) {
     PH_LOG("detect_ptrace: checking TracerPid");
     char buf[512];
     PH_STK(_ss, _E_PROC_SELFSTATUS, 18, _K_PROC_SELFSTATUS);
-    int fd = my_openat(AT_FDCWD, _ss, O_RDONLY | O_CLOEXEC, 0);
+    int fd = vm_openat(AT_FDCWD, _ss, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_ss, 19);
     if (fd >= 0) {
-        ssize_t bytes = my_read(fd, buf, sizeof(buf) - 1);
+        ssize_t bytes = vm_read(fd, buf, sizeof(buf) - 1);
         if (bytes > 0) {
             buf[bytes] = '\0';
             PH_STK(_tp, _E_TRACER_PID, 10, _K_TRACER_PID);
@@ -755,10 +757,10 @@ static __attribute__((noinline)) void detect_ptrace(void) {
             PH_ZERO(_tp, 11);
             if (tracer) {
                 int pid = atoi(tracer + 10);
-                if (pid > 0) { my_close(fd); PH_NUKE("ptrace — TracerPid=%d", pid); nuke_app(); }
+                if (pid > 0) { vm_close(fd); PH_NUKE("ptrace — TracerPid=%d", pid); nuke_app(); }
             }
         }
-        my_close(fd);
+        vm_close(fd);
     }
 }
 
@@ -804,11 +806,11 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
             PH_STK(_cfmt, _E_FMT_TASK_COMM, 23, _K_FMT_TASK_COMM);
             snprintf(comm_path, sizeof(comm_path), _cfmt, entry->d_name);
             PH_ZERO(_cfmt, 24);
-            int fd = my_openat(AT_FDCWD, comm_path, O_RDONLY | O_CLOEXEC, 0);
+            int fd = vm_openat(AT_FDCWD, comm_path, O_RDONLY | O_CLOEXEC, 0);
             if (fd >= 0) {
                 char name[MAX_LENGTH] = "";
-                read_one_line(fd, name, MAX_LENGTH);
-                my_close(fd);
+                vm_read_one_line(fd, name, MAX_LENGTH);
+                vm_close(fd);
                 if (my_strncmp(name, _jdwp, 4) == 0) {
                     PH_NUKE("JDWP Java debugger thread — task=%s comm=%s",
                             entry->d_name, name);
@@ -830,11 +832,11 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
             PH_STK(_sfmt, _E_FMT_TASK_STATUS, 25, _K_FMT_TASK_STATUS);
             snprintf(status_path, sizeof(status_path), _sfmt, entry->d_name);
             PH_ZERO(_sfmt, 26);
-            int fd = my_openat(AT_FDCWD, status_path, O_RDONLY | O_CLOEXEC, 0);
+            int fd = vm_openat(AT_FDCWD, status_path, O_RDONLY | O_CLOEXEC, 0);
             if (fd >= 0) {
                 char buf[1024] = "";
-                ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
-                my_close(fd);
+                ssize_t n = vm_read(fd, buf, sizeof(buf) - 1);
+                vm_close(fd);
                 if (n > 0) {
                     buf[n] = '\0';
                     char *tracer = my_strstr(buf, _tp);
@@ -905,7 +907,7 @@ static int check_frida_port(int port) {
 
     // connect() to a closed port returns ECONNREFUSED immediately.
     if (my_connect(fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        my_close(fd);
+        vm_close(fd);
         return 0;
     }
 
@@ -918,8 +920,8 @@ static int check_frida_port(int port) {
 
     char res[512];
     my_memset(res, 0, sizeof(res));
-    my_read(fd, res, sizeof(res) - 1);
-    my_close(fd);
+    vm_read(fd, res, sizeof(res) - 1);
+    vm_close(fd);
 
     PH_STK(_wa, _E_FRIDA_WS, 28, _K_FRIDA_WS);
     int hit = my_strstr(res, _wa) != NULL;
@@ -977,7 +979,7 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
         }
         lstat(filePath, &filestat);
         if ((filestat.st_mode & S_IFMT) == S_IFLNK) {
-            my_readlinkat(AT_FDCWD, filePath, buf, MAX_LENGTH);
+            vm_readlinkat(AT_FDCWD, filePath, buf, MAX_LENGTH);
             PH_STK(_linj, _E_LINJECTOR, 9, _K_LINJECTOR);
             int _linj_found = my_strstr(buf, _linj) != NULL;
             PH_ZERO(_linj, 10);
@@ -1011,12 +1013,12 @@ static void detect_ebpf_uprobe(void) {
     // ── path 1 ────────────────────────────────────────────────────────────────
     {
         PH_STK(_p1, _E_PATH_UPROBE_DBG, 39, _K_PATH_UPROBE_DBG);
-        int fd = my_openat(AT_FDCWD, _p1, O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, _p1, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_p1, 40);
         if (fd >= 0) {
             my_memset(buf, 0, sizeof(buf));
-            ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
-            my_close(fd);
+            ssize_t n = vm_read(fd, buf, sizeof(buf) - 1);
+            vm_close(fd);
             if (n > 0) {
                 PH_STK(_la, _E_STR_LIBART,   6, _K_STR_LIBART);
                 PH_STK(_dd, _E_STR_DEX_DUMP, 8, _K_STR_DEX_DUMP);
@@ -1029,12 +1031,12 @@ static void detect_ebpf_uprobe(void) {
     // ── path 2 ────────────────────────────────────────────────────────────────
     {
         PH_STK(_p2, _E_PATH_UPROBE, 33, _K_PATH_UPROBE);
-        int fd = my_openat(AT_FDCWD, _p2, O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, _p2, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_p2, 34);
         if (fd >= 0) {
             my_memset(buf, 0, sizeof(buf));
-            ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
-            my_close(fd);
+            ssize_t n = vm_read(fd, buf, sizeof(buf) - 1);
+            vm_close(fd);
             if (n > 0) {
                 PH_STK(_la, _E_STR_LIBART,   6, _K_STR_LIBART);
                 PH_STK(_dd, _E_STR_DEX_DUMP, 8, _K_STR_DEX_DUMP);
@@ -1099,7 +1101,7 @@ static void detect_riru_zygisk(void) {
     // Open a fresh fd each call — avoids cross-thread fd sharing.
     {
         PH_STK(_pm,  _E_PROC_MAPS,    15, _K_PROC_MAPS);
-        int fd = my_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_pm, 16);
         if (fd >= 0) {
             PH_STK(_ri,  _E_HOOK_RIRU,    4, _K_HOOK_RIRU);
@@ -1109,19 +1111,19 @@ static void detect_riru_zygisk(void) {
             PH_STK(_ex,  _E_HOOK_EDXPOSED,8, _K_HOOK_EDXPOSED);
             PH_STK(_fr,  _E_HOOK_FRIDA,   5, _K_HOOK_FRIDA);
             char map[MAX_LINE] = "";
-            while (read_one_line(fd, map, MAX_LINE) > 0) {
+            while (vm_read_one_line(fd, map, MAX_LINE) > 0) {
                 if (my_strstr(map,_ri) || my_strstr(map,_zy) ||
                     my_strstr(map,_xp) || my_strstr(map,_ls) ||
                     my_strstr(map,_ex) || my_strstr(map,_fr)) {
                     PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
                     PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
                     PH_NUKE("hooking framework in /proc/self/maps: %s", map);
-                    my_close(fd); nuke_app();
+                    vm_close(fd); nuke_app();
                 }
             }
             PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
             PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
-            my_close(fd);
+            vm_close(fd);
         }
     }
 
@@ -1136,7 +1138,7 @@ static void detect_riru_zygisk(void) {
     }
 
     // ── 3. Known install paths — stack-per-use decrypt ───────────────────────
-    #define _CHK_HOOK(enc, n, key) do {         PH_STK(_hp, enc, n, key);         int _fd = my_openat(AT_FDCWD, _hp, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_hp, (n)+1);         if (_fd >= 0) { my_close(_fd); PH_NUKE("hook path exists"); nuke_app(); }     } while(0)
+    #define _CHK_HOOK(enc, n, key) do {         PH_STK(_hp, enc, n, key);         int _fd = vm_openat(AT_FDCWD, _hp, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_hp, (n)+1);         if (_fd >= 0) { vm_close(_fd); PH_NUKE("hook path exists"); nuke_app(); }     } while(0)
     _CHK_HOOK(_E_PATH_RIRU,        14, _K_PATH_RIRU);
     _CHK_HOOK(_E_PATH_RIRU_MOD,    22, _K_PATH_RIRU_MOD);
     _CHK_HOOK(_E_PATH_ZYGISK_MOD,  24, _K_PATH_ZYGISK_MOD);
@@ -1168,7 +1170,7 @@ static void detect_root(void) {
     PH_LOG("detect_root: checking su binaries + Magisk mounts");
 
     // ── A. su binary existence — stack-per-use decrypt ───────────────────────
-    #define _CHK_SU(enc, n, key) do {         PH_STK(_su, enc, n, key);         int _fd = my_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_su, (n)+1);         if (_fd >= 0) { my_close(_fd); PH_NUKE("su binary"); nuke_app(); }     } while(0)
+    #define _CHK_SU(enc, n, key) do {         PH_STK(_su, enc, n, key);         int _fd = vm_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_su, (n)+1);         if (_fd >= 0) { vm_close(_fd); PH_NUKE("su binary"); nuke_app(); }     } while(0)
     _CHK_SU(_E_PATH_SU_LOCAL,       14, _K_PATH_SU_LOCAL);
     _CHK_SU(_E_PATH_SU_LOCAL_BIN,   18, _K_PATH_SU_LOCAL_BIN);
     _CHK_SU(_E_PATH_SU_LOCAL_XBIN,  19, _K_PATH_SU_LOCAL_XBIN);
@@ -1188,22 +1190,22 @@ static void detect_root(void) {
     // ── B. /proc/self/mounts — Magisk mount signatures ────────────────────────
     {
         PH_STK(_mnt, _E_PATH_PROC_MOUNTS, 17, _K_PATH_PROC_MOUNTS);
-        int fd = my_openat(AT_FDCWD, _mnt, O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, _mnt, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_mnt, 18);
         if (fd >= 0) {
             PH_STK(_mg, _E_STR_MAGISK,      6, _K_STR_MAGISK);
             PH_STK(_cm, _E_STR_CORE_MIRROR,11, _K_STR_CORE_MIRROR);
             PH_STK(_ci, _E_STR_CORE_IMG,    8, _K_STR_CORE_IMG);
             char buf[MAX_LINE] = "";
-            while (read_one_line(fd, buf, MAX_LINE) > 0) {
+            while (vm_read_one_line(fd, buf, MAX_LINE) > 0) {
                 if (my_strstr(buf,_mg) || my_strstr(buf,_cm) || my_strstr(buf,_ci)) {
                     PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
                     PH_NUKE("Magisk mount detected: %s", buf);
-                    my_close(fd); nuke_app();
+                    vm_close(fd); nuke_app();
                 }
             }
             PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
-            my_close(fd);
+            vm_close(fd);
         }
     }
 }
@@ -1233,7 +1235,7 @@ static void *detect_frida_loop(void *args) {
         detect_ebpf_uprobe();
         if (g_block_rooted) detect_riru_zygisk();  // Riru/Zygisk/Xposed: maps + phdr + paths — only if toggle ON
         if (g_block_rooted) detect_root();        // su binaries + Magisk mounts — only if toggle ON
-        my_nanosleep(&timereq, NULL);
+        vm_nanosleep(&timereq, NULL);
     }
     return NULL;
 }
@@ -1245,9 +1247,9 @@ static void check_rooted(void) {
         "/sys/kernel/security/selinux/enforce", NULL
     };
     for (int i = 0; SE[i]; i++) {
-        int fd = my_openat(AT_FDCWD, SE[i], O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, SE[i], O_RDONLY | O_CLOEXEC, 0);
         if (fd < 0) continue;
-        char b[4] = {0}; my_read(fd, b, 3); my_close(fd);
+        char b[4] = {0}; vm_read(fd, b, 3); vm_close(fd);
         if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
         break;
     }
@@ -1261,8 +1263,8 @@ static void check_rooted(void) {
         "/cache/su","/data/su","/dev/su", NULL
     };
     for (int i = 0; SU[i]; i++) {
-        int fd = my_openat(AT_FDCWD, SU[i], O_RDONLY | O_CLOEXEC, 0);
-        if (fd >= 0) { my_close(fd); PH_NUKE("su binary"); nuke_app(); }
+        int fd = vm_openat(AT_FDCWD, SU[i], O_RDONLY | O_CLOEXEC, 0);
+        if (fd >= 0) { vm_close(fd); PH_NUKE("su binary"); nuke_app(); }
     }
 
     /* 3. Root / hook framework directories */
@@ -1272,22 +1274,22 @@ static void check_rooted(void) {
         "/system/framework/XposedBridge.jar","/system/xposed.prop", NULL
     };
     for (int i = 0; DIRS[i]; i++) {
-        int fd = my_openat(AT_FDCWD, DIRS[i], O_RDONLY | O_CLOEXEC | O_DIRECTORY, 0);
-        if (fd >= 0) { my_close(fd); PH_NUKE("root dir exists"); nuke_app(); }
+        int fd = vm_openat(AT_FDCWD, DIRS[i], O_RDONLY | O_CLOEXEC | O_DIRECTORY, 0);
+        if (fd >= 0) { vm_close(fd); PH_NUKE("root dir exists"); nuke_app(); }
     }
 
     /* 4. /proc/self/mounts scan */
     static const char * const MNT[] = {
         "magisk","core/mirror","core/img","lspd","zygisk","xposed", NULL
     };
-    int mfd = my_openat(AT_FDCWD, "/proc/self/mounts", O_RDONLY | O_CLOEXEC, 0);
+    int mfd = vm_openat(AT_FDCWD, "/proc/self/mounts", O_RDONLY | O_CLOEXEC, 0);
     if (mfd >= 0) {
         char buf[512]; int pos = 0; ssize_t n;
-        while ((n = my_read(mfd, buf + pos, (ssize_t)sizeof(buf) - pos - 1)) > 0) {
+        while ((n = vm_read(mfd, buf + pos, (ssize_t)sizeof(buf) - pos - 1)) > 0) {
             buf[pos + n] = '\0';
             for (int i = 0; MNT[i]; i++)
                 if (my_strstr(buf, MNT[i])) {
-                    my_close(mfd);
+                    vm_close(mfd);
                     PH_NUKE("mount marker found"); nuke_app();
                 }
             if (pos + n > 11) {
@@ -1295,13 +1297,13 @@ static void check_rooted(void) {
                 pos = 11;
             } else { pos = 0; }
         }
-        my_close(mfd);
+        vm_close(mfd);
     }
 
     /* 5. CapEff — kernel-enforced, survives Shamiko */
-    int sfd = my_openat(AT_FDCWD, "/proc/self/status", O_RDONLY | O_CLOEXEC, 0);
+    int sfd = vm_openat(AT_FDCWD, "/proc/self/status", O_RDONLY | O_CLOEXEC, 0);
     if (sfd >= 0) {
-        char sb[2048]; ssize_t sn = my_read(sfd, sb, sizeof(sb)-1); my_close(sfd);
+        char sb[2048]; ssize_t sn = vm_read(sfd, sb, sizeof(sb)-1); vm_close(sfd);
         if (sn > 0) {
             sb[sn] = '\0';
             const char *cap = my_strstr(sb, "CapEff:");
@@ -1316,14 +1318,14 @@ static void check_rooted(void) {
 
     /* 6. build.prop test-keys / dev-keys */
     static const char * const KEYS[] = { "test-keys","dev-keys", NULL };
-    int bfd = my_openat(AT_FDCWD, "/system/build.prop", O_RDONLY | O_CLOEXEC, 0);
+    int bfd = vm_openat(AT_FDCWD, "/system/build.prop", O_RDONLY | O_CLOEXEC, 0);
     if (bfd >= 0) {
         char bb[512]; int bp = 0; ssize_t bn;
-        while ((bn = my_read(bfd, bb + bp, (ssize_t)sizeof(bb) - bp - 1)) > 0) {
+        while ((bn = vm_read(bfd, bb + bp, (ssize_t)sizeof(bb) - bp - 1)) > 0) {
             bb[bp + bn] = '\0';
             for (int i = 0; KEYS[i]; i++)
                 if (my_strstr(bb, KEYS[i])) {
-                    my_close(bfd);
+                    vm_close(bfd);
                     PH_NUKE("build.prop bad key"); nuke_app();
                 }
             if (bp + bn > 9) {
@@ -1331,7 +1333,7 @@ static void check_rooted(void) {
                 bp = 9;
             } else { bp = 0; }
         }
-        my_close(bfd);
+        vm_close(bfd);
     }
 }
 
@@ -1417,11 +1419,11 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeArtDex(
 {
     (void)env; (void)clazz;
 
-    int fd = my_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
+    int fd = vm_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
     if (fd < 0) return;
 
     char line[MAX_LINE];
-    while (read_one_line(fd, line, MAX_LINE) > 0) {
+    while (vm_read_one_line(fd, line, MAX_LINE) > 0) {
         unsigned long start = 0, end = 0;
         char perms[5]   = {0};
         unsigned long offset = 0;
@@ -1464,7 +1466,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeArtDex(
         // 8-byte magic (offset 0) and endian_tag (offset 40) lie within it.
         bool was_ro = (perms[1] != 'w');
         if (was_ro) {
-            if (my_mprotect(ptr, 4096, PROT_READ | PROT_WRITE) != 0) continue;
+            if (vm_mprotect(ptr, 4096, PROT_READ | PROT_WRITE) != 0) continue;
         }
 
         // Zero DEX magic + version string (bytes 0-7): e.g. "dex\n035\0"
@@ -1473,9 +1475,9 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeArtDex(
         my_memset(ptr + 40, 0, 4);
 
         // Restore original permissions
-        if (was_ro) my_mprotect(ptr, 4096, PROT_READ);
+        if (was_ro) vm_mprotect(ptr, 4096, PROT_READ);
     }
-    my_close(fd);
+    vm_close(fd);
 }
 
 // ?
@@ -1853,10 +1855,10 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
 
     /* ── 7. Wipe ART's internal anonymous mmap copies (Layer-2b) ─────────── */
     {
-        int mfd = my_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
+        int mfd = vm_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
         if (mfd >= 0) {
             char ml[MAX_LINE];
-            while (read_one_line(mfd, ml, MAX_LINE) > 0) {
+            while (vm_read_one_line(mfd, ml, MAX_LINE) > 0) {
                 unsigned long ms = 0, me = 0;
                 char mp[5] = {0};
                 unsigned long moff = 0;
@@ -1876,12 +1878,12 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
                 uint8_t *ptr = (uint8_t *)ms;
                 if (ptr[0]!=0x64||ptr[1]!=0x65||ptr[2]!=0x78||ptr[3]!=0x0A) continue;
                 bool ro = (mp[1] != 'w');
-                if (ro && my_mprotect(ptr, 4096, PROT_READ|PROT_WRITE) != 0) continue;
+                if (ro && vm_mprotect(ptr, 4096, PROT_READ|PROT_WRITE) != 0) continue;
                 my_memset(ptr, 0, 8);
                 if ((me - ms) > 44) my_memset(ptr + 40, 0, 4);
-                if (ro) my_mprotect(ptr, 4096, PROT_READ);
+                if (ro) vm_mprotect(ptr, 4096, PROT_READ);
             }
-            my_close(mfd);
+            vm_close(mfd);
         }
     }
 
