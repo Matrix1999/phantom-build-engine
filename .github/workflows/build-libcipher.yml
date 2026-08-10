@@ -115,6 +115,14 @@ jobs:
           AMICE_STRING_ALGORITHM=simd_xor \
           AMICE_STRING_DECRYPT_TIMING=lazy \
           AMICE_STRING_INLINE_DECRYPT_FN=true \
+          AMICE_INDIRECT_BRANCH=true \
+          AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,shuffle_table \
+          AMICE_INDIRECT_CALL=true \
+          AMICE_ALIAS_ACCESS=true \
+          AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
+          AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true \
+          AMICE_SPLIT_BASIC_BLOCK=true \
+          AMICE_SPLIT_BASIC_BLOCK_NUMS=3 \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
@@ -192,6 +200,14 @@ jobs:
           AMICE_STRING_ALGORITHM=simd_xor \
           AMICE_STRING_DECRYPT_TIMING=lazy \
           AMICE_STRING_INLINE_DECRYPT_FN=true \
+          AMICE_INDIRECT_BRANCH=true \
+          AMICE_INDIRECT_BRANCH_FLAGS=dummy_block,shuffle_table \
+          AMICE_INDIRECT_CALL=true \
+          AMICE_ALIAS_ACCESS=true \
+          AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
+          AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=true \
+          AMICE_SPLIT_BASIC_BLOCK=true \
+          AMICE_SPLIT_BASIC_BLOCK_NUMS=3 \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
