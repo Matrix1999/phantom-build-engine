@@ -120,6 +120,7 @@ typedef struct {
 
 #define NUM_LIBS 2  // libphantom.so (idx 0) + libc.so (idx 1)
 static execSection *elfSectionArr[NUM_LIBS] = {NULL};
+static const char *libstocheck[NUM_LIBS] = {"libphantom.so", "libc.so"};
 
 #if defined(__LP64__)
 typedef Elf64_Ehdr Elf_Ehdr;
