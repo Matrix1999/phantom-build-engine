@@ -1583,7 +1583,8 @@ static inline void put_le32(uint8_t *b, int off, uint32_t v) {
     b[off+3] = (uint8_t)(v >> 24);
 }
 
-__attribute__((noinline, annotate("+vm_virtualize")))
+__attribute__((noinline))
+__attribute__((annotate("+vm_virtualize")))
 static void arx_kdf(const uint8_t salt[16], const uint8_t pkg_hash[32], uint8_t out[16]) {
     uint32_t s0 = le32(salt,  0), s1 = le32(salt,  4);
     uint32_t s2 = le32(salt,  8), s3 = le32(salt, 12);
@@ -1608,7 +1609,8 @@ typedef struct {
     int      pos;
 } arx_ctx_t;
 
-__attribute__((noinline, annotate("+vm_virtualize")))
+__attribute__((noinline))
+__attribute__((annotate("+vm_virtualize")))
 static void arx_ctx_init(arx_ctx_t *s, const uint8_t key[16]) {
     uint32_t k0=le32(key,0), k1=le32(key,4), k2=le32(key,8), k3=le32(key,12);
     s->st[0] = k0 ^ k2;
