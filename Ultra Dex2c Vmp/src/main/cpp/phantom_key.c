@@ -95,22 +95,21 @@ static void vm_log_w(const char *msg);
 //   internal commas and report "too many arguments". Keys are declared as
 //   separate static arrays below — same security, no preprocessor issue.
 // PH_ZERO(buf, sz) — volatile wipe; compiler cannot optimize away.
-#define PH_DECRYPT_N(out, enc, enc_len, key) do {           \
-    int _kl = (int)sizeof(key);                             \
-    for (int _i = 0; _i < (enc_len); _i++)                  \
-        (out)[_i] = (char)((enc)[_i] ^ (key)[_i % _kl]);   \
-    (out)[enc_len] = '\0';                                  \
-} while(0)
-#define PH_ZERO(buf, sz) do {                               \
-    volatile char *_vp = (buf);                             \
-    for (int _zi = 0; _zi < (sz); _zi++) _vp[_zi] = 0;    \
-} while(0)
+/* PH_DECRYPT_N / PH_ZERO / PH_STK — VM-safe versions.
+   Old versions used inline for-loops which amice cannot lift (complexity limit).
+   Now they call noinline bridges (vm_decrypt_n / vm_zero) so amice sees only
+   call_native instructions — no inlined loop bodies in the VM function. */
+/* Forward declarations — bridges defined in the vm_* section below. */
+static void vm_decrypt_n(char *dst, const char *src, int n, const char *key, int ksz);
+static void vm_zero(char *p, int n);
+
+#define PH_DECRYPT_N(out, enc, enc_len, key) \
+    vm_decrypt_n(out, enc, enc_len, key, (int)sizeof(key))
+#define PH_ZERO(buf, sz) \
+    vm_zero((char *)(buf), (sz))
 #define PH_STK(var, enc, enc_len, key) \
     char var[(enc_len)+1]; \
-    do { int _kl=(int)sizeof(key); \
-         for(int _i=0;_i<(enc_len);_i++) \
-             (var)[_i]=(char)((enc)[_i]^(key)[_i%_kl]); \
-         (var)[enc_len]='\0'; } while(0)
+    vm_decrypt_n(var, enc, enc_len, key, (int)sizeof(key))
 // PH_STK: decrypt XOR-encrypted string to a stack-local buffer.
 // ALWAYS call PH_ZERO(var, enc_len+1) when done.
 // The decrypted string lives on the stack ONLY — never in .bss.
@@ -672,6 +671,35 @@ static __attribute__((noinline)) void vm_log_d(const char *msg)
 static __attribute__((noinline)) void vm_log_w(const char *msg)
     { __android_log_write(ANDROID_LOG_WARN,  "d2cg", msg); }
 
+/* ── String / memory helper bridges ─────────────────────────────────────────
+   my_strstr / my_atoi / my_strncmp / my_memset / my_path_cat3 are all
+   always_inline — their loop bodies expand inline into every caller and make
+   amice exceed its per-function complexity budget, so it skips vm_virtualize.
+   Wrapping them as noinline bridges means amice sees a single call_native
+   instruction instead of 3-4 nested inlined loops.
+   vm_decrypt_n / vm_zero replace the PH_STK / PH_ZERO inline loop macros
+   for the same reason. */
+static __attribute__((noinline)) char *vm_strstr(const char *s, const char *f)
+    { return my_strstr(s, f); }
+static __attribute__((noinline)) int vm_strncmp(const char *a, const char *b, size_t n)
+    { return my_strncmp(a, b, n); }
+static __attribute__((noinline)) int vm_atoi(const char *s)
+    { return my_atoi(s); }
+static __attribute__((noinline)) void *vm_memset(void *dst, int c, size_t n)
+    { return my_memset(dst, c, n); }
+static __attribute__((noinline)) void vm_path_cat3(char *dst, size_t sz,
+    const char *a, const char *b, const char *c)
+    { my_path_cat3(dst, sz, a, b, c); }
+static __attribute__((noinline)) void vm_decrypt_n(char *dst, const char *src,
+    int n, const char *key, int ksz) {
+    for (int i = 0; i < n; i++) dst[i] = src[i] ^ key[i % ksz];
+    dst[n] = '\0';
+}
+static __attribute__((noinline)) void vm_zero(char *p, int n) {
+    volatile char *vp = p;
+    for (int i = 0; i < n; i++) vp[i] = 0;
+}
+
 /* ── Extra vm_* bridges — no inline asm in body, amice lifts callers fine ───
    getdents64  : replaces opendir/readdir/closedir (those are libc, amice bails)
    setsockopt  : replaces libc setsockopt in check_frida_port
@@ -858,10 +886,10 @@ static __attribute__((noinline)) void detect_ptrace(void) {
         if (bytes > 0) {
             buf[bytes] = '\0';
             PH_STK(_tp, _E_TRACER_PID, 10, _K_TRACER_PID);
-            char *tracer = my_strstr(buf, _tp);
+            char *tracer = vm_strstr(buf, _tp);
             PH_ZERO(_tp, 11);
             if (tracer) {
-                int pid = my_atoi(tracer + 10);
+                int pid = vm_atoi(tracer + 10);
                 if (pid > 0) { vm_close(fd); PH_NUKE("ptrace — TracerPid=%d", pid); nuke_app(); }
             }
         }
@@ -883,8 +911,8 @@ static __attribute__((noinline)) void detect_frida_memdiskcompare(void) {
     char map[MAX_LINE];
     while ((vm_read_one_line(fd, map, MAX_LINE)) > 0) {
         int idx = -1;
-        if      (my_strstr(map, _lph)) idx = 0;
-        else if (my_strstr(map, _lc))  idx = 1;
+        if      (vm_strstr(map, _lph)) idx = 0;
+        else if (vm_strstr(map, _lc))  idx = 1;
         if (idx >= 0 && elfSectionArr[idx] != NULL)
             scan_executable_segments(map, elfSectionArr[idx]);
     }
@@ -920,15 +948,15 @@ static __attribute__((noinline)) int _dft_check_tid(
     {
         char path[MAX_LENGTH];
         /* "/proc/self/task/" + tid + "/comm" */
-        my_path_cat3(path, MAX_LENGTH, "/proc/self/task/", tid, "/comm");
+        vm_path_cat3(path, MAX_LENGTH, "/proc/self/task/", tid, "/comm");
         int fd = vm_openat(AT_FDCWD, path, O_RDONLY | O_CLOEXEC, 0);
         if (fd >= 0) {
             char name[MAX_LENGTH];
-            my_memset(name, 0, sizeof(name));
+            vm_memset(name, 0, sizeof(name));
             vm_read_one_line(fd, name, MAX_LENGTH);
             vm_close(fd);
-            if (my_strncmp(name, jdwp, 4) == 0 ||
-                my_strstr(name, gum) || my_strstr(name, gm)) {
+            if (vm_strncmp(name, jdwp, 4) == 0 ||
+                vm_strstr(name, gum) || vm_strstr(name, gm)) {
                 PH_NUKE("Frida/JDWP thread via comm tid=%s name=%s", tid, name);
                 return 1;
             }
@@ -937,30 +965,30 @@ static __attribute__((noinline)) int _dft_check_tid(
     /* --- /proc/self/task/<tid>/status --- */
     {
         char path[MAX_LENGTH];
-        my_path_cat3(path, MAX_LENGTH, "/proc/self/task/", tid, "/status");
+        vm_path_cat3(path, MAX_LENGTH, "/proc/self/task/", tid, "/status");
         int fd = vm_openat(AT_FDCWD, path, O_RDONLY | O_CLOEXEC, 0);
         if (fd >= 0) {
             char buf[1024];
-            my_memset(buf, 0, sizeof(buf));
+            vm_memset(buf, 0, sizeof(buf));
             ssize_t n = (ssize_t)vm_read(fd, buf, sizeof(buf) - 1);
             vm_close(fd);
             if (n > 0) {
                 buf[n] = '\0';
-                char *tracer = my_strstr(buf, tp);
+                char *tracer = vm_strstr(buf, tp);
                 if (tracer) {
-                    int tpid = my_atoi(tracer + 10);
+                    int tpid = vm_atoi(tracer + 10);
                     if (tpid > 0) {
                         PH_NUKE("per-task TracerPid=%d tid=%s", tpid, tid);
                         return 1;
                     }
                 }
                 PH_STK(_nf, _E_STR_NAME_FIELD, 5, _K_STR_NAME_FIELD);
-                char *nf = my_strstr(buf, _nf);
+                char *nf = vm_strstr(buf, _nf);
                 PH_ZERO(_nf, 6);
                 if (nf) {
                     nf += 5;
                     while (*nf == '\t' || *nf == ' ') nf++;
-                    if (my_strstr(nf, gum) || my_strstr(nf, gm)) {
+                    if (vm_strstr(nf, gum) || vm_strstr(nf, gm)) {
                         PH_NUKE("Frida thread via status Name tid=%s", tid);
                         return 1;
                     }
@@ -1031,7 +1059,7 @@ static __attribute__((noinline)) int check_frida_port(int port) {
     vm_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, (int)sizeof(tv));
 
     struct sockaddr_in addr;
-    my_memset(&addr, 0, sizeof(addr));
+    vm_memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = my_htonl(0x7F000001u); /* INADDR_LOOPBACK */
     addr.sin_port        = my_htons((uint16_t)port);
@@ -1048,12 +1076,12 @@ static __attribute__((noinline)) int check_frida_port(int port) {
     }
 
     char res[512];
-    my_memset(res, 0, sizeof(res));
+    vm_memset(res, 0, sizeof(res));
     vm_read(fd, res, sizeof(res) - 1);
     vm_close(fd);
 
     PH_STK(_wa, _E_FRIDA_WS, 28, _K_FRIDA_WS);
-    int hit = my_strstr(res, _wa) != NULL;
+    int hit = vm_strstr(res, _wa) != NULL;
     PH_ZERO(_wa, 29);
     return hit;
 }
@@ -1114,15 +1142,15 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
             if (d->d_type != 0 && d->d_type != 10 /*DT_LNK*/) continue;
 
             char filePath[MAX_LENGTH];
-            my_path_cat3(filePath, MAX_LENGTH, "/proc/self/fd/", name, NULL);
+            vm_path_cat3(filePath, MAX_LENGTH, "/proc/self/fd/", name, NULL);
 
             char buf[MAX_LENGTH];
-            my_memset(buf, 0, sizeof(buf));
+            vm_memset(buf, 0, sizeof(buf));
             long r = vm_readlinkat(AT_FDCWD, filePath, buf, MAX_LENGTH - 1);
             if (r <= 0) continue;
 
             PH_STK(_linj, _E_LINJECTOR, 9, _K_LINJECTOR);
-            int hit = my_strstr(buf, _linj) != NULL;
+            int hit = vm_strstr(buf, _linj) != NULL;
             PH_ZERO(_linj, 10);
             if (hit) {
                 PH_NUKE("Frida named pipe detected — fd link: %s", buf);
@@ -1157,13 +1185,13 @@ static __attribute__((noinline)) void detect_ebpf_uprobe(void) {
         int fd = vm_openat(AT_FDCWD, _p1, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_p1, 40);
         if (fd >= 0) {
-            my_memset(buf, 0, sizeof(buf));
+            vm_memset(buf, 0, sizeof(buf));
             ssize_t n = (ssize_t)vm_read(fd, buf, sizeof(buf) - 1);
             vm_close(fd);
             if (n > 0) {
                 PH_STK(_la, _E_STR_LIBART,   6, _K_STR_LIBART);
                 PH_STK(_dd, _E_STR_DEX_DUMP, 8, _K_STR_DEX_DUMP);
-                int hit = my_strstr(buf, _la) != NULL || my_strstr(buf, _dd) != NULL;
+                int hit = vm_strstr(buf, _la) != NULL || vm_strstr(buf, _dd) != NULL;
                 PH_ZERO(_la, 7); PH_ZERO(_dd, 9);
                 if (hit) { PH_NUKE("eBPF uprobe on libart detected"); nuke_app(); }
             }
@@ -1174,13 +1202,13 @@ static __attribute__((noinline)) void detect_ebpf_uprobe(void) {
         int fd = vm_openat(AT_FDCWD, _p2, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_p2, 34);
         if (fd >= 0) {
-            my_memset(buf, 0, sizeof(buf));
+            vm_memset(buf, 0, sizeof(buf));
             ssize_t n = (ssize_t)vm_read(fd, buf, sizeof(buf) - 1);
             vm_close(fd);
             if (n > 0) {
                 PH_STK(_la, _E_STR_LIBART,   6, _K_STR_LIBART);
                 PH_STK(_dd, _E_STR_DEX_DUMP, 8, _K_STR_DEX_DUMP);
-                int hit = my_strstr(buf, _la) != NULL || my_strstr(buf, _dd) != NULL;
+                int hit = vm_strstr(buf, _la) != NULL || vm_strstr(buf, _dd) != NULL;
                 PH_ZERO(_la, 7); PH_ZERO(_dd, 9);
                 if (hit) { PH_NUKE("eBPF uprobe on libart detected"); nuke_app(); }
             }
@@ -1220,9 +1248,9 @@ static __attribute__((noinline)) int _phdr_name_matches(const char *name) {
     PH_STK(_ls, _E_HOOK_LSPD,    4, _K_HOOK_LSPD);
     PH_STK(_ex, _E_HOOK_EDXPOSED,8, _K_HOOK_EDXPOSED);
     PH_STK(_fr, _E_HOOK_FRIDA,   5, _K_HOOK_FRIDA);
-    int hit = (my_strstr(name,_ri) || my_strstr(name,_zy) ||
-               my_strstr(name,_xp) || my_strstr(name,_ls) ||
-               my_strstr(name,_ex) || my_strstr(name,_fr));
+    int hit = (vm_strstr(name,_ri) || vm_strstr(name,_zy) ||
+               vm_strstr(name,_xp) || vm_strstr(name,_ls) ||
+               vm_strstr(name,_ex) || vm_strstr(name,_fr));
     PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
     PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
     return hit;
@@ -1252,9 +1280,9 @@ static __attribute__((noinline)) void detect_riru_zygisk(void) {
             PH_STK(_fr,  _E_HOOK_FRIDA,   5, _K_HOOK_FRIDA);
             char map[MAX_LINE] = "";
             while (vm_read_one_line(fd, map, MAX_LINE) > 0) {
-                if (my_strstr(map,_ri) || my_strstr(map,_zy) ||
-                    my_strstr(map,_xp) || my_strstr(map,_ls) ||
-                    my_strstr(map,_ex) || my_strstr(map,_fr)) {
+                if (vm_strstr(map,_ri) || vm_strstr(map,_zy) ||
+                    vm_strstr(map,_xp) || vm_strstr(map,_ls) ||
+                    vm_strstr(map,_ex) || vm_strstr(map,_fr)) {
                     PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
                     PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
                     PH_NUKE("hooking framework in /proc/self/maps: %s", map);
@@ -1345,7 +1373,7 @@ static __attribute__((noinline)) void detect_root(void) {
             PH_STK(_ci, _E_STR_CORE_IMG,    8, _K_STR_CORE_IMG);
             char buf[MAX_LINE] = "";
             while (vm_read_one_line(fd, buf, MAX_LINE) > 0) {
-                if (my_strstr(buf,_mg) || my_strstr(buf,_cm) || my_strstr(buf,_ci)) {
+                if (vm_strstr(buf,_mg) || vm_strstr(buf,_cm) || vm_strstr(buf,_ci)) {
                     PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
                     PH_NUKE("Magisk mount detected: %s", buf);
                     vm_close(fd); nuke_app();
@@ -1490,8 +1518,8 @@ static __attribute__((noinline)) void _cr_mounts(void) {
         char buf[512]; int pos = 0; ssize_t n;
         while ((n = (ssize_t)vm_read(mfd, buf+pos, (size_t)(sizeof(buf)-pos-1))) > 0) {
             buf[pos+n] = '\0';
-            if (my_strstr(buf,_mg)||my_strstr(buf,_cm)||my_strstr(buf,_ci)||
-                my_strstr(buf,_ls)||my_strstr(buf,_zy)||my_strstr(buf,_xp)) {
+            if (vm_strstr(buf,_mg)||vm_strstr(buf,_cm)||vm_strstr(buf,_ci)||
+                vm_strstr(buf,_ls)||vm_strstr(buf,_zy)||vm_strstr(buf,_xp)) {
                 PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
                 PH_ZERO(_ls,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
                 vm_close(mfd); PH_NUKE("mount tamper"); nuke_app();
@@ -1516,7 +1544,7 @@ static __attribute__((noinline)) void _cr_capeff(void) {
         if (sn > 0) {
             sb[sn] = '\0';
             PH_STK(_cap, _E_STR_CAPEFF, 7, _K_STR_CAPEFF);
-            const char *cap = my_strstr(sb, _cap);
+            const char *cap = vm_strstr(sb, _cap);
             PH_ZERO(_cap, 8);
             if (cap) {
                 cap += 7; while (*cap==' '||*cap=='\t') cap++;
@@ -1538,7 +1566,7 @@ static __attribute__((noinline)) void _cr_buildprop(void) {
         char bb[512]; int bpos=0; ssize_t bn;
         while ((bn=(ssize_t)vm_read(bfd, bb+bpos, (size_t)(sizeof(bb)-bpos-1))) > 0) {
             bb[bpos+bn]='\0';
-            if (my_strstr(bb,_tk)||my_strstr(bb,_dk)) {
+            if (vm_strstr(bb,_tk)||vm_strstr(bb,_dk)) {
                 PH_ZERO(_tk,10);PH_ZERO(_dk,9);
                 vm_close(bfd); PH_NUKE("build keys"); nuke_app();
             }
