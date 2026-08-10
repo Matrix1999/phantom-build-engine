@@ -924,7 +924,10 @@ static void *detect_frida_loop(void *args) {
         detect_frida_threads();
         detect_frida_namedpipe();
         detect_frida_websocket();
-        detect_frida_memdiskcompare();
+        /* detect_frida_memdiskcompare() — disabled: reads raw mapped-library
+           memory byte-by-byte; crashes with SIGSEGV when the text section
+           ends exactly at a page boundary (unmapped guard page follows).
+           Thread/port/pipe checks are sufficient and crash-free. */
         detect_ptrace();
         detect_ebpf_uprobe();
         if (g_block_rooted) detect_riru_zygisk();
