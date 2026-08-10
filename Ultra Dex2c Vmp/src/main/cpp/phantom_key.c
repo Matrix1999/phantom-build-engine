@@ -555,7 +555,7 @@ __attribute__((always_inline)) static inline int my_connect(int fd, const struct
 // Low-level I/O helpers
 // ?
 
-static inline ssize_t read_one_line(int fd, char *buf, unsigned int max_len) {
+static __attribute__((noinline)) ssize_t read_one_line(int fd, char *buf, unsigned int max_len) {
     char b;
     ssize_t ret, bytes_read = 0;
     my_memset(buf, 0, max_len);
@@ -721,14 +721,15 @@ __attribute__((noreturn)) static void nuke_app(void) {
 // Original anti-Frida detection functions (unchanged)
 // ?
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_ptrace(void) {
     PH_LOG("detect_ptrace: checking TracerPid");
     char buf[512];
     PH_STK(_ss, _E_PROC_SELFSTATUS, 18, _K_PROC_SELFSTATUS);
-    int fd = my_openat(AT_FDCWD, _ss, O_RDONLY | O_CLOEXEC, 0);
+    int fd = vm_openat(AT_FDCWD, _ss, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_ss, 19);
     if (fd >= 0) {
-        ssize_t bytes = my_read(fd, buf, sizeof(buf) - 1);
+        ssize_t bytes = (ssize_t)vm_read(fd, buf, sizeof(buf) - 1);
         if (bytes > 0) {
             buf[bytes] = '\0';
             PH_STK(_tp, _E_TRACER_PID, 10, _K_TRACER_PID);
@@ -736,19 +737,20 @@ static __attribute__((noinline)) void detect_ptrace(void) {
             PH_ZERO(_tp, 11);
             if (tracer) {
                 int pid = atoi(tracer + 10);
-                if (pid > 0) { my_close(fd); PH_NUKE("ptrace — TracerPid=%d", pid); nuke_app(); }
+                if (pid > 0) { vm_close(fd); PH_NUKE("ptrace — TracerPid=%d", pid); nuke_app(); }
             }
         }
-        my_close(fd);
+        vm_close(fd);
     }
 }
 
 
 // ?
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_frida_memdiskcompare(void) {
     PH_STK(_pm, _E_PROC_MAPS, 15, _K_PROC_MAPS);
-    int fd = my_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
+    int fd = vm_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_pm, 16);
     if (fd < 0) return;
     PH_STK(_lph, _E_LIBPHANTOM, 13, _K_LIBPHANTOM);
@@ -763,7 +765,7 @@ static __attribute__((noinline)) void detect_frida_memdiskcompare(void) {
     }
     PH_ZERO(_lph, 14);
     PH_ZERO(_lc, 8);
-    my_close(fd);
+    vm_close(fd);
 }
 
 // detect_frida_threads — three checks per task, matching darvincisec + NativeShield:
@@ -781,6 +783,7 @@ static __attribute__((noinline)) void detect_frida_memdiskcompare(void) {
 // Reading status for EVERY task (not just /proc/self/status) catches debuggers
 // that attach to a single worker thread rather than the main thread — a common
 // bypass of single-file TracerPid checks.
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_frida_threads(void) {
     PH_LOG("detect_frida_threads: scanning all task comm + status");
     PH_STK(_task, _E_PROC_TASK, 15, _K_PROC_TASK);
@@ -788,7 +791,6 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
     PH_ZERO(_task, 16);
     if (dir == NULL) return;
 
-    // All detection strings on the stack for this scan — wiped at end or on nuke
     PH_STK(_jdwp, _E_JDWP,          4, _K_JDWP);
     PH_STK(_gum,  _E_GUM_JS_LOOP,  11, _K_GUM_JS_LOOP);
     PH_STK(_gm,   _E_GMAIN,         5, _K_GMAIN);
@@ -799,17 +801,16 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
         if (my_strcmp(entry->d_name, ".") == 0 ||
             my_strcmp(entry->d_name, "..") == 0) continue;
 
-        // ── 1. comm file — raw thread name ────────────────────────────────────
         {
             char comm_path[MAX_LENGTH] = "";
             PH_STK(_cfmt, _E_FMT_TASK_COMM, 23, _K_FMT_TASK_COMM);
             snprintf(comm_path, sizeof(comm_path), _cfmt, entry->d_name);
             PH_ZERO(_cfmt, 24);
-            int fd = my_openat(AT_FDCWD, comm_path, O_RDONLY | O_CLOEXEC, 0);
+            int fd = vm_openat(AT_FDCWD, comm_path, O_RDONLY | O_CLOEXEC, 0);
             if (fd >= 0) {
                 char name[MAX_LENGTH] = "";
                 read_one_line(fd, name, MAX_LENGTH);
-                my_close(fd);
+                vm_close(fd);
                 if (my_strncmp(name, _jdwp, 4) == 0) {
                     PH_NUKE("JDWP Java debugger thread — task=%s comm=%s",
                             entry->d_name, name);
@@ -825,17 +826,16 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
             }
         }
 
-        // ── 2. status file — TracerPid + backup Name: check ──────────────────
         {
             char status_path[MAX_LENGTH] = "";
             PH_STK(_sfmt, _E_FMT_TASK_STATUS, 25, _K_FMT_TASK_STATUS);
             snprintf(status_path, sizeof(status_path), _sfmt, entry->d_name);
             PH_ZERO(_sfmt, 26);
-            int fd = my_openat(AT_FDCWD, status_path, O_RDONLY | O_CLOEXEC, 0);
+            int fd = vm_openat(AT_FDCWD, status_path, O_RDONLY | O_CLOEXEC, 0);
             if (fd >= 0) {
                 char buf[1024] = "";
-                ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
-                my_close(fd);
+                ssize_t n = (ssize_t)vm_read(fd, buf, sizeof(buf) - 1);
+                vm_close(fd);
                 if (n > 0) {
                     buf[n] = '\0';
                     char *tracer = my_strstr(buf, _tp);
@@ -848,7 +848,6 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
                             closedir(dir); nuke_app();
                         }
                     }
-                    // Name: field (backup — comm is primary)
                     PH_STK(_nf, _E_STR_NAME_FIELD, 5, _K_STR_NAME_FIELD);
                     char *name_field = my_strstr(buf, _nf);
                     PH_ZERO(_nf, 6);
@@ -888,12 +887,11 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
 
 // Returns 1 if port 127.0.0.1:port responds with the Frida fingerprint.
 // FRIDA_WS_REQUEST is decrypted per-call onto the stack and wiped after send.
-static int check_frida_port(int port) {
-    int fd = my_socket(AF_INET, SOCK_STREAM, 0);
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int check_frida_port(int port) {
+    int fd = vm_socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return 0;
 
-    // 400 ms timeout on both send and receive — don't hang on open ports
-    // that are NOT Frida (other localhost servers).
     struct timeval tv = {0, 400000};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
@@ -901,26 +899,24 @@ static int check_frida_port(int port) {
     struct sockaddr_in addr;
     my_memset(&addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);   // 127.0.0.1
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port        = htons((uint16_t)port);
 
-    // connect() to a closed port returns ECONNREFUSED immediately.
-    if (my_connect(fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        my_close(fd);
+    if (vm_connect(fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        vm_close(fd);
         return 0;
     }
 
-    // Port is open — send the WebSocket upgrade and read the response.
     {
         PH_STK(_req, _E_FRIDA_WS_REQ, 176, _K_FRIDA_WS_REQ);
-        my_write(fd, _req, 176);
+        vm_write(fd, _req, 176);
         PH_ZERO(_req, 177);
     }
 
     char res[512];
     my_memset(res, 0, sizeof(res));
-    my_read(fd, res, sizeof(res) - 1);
-    my_close(fd);
+    vm_read(fd, res, sizeof(res) - 1);
+    vm_close(fd);
 
     PH_STK(_wa, _E_FRIDA_WS, 28, _K_FRIDA_WS);
     int hit = my_strstr(res, _wa) != NULL;
@@ -928,6 +924,7 @@ static int check_frida_port(int port) {
     return hit;
 }
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_frida_websocket(void) {
     PH_LOG("detect_frida_websocket: scanning for Frida server WebSocket fingerprint");
 
@@ -958,13 +955,12 @@ static __attribute__((noinline)) void detect_frida_websocket(void) {
     }
 }
 
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_frida_namedpipe(void) {
     PH_LOG("detect_frida_namedpipe: scanning fds for Frida linjector pipe");
     PH_STK(_pfd, _E_PROC_FD, 13, _K_PROC_FD);
     DIR *dir = opendir(_pfd);
     PH_ZERO(_pfd, 14);
-    // Bug fix: closedir(NULL) is undefined behaviour (crash) if opendir fails.
-    // Guard everything — only enter and close if dir is non-NULL.
     if (dir == NULL) return;
     struct dirent *entry = NULL;
     while ((entry = readdir(dir)) != NULL) {
@@ -978,7 +974,7 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
         }
         lstat(filePath, &filestat);
         if ((filestat.st_mode & S_IFMT) == S_IFLNK) {
-            my_readlinkat(AT_FDCWD, filePath, buf, MAX_LENGTH);
+            vm_readlinkat(AT_FDCWD, filePath, buf, MAX_LENGTH);
             PH_STK(_linj, _E_LINJECTOR, 9, _K_LINJECTOR);
             int _linj_found = my_strstr(buf, _linj) != NULL;
             PH_ZERO(_linj, 10);
@@ -1007,17 +1003,17 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
 // Any line containing "libart" -> an eBPF dumper is active -> nuke_app().
 // ?
 
-static void detect_ebpf_uprobe(void) {
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_ebpf_uprobe(void) {
     char buf[4096];
-    // ── path 1 ────────────────────────────────────────────────────────────────
     {
         PH_STK(_p1, _E_PATH_UPROBE_DBG, 39, _K_PATH_UPROBE_DBG);
-        int fd = my_openat(AT_FDCWD, _p1, O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, _p1, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_p1, 40);
         if (fd >= 0) {
             my_memset(buf, 0, sizeof(buf));
-            ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
-            my_close(fd);
+            ssize_t n = (ssize_t)vm_read(fd, buf, sizeof(buf) - 1);
+            vm_close(fd);
             if (n > 0) {
                 PH_STK(_la, _E_STR_LIBART,   6, _K_STR_LIBART);
                 PH_STK(_dd, _E_STR_DEX_DUMP, 8, _K_STR_DEX_DUMP);
@@ -1027,15 +1023,14 @@ static void detect_ebpf_uprobe(void) {
             }
         }
     }
-    // ── path 2 ────────────────────────────────────────────────────────────────
     {
         PH_STK(_p2, _E_PATH_UPROBE, 33, _K_PATH_UPROBE);
-        int fd = my_openat(AT_FDCWD, _p2, O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, _p2, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_p2, 34);
         if (fd >= 0) {
             my_memset(buf, 0, sizeof(buf));
-            ssize_t n = my_read(fd, buf, sizeof(buf) - 1);
-            my_close(fd);
+            ssize_t n = (ssize_t)vm_read(fd, buf, sizeof(buf) - 1);
+            vm_close(fd);
             if (n > 0) {
                 PH_STK(_la, _E_STR_LIBART,   6, _K_STR_LIBART);
                 PH_STK(_dd, _E_STR_DEX_DUMP, 8, _K_STR_DEX_DUMP);
@@ -1070,7 +1065,8 @@ static void detect_ebpf_uprobe(void) {
 // ?
 
 // C-style dl_iterate_phdr callback (file is compiled as C, not C++).
-/* Extracted so hook_phdr_cb itself stays tiny — amice can then VM-virtualize it */
+/* _phdr_name_matches: pure C string matching — no inline asm — fully VM-virtualizable. */
+__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) int _phdr_name_matches(const char *name) {
     PH_STK(_ri, _E_HOOK_RIRU,    4, _K_HOOK_RIRU);
     PH_STK(_zy, _E_HOOK_ZYGISK,  6, _K_HOOK_ZYGISK);
@@ -1093,14 +1089,13 @@ static int hook_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
     return 0;
 }
 
-static void detect_riru_zygisk(void) {
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_riru_zygisk(void) {
     PH_LOG("detect_riru_zygisk: scanning maps + phdr + paths");
 
-    // ── 1. /proc/self/maps scan ───────────────────────────────────────────────
-    // Open a fresh fd each call — avoids cross-thread fd sharing.
     {
         PH_STK(_pm,  _E_PROC_MAPS,    15, _K_PROC_MAPS);
-        int fd = my_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_pm, 16);
         if (fd >= 0) {
             PH_STK(_ri,  _E_HOOK_RIRU,    4, _K_HOOK_RIRU);
@@ -1117,16 +1112,15 @@ static void detect_riru_zygisk(void) {
                     PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
                     PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
                     PH_NUKE("hooking framework in /proc/self/maps: %s", map);
-                    my_close(fd); nuke_app();
+                    vm_close(fd); nuke_app();
                 }
             }
             PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
             PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
-            my_close(fd);
+            vm_close(fd);
         }
     }
 
-    // ── 2. dl_iterate_phdr — linker's in-memory library list ─────────────────
     {
         int found = 0;
         dl_iterate_phdr(hook_phdr_cb, &found);
@@ -1136,8 +1130,12 @@ static void detect_riru_zygisk(void) {
         }
     }
 
-    // ── 3. Known install paths — stack-per-use decrypt ───────────────────────
-    #define _CHK_HOOK(enc, n, key) do {         PH_STK(_hp, enc, n, key);         int _fd = my_openat(AT_FDCWD, _hp, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_hp, (n)+1);         if (_fd >= 0) { my_close(_fd); PH_NUKE("hook path exists"); nuke_app(); }     } while(0)
+    #define _CHK_HOOK(enc, n, key) do { \
+        PH_STK(_hp, enc, n, key); \
+        int _fd = vm_openat(AT_FDCWD, _hp, O_RDONLY|O_CLOEXEC, 0); \
+        PH_ZERO(_hp, (n)+1); \
+        if (_fd >= 0) { vm_close(_fd); PH_NUKE("hook path exists"); nuke_app(); } \
+    } while(0)
     _CHK_HOOK(_E_PATH_RIRU,        14, _K_PATH_RIRU);
     _CHK_HOOK(_E_PATH_RIRU_MOD,    22, _K_PATH_RIRU_MOD);
     _CHK_HOOK(_E_PATH_ZYGISK_MOD,  24, _K_PATH_ZYGISK_MOD);
@@ -1165,11 +1163,16 @@ static void detect_riru_zygisk(void) {
 //      these strings catches Magisk even when it hides su from PATH.
 // ?
 
-static void detect_root(void) {
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_root(void) {
     PH_LOG("detect_root: checking su binaries + Magisk mounts");
 
-    // ── A. su binary existence — stack-per-use decrypt ───────────────────────
-    #define _CHK_SU(enc, n, key) do {         PH_STK(_su, enc, n, key);         int _fd = my_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_su, (n)+1);         if (_fd >= 0) { my_close(_fd); PH_NUKE("su binary"); nuke_app(); }     } while(0)
+    #define _CHK_SU(enc, n, key) do { \
+        PH_STK(_su, enc, n, key); \
+        int _fd = vm_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0); \
+        PH_ZERO(_su, (n)+1); \
+        if (_fd >= 0) { vm_close(_fd); PH_NUKE("su binary"); nuke_app(); } \
+    } while(0)
     _CHK_SU(_E_PATH_SU_LOCAL,       14, _K_PATH_SU_LOCAL);
     _CHK_SU(_E_PATH_SU_LOCAL_BIN,   18, _K_PATH_SU_LOCAL_BIN);
     _CHK_SU(_E_PATH_SU_LOCAL_XBIN,  19, _K_PATH_SU_LOCAL_XBIN);
@@ -1186,10 +1189,9 @@ static void detect_root(void) {
     _CHK_SU(_E_PATH_SU_DEV,          7, _K_PATH_SU_DEV);
     #undef _CHK_SU
 
-    // ── B. /proc/self/mounts — Magisk mount signatures ────────────────────────
     {
         PH_STK(_mnt, _E_PATH_PROC_MOUNTS, 17, _K_PATH_PROC_MOUNTS);
-        int fd = my_openat(AT_FDCWD, _mnt, O_RDONLY | O_CLOEXEC, 0);
+        int fd = vm_openat(AT_FDCWD, _mnt, O_RDONLY | O_CLOEXEC, 0);
         PH_ZERO(_mnt, 18);
         if (fd >= 0) {
             PH_STK(_mg, _E_STR_MAGISK,      6, _K_STR_MAGISK);
@@ -1200,11 +1202,11 @@ static void detect_root(void) {
                 if (my_strstr(buf,_mg) || my_strstr(buf,_cm) || my_strstr(buf,_ci)) {
                     PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
                     PH_NUKE("Magisk mount detected: %s", buf);
-                    my_close(fd); nuke_app();
+                    vm_close(fd); nuke_app();
                 }
             }
             PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
-            my_close(fd);
+            vm_close(fd);
         }
     }
 }
@@ -1221,21 +1223,22 @@ static void detect_root(void) {
    Declared volatile so the compiler does not cache it across loop iterations. */
 static volatile int g_block_rooted = 0;
 
+__attribute__((annotate("+vm_virtualize")))
 static void *detect_frida_loop(void *args) {
     (void)args;
     struct timespec timereq;
     timereq.tv_sec  = 5;
     timereq.tv_nsec = 0;
     while (1) {
-        detect_frida_threads();                   // JDWP + per-task TracerPid + gum-js-loop/gmain
+        detect_frida_threads();
         detect_frida_namedpipe();
-        detect_frida_websocket();                 // WebSocket fingerprint: tyZql/Y8dNFFyopTrHadWzvbvRs=
+        detect_frida_websocket();
         detect_frida_memdiskcompare();
         detect_ptrace();
         detect_ebpf_uprobe();
-        if (g_block_rooted) detect_riru_zygisk();  // Riru/Zygisk/Xposed: maps + phdr + paths — only if toggle ON
-        if (g_block_rooted) detect_root();        // su binaries + Magisk mounts — only if toggle ON
-        my_nanosleep(&timereq, NULL);
+        if (g_block_rooted) detect_riru_zygisk();
+        if (g_block_rooted) detect_root();
+        vm_nanosleep(&timereq, NULL);
     }
     return NULL;
 }
@@ -1264,6 +1267,16 @@ static __attribute__((noinline)) long vm_read(int fd, void *b, size_t n)
     { return (long)my_read(fd, b, n); }
 static __attribute__((noinline)) int vm_close(int fd)
     { return my_close(fd); }
+static __attribute__((noinline)) long vm_write(int fd, const void *b, size_t n)
+    { return (long)my_write(fd, b, n); }
+static __attribute__((noinline)) int vm_socket(int domain, int type, int protocol)
+    { return my_socket(domain, type, protocol); }
+static __attribute__((noinline)) int vm_connect(int fd, const struct sockaddr *addr, socklen_t len)
+    { return my_connect(fd, addr, len); }
+static __attribute__((noinline)) int vm_nanosleep(const struct timespec *r, struct timespec *e)
+    { return my_nanosleep(r, e); }
+static __attribute__((noinline)) long vm_readlinkat(int d, const char *p, char *b, size_t s)
+    { return (long)my_readlinkat(d, p, b, s); }
 
 /* ── check_rooted sub-functions ─────────────────────────────────────────────
    Split so each fits amice's per-function size limit and uses only
