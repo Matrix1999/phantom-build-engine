@@ -139,6 +139,8 @@ jobs:
             AMICE_SPLIT_BASIC_BLOCK_NUMS=3
             AMICE_SHUFFLE_BLOCKS=true
 
+            AMICE_BASIC_BLOCK_OUTLINING=true
+
             AMICE_STRING_ENCRYPTION=true
             AMICE_STRING_ALGORITHM=simd_xor
             AMICE_STRING_DECRYPT_TIMING=lazy
