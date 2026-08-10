@@ -3071,18 +3071,9 @@ static __attribute__((noinline)) int detect_sig_tamper(const char *apk_path) {
 
 // Wrapper with APK-path resolution — same shape as gvm_so_integrity()
 static __attribute__((noinline)) int gvm_sig_check(void) {
-    volatile unsigned int _a = 0x5C3D9F21u;
-    volatile unsigned int _b = 0xA1C4E832u;
     char apk_path[512] = {0};
-    if (!get_apk_path(apk_path, sizeof(apk_path))) {
-        _a ^= _b;
-        return (int)(_a & 0u);
-    }
-    volatile int _c = (int)((unsigned char)apk_path[0] ^ (unsigned char)apk_path[1]);
-    volatile int _d = (int)((unsigned char)apk_path[2] ^ (unsigned char)apk_path[3]);
-    int result = detect_sig_tamper(apk_path);
-    _a = (unsigned int)(_c ^ _d);
-    return result | (int)(_a & 0u);
+    if (!get_apk_path(apk_path, sizeof(apk_path))) return 0;
+    return detect_sig_tamper(apk_path);
 }
 
 // ── VM gate forward declarations ──────────────────────────────────────────────
