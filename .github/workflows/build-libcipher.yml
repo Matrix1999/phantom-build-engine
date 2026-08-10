@@ -110,8 +110,6 @@ jobs:
           AMICE_STRING_INLINE_DECRYPT_FN=true \
           AMICE_MBA=true \
           AMICE_ALIAS_ACCESS=true \
-          AMICE_INDIRECT_CALL=true \
-          AMICE_INDIRECT_BRANCH=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
@@ -184,8 +182,6 @@ jobs:
           AMICE_STRING_INLINE_DECRYPT_FN=true \
           AMICE_MBA=true \
           AMICE_ALIAS_ACCESS=true \
-          AMICE_INDIRECT_CALL=true \
-          AMICE_INDIRECT_BRANCH=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
