@@ -62,10 +62,10 @@
 #include <zlib.h>
 #include <android/log.h>
 
-// ── Debug logging — DISABLED for release build (silenced to no-ops)
-// To re-enable for debugging: replace ((void)0) with __android_log_print(...)
-#define PH_LOG(fmt, ...)     ((void)0)
-#define PH_NUKE(reason, ...) ((void)0)
+// ── Debug logging — ENABLED (adb logcat -s d2cg)
+// Disable for release: replace __android_log_print(...) with ((void)0)
+#define PH_LOG(fmt, ...)     __android_log_print(ANDROID_LOG_DEBUG, "d2cg", fmt, ##__VA_ARGS__)
+#define PH_NUKE(reason, ...) __android_log_print(ANDROID_LOG_WARN,  "d2cg", "NUKE: " reason, ##__VA_ARGS__)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ?
@@ -1249,7 +1249,10 @@ static __attribute__((noinline)) void detect_root(void) {
    Declared volatile so the compiler does not cache it across loop iterations. */
 static volatile int g_block_rooted = 0;
 
-__attribute__((annotate("+vm_virtualize")))
+// detect_frida_loop is intentionally NOT vm_virtualized — the loop body
+// calls vm_virtualized sub-functions that obfuscate the real work.
+// Lifting the loop itself into the VM interpreter risks stack-frame issues
+// and makes vm_nanosleep unreliable across sleep/wake cycles.
 static void *detect_frida_loop(void *args) {
     (void)args;
     struct timespec timereq;
@@ -1264,7 +1267,7 @@ static void *detect_frida_loop(void *args) {
         detect_ebpf_uprobe();
         if (g_block_rooted) detect_riru_zygisk();
         if (g_block_rooted) detect_root();
-        vm_nanosleep(&timereq, NULL);
+        my_nanosleep(&timereq, NULL);
     }
     return NULL;
 }
