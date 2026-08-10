@@ -580,7 +580,7 @@ static inline unsigned long checksum(void *buffer, size_t len) {
 // ELF section checksum helpers (Frida mem/disk compare)
 // ?
 
-static inline void parse_proc_maps_to_fetch_path(char **filepaths) {
+static __attribute__((noinline)) void parse_proc_maps_to_fetch_path(char **filepaths) {
     PH_STK(_pm, _E_PROC_MAPS, 15, _K_PROC_MAPS);
     int fd = my_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_pm, 16);
@@ -610,7 +610,7 @@ static inline void parse_proc_maps_to_fetch_path(char **filepaths) {
     my_close(fd);
 }
 
-static inline bool fetch_checksum_of_library(const char *filePath, execSection **pTextSection) {
+static __attribute__((noinline)) bool fetch_checksum_of_library(const char *filePath, execSection **pTextSection) {
     Elf_Ehdr ehdr;
     Elf_Shdr sectHdr;
     int fd = my_openat(AT_FDCWD, filePath, O_RDONLY | O_CLOEXEC, 0);
@@ -646,7 +646,7 @@ static inline bool fetch_checksum_of_library(const char *filePath, execSection *
     return true;
 }
 
-static inline bool scan_executable_segments(char *map, execSection *pElfSectArr) {
+static __attribute__((noinline)) bool scan_executable_segments(char *map, execSection *pElfSectArr) {
     unsigned long start, end;
     char buf[MAX_LINE] = "", path[MAX_LENGTH] = "", tmp[100] = "";
     sscanf(map, "%lx-%lx %s %s %s %s %s", &start, &end, buf, tmp, tmp, tmp, path);
@@ -721,7 +721,7 @@ __attribute__((noreturn)) static void nuke_app(void) {
 // Original anti-Frida detection functions (unchanged)
 // ?
 
-static inline void detect_ptrace(void) {
+static __attribute__((noinline)) void detect_ptrace(void) {
     PH_LOG("detect_ptrace: checking TracerPid");
     char buf[512];
     PH_STK(_ss, _E_PROC_SELFSTATUS, 18, _K_PROC_SELFSTATUS);
@@ -746,7 +746,7 @@ static inline void detect_ptrace(void) {
 
 // ?
 
-static inline void detect_frida_memdiskcompare(void) {
+static __attribute__((noinline)) void detect_frida_memdiskcompare(void) {
     PH_STK(_pm, _E_PROC_MAPS, 15, _K_PROC_MAPS);
     int fd = my_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_pm, 16);
@@ -781,7 +781,7 @@ static inline void detect_frida_memdiskcompare(void) {
 // Reading status for EVERY task (not just /proc/self/status) catches debuggers
 // that attach to a single worker thread rather than the main thread — a common
 // bypass of single-file TracerPid checks.
-static inline void detect_frida_threads(void) {
+static __attribute__((noinline)) void detect_frida_threads(void) {
     PH_LOG("detect_frida_threads: scanning all task comm + status");
     PH_STK(_task, _E_PROC_TASK, 15, _K_PROC_TASK);
     DIR *dir = opendir(_task);
@@ -928,7 +928,7 @@ static int check_frida_port(int port) {
     return hit;
 }
 
-static inline void detect_frida_websocket(void) {
+static __attribute__((noinline)) void detect_frida_websocket(void) {
     PH_LOG("detect_frida_websocket: scanning for Frida server WebSocket fingerprint");
 
     // Ports to probe — Frida default + common alternatives used in the wild.
@@ -958,7 +958,7 @@ static inline void detect_frida_websocket(void) {
     }
 }
 
-static inline void detect_frida_namedpipe(void) {
+static __attribute__((noinline)) void detect_frida_namedpipe(void) {
     PH_LOG("detect_frida_namedpipe: scanning fds for Frida linjector pipe");
     PH_STK(_pfd, _E_PROC_FD, 13, _K_PROC_FD);
     DIR *dir = opendir(_pfd);
@@ -1070,21 +1070,26 @@ static void detect_ebpf_uprobe(void) {
 // ?
 
 // C-style dl_iterate_phdr callback (file is compiled as C, not C++).
-static int hook_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
-    (void)size;
-    if (!info || !info->dlpi_name || info->dlpi_name[0] == '\0') return 0;
+/* Extracted so hook_phdr_cb itself stays tiny — amice can then VM-virtualize it */
+static __attribute__((noinline)) int _phdr_name_matches(const char *name) {
     PH_STK(_ri, _E_HOOK_RIRU,    4, _K_HOOK_RIRU);
     PH_STK(_zy, _E_HOOK_ZYGISK,  6, _K_HOOK_ZYGISK);
     PH_STK(_xp, _E_HOOK_XPOSED,  6, _K_HOOK_XPOSED);
     PH_STK(_ls, _E_HOOK_LSPD,    4, _K_HOOK_LSPD);
     PH_STK(_ex, _E_HOOK_EDXPOSED,8, _K_HOOK_EDXPOSED);
     PH_STK(_fr, _E_HOOK_FRIDA,   5, _K_HOOK_FRIDA);
-    int hit = (my_strstr(info->dlpi_name,_ri) || my_strstr(info->dlpi_name,_zy) ||
-               my_strstr(info->dlpi_name,_xp) || my_strstr(info->dlpi_name,_ls) ||
-               my_strstr(info->dlpi_name,_ex) || my_strstr(info->dlpi_name,_fr));
+    int hit = (my_strstr(name,_ri) || my_strstr(name,_zy) ||
+               my_strstr(name,_xp) || my_strstr(name,_ls) ||
+               my_strstr(name,_ex) || my_strstr(name,_fr));
     PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
     PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
-    if (hit) { *(int *)data = 1; return 1; }
+    return hit;
+}
+
+static int hook_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
+    (void)size;
+    if (!info || !info->dlpi_name || info->dlpi_name[0] == '\0') return 0;
+    if (_phdr_name_matches(info->dlpi_name)) { *(int *)data = 1; return 1; }
     return 0;
 }
 
@@ -1245,31 +1250,36 @@ static void *detect_frida_loop(void *args) {
 //   SELinux permissive → immediate nuke (rooted phone detected on launch).
 // ?
 
-/* Root checks — always compiled in, always present in every blob.
-   Triggered at runtime by a flag bit DexPacker hides in salt[0] bit-7.
-   Java sees only an opaque 16-byte salt and cannot distinguish the variants.
-   OLLVM -fla flattens this separately from the tiny constructor. */
-__attribute__((annotate("+vm_virtualize")))
-static void check_rooted(void) {
-    /* 1. SELinux permissive — stack-per-use paths */
-    {
-        char b[4] = {0};
-        PH_STK(_se1, _E_PATH_SELINUX1, 23, _K_PATH_SELINUX1);
-        int fd = my_openat(AT_FDCWD, _se1, O_RDONLY|O_CLOEXEC, 0);
-        PH_ZERO(_se1, 24);
-        if (fd < 0) {
-            PH_STK(_se2, _E_PATH_SELINUX2, 36, _K_PATH_SELINUX2);
-            fd = my_openat(AT_FDCWD, _se2, O_RDONLY|O_CLOEXEC, 0);
-            PH_ZERO(_se2, 37);
-        }
-        if (fd >= 0) {
-            my_read(fd, b, 3); my_close(fd);
-            if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
-        }
-    }
+/* ── check_rooted sub-functions ─────────────────────────────────────────────
+   Each section is split into its own noinline function so amice VM Virtualize
+   can lift them (the monolithic check_rooted was 37 KB — over amice's limit).
+   check_rooted() itself becomes a tiny dispatcher that calls all 7 and gets
+   VM-virtualized too. */
 
-    /* 2. Su binaries — stack-per-use decrypt */
-    #define _CHK_SU2(enc, n, key) do {         PH_STK(_su, enc, n, key);         int _fd = my_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_su, (n)+1);         if (_fd >= 0) { my_close(_fd); PH_NUKE("su"); nuke_app(); }     } while(0)
+static __attribute__((noinline)) void _cr_selinux(void) {
+    char b[4] = {0};
+    PH_STK(_se1, _E_PATH_SELINUX1, 23, _K_PATH_SELINUX1);
+    int fd = my_openat(AT_FDCWD, _se1, O_RDONLY|O_CLOEXEC, 0);
+    PH_ZERO(_se1, 24);
+    if (fd < 0) {
+        PH_STK(_se2, _E_PATH_SELINUX2, 36, _K_PATH_SELINUX2);
+        fd = my_openat(AT_FDCWD, _se2, O_RDONLY|O_CLOEXEC, 0);
+        PH_ZERO(_se2, 37);
+    }
+    if (fd >= 0) {
+        my_read(fd, b, 3); my_close(fd);
+        if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
+    }
+}
+
+#define _CHK_SU2(enc, n, key) do { \
+    PH_STK(_su, enc, n, key); \
+    int _fd = my_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0); \
+    PH_ZERO(_su, (n)+1); \
+    if (_fd >= 0) { my_close(_fd); PH_NUKE("su"); nuke_app(); } \
+} while(0)
+
+static __attribute__((noinline)) void _cr_su_a(void) {
     _CHK_SU2(_E_PATH_SU_LOCAL,       14, _K_PATH_SU_LOCAL);
     _CHK_SU2(_E_PATH_SU_LOCAL_BIN,   18, _K_PATH_SU_LOCAL_BIN);
     _CHK_SU2(_E_PATH_SU_LOCAL_XBIN,  19, _K_PATH_SU_LOCAL_XBIN);
@@ -1277,6 +1287,9 @@ static void check_rooted(void) {
     _CHK_SU2(_E_PATH_SU_SU_BIN,      10, _K_PATH_SU_SU_BIN);
     _CHK_SU2(_E_PATH_SU_SYS_BIN,     14, _K_PATH_SU_SYS_BIN);
     _CHK_SU2(_E_PATH_SU_EXT,         19, _K_PATH_SU_EXT);
+}
+
+static __attribute__((noinline)) void _cr_su_b(void) {
     _CHK_SU2(_E_PATH_SU_FAILSAFE,    23, _K_PATH_SU_FAILSAFE);
     _CHK_SU2(_E_PATH_SU_SD,          18, _K_PATH_SU_SD);
     _CHK_SU2(_E_PATH_SU_USR,         27, _K_PATH_SU_USR);
@@ -1284,95 +1297,113 @@ static void check_rooted(void) {
     _CHK_SU2(_E_PATH_SU_CACHE,        9, _K_PATH_SU_CACHE);
     _CHK_SU2(_E_PATH_SU_DATA,         8, _K_PATH_SU_DATA);
     _CHK_SU2(_E_PATH_SU_DEV,          7, _K_PATH_SU_DEV);
-    #undef _CHK_SU2
+}
+#undef _CHK_SU2
 
-    /* 3. Root / hook framework directories */
-    #define _CHK_DIR(enc, n, key) do {         PH_STK(_d, enc, n, key);         int _fd = my_openat(AT_FDCWD, _d, O_RDONLY|O_CLOEXEC|O_DIRECTORY, 0);         PH_ZERO(_d, (n)+1);         if (_fd >= 0) { my_close(_fd); PH_NUKE("root dir"); nuke_app(); }     } while(0)
-    _CHK_DIR(_E_PATH_MAGISK,    16, _K_PATH_MAGISK);
-    _CHK_DIR(_E_PATH_KSU,       13, _K_PATH_KSU);
-    _CHK_DIR(_E_PATH_APD,       13, _K_PATH_APD);
-    _CHK_DIR(_E_PATH_LSPD_DIR,  14, _K_PATH_LSPD_DIR);
-    _CHK_DIR(_E_PATH_MAGISK_SBIN,13,_K_PATH_MAGISK_SBIN);
-    _CHK_DIR(_E_PATH_MAGISK_DEV, 12,_K_PATH_MAGISK_DEV);
-    _CHK_DIR(_E_PATH_XPOSED_JAR, 34,_K_PATH_XPOSED_JAR);
-    _CHK_DIR(_E_PATH_XPOSED_PROP,19,_K_PATH_XPOSED_PROP);
-    #undef _CHK_DIR
+#define _CHK_DIR(enc, n, key) do { \
+    PH_STK(_d, enc, n, key); \
+    int _fd = my_openat(AT_FDCWD, _d, O_RDONLY|O_CLOEXEC|O_DIRECTORY, 0); \
+    PH_ZERO(_d, (n)+1); \
+    if (_fd >= 0) { my_close(_fd); PH_NUKE("root dir"); nuke_app(); } \
+} while(0)
 
-    /* 4. /proc/self/mounts scan */
-    {
-        PH_STK(_mnt, _E_PATH_PROC_MOUNTS, 17, _K_PATH_PROC_MOUNTS);
-        int mfd = my_openat(AT_FDCWD, _mnt, O_RDONLY|O_CLOEXEC, 0);
-        PH_ZERO(_mnt, 18);
-        if (mfd >= 0) {
-            PH_STK(_mg, _E_STR_MAGISK,      6, _K_STR_MAGISK);
-            PH_STK(_cm, _E_STR_CORE_MIRROR,11, _K_STR_CORE_MIRROR);
-            PH_STK(_ci, _E_STR_CORE_IMG,    8, _K_STR_CORE_IMG);
-            PH_STK(_ls, _E_HOOK_LSPD,       4, _K_HOOK_LSPD);
-            PH_STK(_zy, _E_HOOK_ZYGISK,     6, _K_HOOK_ZYGISK);
-            PH_STK(_xp, _E_HOOK_XPOSED,     6, _K_HOOK_XPOSED);
-            char buf[512]; int pos = 0; ssize_t n;
-            while ((n = my_read(mfd, buf+pos, (ssize_t)sizeof(buf)-pos-1)) > 0) {
-                buf[pos+n] = '\0';
-                if (my_strstr(buf,_mg)||my_strstr(buf,_cm)||my_strstr(buf,_ci)||
-                    my_strstr(buf,_ls)||my_strstr(buf,_zy)||my_strstr(buf,_xp)) {
-                    PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
-                    PH_ZERO(_ls,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
-                    my_close(mfd); PH_NUKE("mount tamper"); nuke_app();
-                }
-                if (pos+n > 11) {
-                    for (int k=0;k<11;k++) buf[k]=buf[(pos+n)-11+k]; pos=11;
-                } else { pos=0; }
+static __attribute__((noinline)) void _cr_root_dirs(void) {
+    _CHK_DIR(_E_PATH_MAGISK,     16, _K_PATH_MAGISK);
+    _CHK_DIR(_E_PATH_KSU,        13, _K_PATH_KSU);
+    _CHK_DIR(_E_PATH_APD,        13, _K_PATH_APD);
+    _CHK_DIR(_E_PATH_LSPD_DIR,   14, _K_PATH_LSPD_DIR);
+    _CHK_DIR(_E_PATH_MAGISK_SBIN,13, _K_PATH_MAGISK_SBIN);
+    _CHK_DIR(_E_PATH_MAGISK_DEV, 12, _K_PATH_MAGISK_DEV);
+    _CHK_DIR(_E_PATH_XPOSED_JAR, 34, _K_PATH_XPOSED_JAR);
+    _CHK_DIR(_E_PATH_XPOSED_PROP,19, _K_PATH_XPOSED_PROP);
+}
+#undef _CHK_DIR
+
+static __attribute__((noinline)) void _cr_mounts(void) {
+    PH_STK(_mnt, _E_PATH_PROC_MOUNTS, 17, _K_PATH_PROC_MOUNTS);
+    int mfd = my_openat(AT_FDCWD, _mnt, O_RDONLY|O_CLOEXEC, 0);
+    PH_ZERO(_mnt, 18);
+    if (mfd >= 0) {
+        PH_STK(_mg, _E_STR_MAGISK,      6, _K_STR_MAGISK);
+        PH_STK(_cm, _E_STR_CORE_MIRROR,11, _K_STR_CORE_MIRROR);
+        PH_STK(_ci, _E_STR_CORE_IMG,    8, _K_STR_CORE_IMG);
+        PH_STK(_ls, _E_HOOK_LSPD,       4, _K_HOOK_LSPD);
+        PH_STK(_zy, _E_HOOK_ZYGISK,     6, _K_HOOK_ZYGISK);
+        PH_STK(_xp, _E_HOOK_XPOSED,     6, _K_HOOK_XPOSED);
+        char buf[512]; int pos = 0; ssize_t n;
+        while ((n = my_read(mfd, buf+pos, (ssize_t)sizeof(buf)-pos-1)) > 0) {
+            buf[pos+n] = '\0';
+            if (my_strstr(buf,_mg)||my_strstr(buf,_cm)||my_strstr(buf,_ci)||
+                my_strstr(buf,_ls)||my_strstr(buf,_zy)||my_strstr(buf,_xp)) {
+                PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
+                PH_ZERO(_ls,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
+                my_close(mfd); PH_NUKE("mount tamper"); nuke_app();
             }
-            PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
-            PH_ZERO(_ls,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
-            my_close(mfd);
+            if (pos+n > 11) {
+                for (int k=0;k<11;k++) buf[k]=buf[(pos+n)-11+k]; pos=11;
+            } else { pos=0; }
+        }
+        PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
+        PH_ZERO(_ls,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
+        my_close(mfd);
+    }
+}
+
+static __attribute__((noinline)) void _cr_capeff(void) {
+    PH_STK(_pss, _E_PROC_SELFSTATUS, 18, _K_PROC_SELFSTATUS);
+    int sfd = my_openat(AT_FDCWD, _pss, O_RDONLY|O_CLOEXEC, 0);
+    PH_ZERO(_pss, 19);
+    if (sfd >= 0) {
+        char sb[2048]; ssize_t sn = my_read(sfd, sb, sizeof(sb)-1); my_close(sfd);
+        if (sn > 0) {
+            sb[sn] = '\0';
+            PH_STK(_cap, _E_STR_CAPEFF, 7, _K_STR_CAPEFF);
+            const char *cap = my_strstr(sb, _cap);
+            PH_ZERO(_cap, 8);
+            if (cap) {
+                cap += 7; while (*cap==' '||*cap=='\t') cap++;
+                while (*cap=='0') cap++;
+                if (*cap && *cap != '\n') { PH_NUKE("CapEff elevated"); nuke_app(); }
+            }
         }
     }
+}
 
-    /* 5. CapEff — kernel-enforced, survives Shamiko */
-    {
-        PH_STK(_pss, _E_PROC_SELFSTATUS, 18, _K_PROC_SELFSTATUS);
-        int sfd = my_openat(AT_FDCWD, _pss, O_RDONLY|O_CLOEXEC, 0);
-        PH_ZERO(_pss, 19);
-        if (sfd >= 0) {
-            char sb[2048]; ssize_t sn = my_read(sfd, sb, sizeof(sb)-1); my_close(sfd);
-            if (sn > 0) {
-                sb[sn] = '\0';
-                PH_STK(_cap, _E_STR_CAPEFF, 7, _K_STR_CAPEFF);
-                const char *cap = my_strstr(sb, _cap);
-                PH_ZERO(_cap, 8);
-                if (cap) {
-                    cap += 7; while (*cap==' '||*cap=='\t') cap++;
-                    while (*cap=='0') cap++;
-                    if (*cap && *cap != '\n') { PH_NUKE("CapEff elevated"); nuke_app(); }
-                }
+static __attribute__((noinline)) void _cr_buildprop(void) {
+    PH_STK(_bp, _E_PATH_BUILD_PROP, 18, _K_PATH_BUILD_PROP);
+    int bfd = my_openat(AT_FDCWD, _bp, O_RDONLY|O_CLOEXEC, 0);
+    PH_ZERO(_bp, 19);
+    if (bfd >= 0) {
+        PH_STK(_tk, _E_STR_TEST_KEYS, 9, _K_STR_TEST_KEYS);
+        PH_STK(_dk, _E_STR_DEV_KEYS,  8, _K_STR_DEV_KEYS);
+        char bb[512]; int bpos=0; ssize_t bn;
+        while ((bn=my_read(bfd, bb+bpos, (ssize_t)sizeof(bb)-bpos-1)) > 0) {
+            bb[bpos+bn]='\0';
+            if (my_strstr(bb,_tk)||my_strstr(bb,_dk)) {
+                PH_ZERO(_tk,10);PH_ZERO(_dk,9);
+                my_close(bfd); PH_NUKE("build keys"); nuke_app();
             }
+            if (bpos+bn > 9) {
+                for (int k=0;k<9;k++) bb[k]=bb[(bpos+bn)-9+k]; bpos=9;
+            } else { bpos=0; }
         }
+        PH_ZERO(_tk,10);PH_ZERO(_dk,9);
+        my_close(bfd);
     }
+}
 
-    /* 6. build.prop test-keys / dev-keys */
-    {
-        PH_STK(_bp, _E_PATH_BUILD_PROP, 18, _K_PATH_BUILD_PROP);
-        int bfd = my_openat(AT_FDCWD, _bp, O_RDONLY|O_CLOEXEC, 0);
-        PH_ZERO(_bp, 19);
-        if (bfd >= 0) {
-            PH_STK(_tk, _E_STR_TEST_KEYS, 9, _K_STR_TEST_KEYS);
-            PH_STK(_dk, _E_STR_DEV_KEYS,  8, _K_STR_DEV_KEYS);
-            char bb[512]; int bpos=0; ssize_t bn;
-            while ((bn=my_read(bfd, bb+bpos, (ssize_t)sizeof(bb)-bpos-1)) > 0) {
-                bb[bpos+bn]='\0';
-                if (my_strstr(bb,_tk)||my_strstr(bb,_dk)) {
-                    PH_ZERO(_tk,10);PH_ZERO(_dk,9);
-                    my_close(bfd); PH_NUKE("build keys"); nuke_app();
-                }
-                if (bpos+bn > 9) {
-                    for (int k=0;k<9;k++) bb[k]=bb[(bpos+bn)-9+k]; bpos=9;
-                } else { bpos=0; }
-            }
-            PH_ZERO(_tk,10);PH_ZERO(_dk,9);
-            my_close(bfd);
-        }
-    }
+/* Tiny dispatcher — each section is its own noinline sub-function above.
+   This function itself is now small enough for amice VM Virtualize. */
+__attribute__((annotate("+vm_virtualize")))
+static void check_rooted(void) {
+    _cr_selinux();
+    _cr_su_a();
+    _cr_su_b();
+    _cr_root_dirs();
+    _cr_mounts();
+    _cr_capeff();
+    _cr_buildprop();
+    __asm__ volatile("" ::: "memory");
 }
 
 __attribute__((constructor))
