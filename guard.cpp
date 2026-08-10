@@ -3522,16 +3522,26 @@ static __attribute__((noinline)) void vm_run_antik(const antik_ctx_t *ctx) {
 // identical in shape to vm_run() and vm_run_startup() and virtualizes them.
 // The underlying AES lvm_exec dispatch still runs inside the wrapped function.
 // ─────────────────────────────────────────────────────────────────────────────
-static __attribute__((noinline)) void vm_gate_mapscan(void)
-    { vm_run_mapscan(); }
-static __attribute__((noinline)) void vm_gate_vccheck(void)
-    { vm_run_vccheck(); }
-static __attribute__((noinline)) void vm_gate_so_integrity(void)
-    { vm_run_so_integrity(); }
-static __attribute__((noinline)) void vm_gate_sigcheck(void)
-    { vm_run_sigcheck(); }
-static __attribute__((noinline)) void vm_gate_antik(const antik_ctx_t *c)
-    { vm_run_antik(c); }
+static __attribute__((noinline)) void vm_gate_mapscan(void) {
+    vm_run_mapscan();
+    __asm__ volatile("" ::: "memory");
+}
+static __attribute__((noinline)) void vm_gate_vccheck(void) {
+    vm_run_vccheck();
+    __asm__ volatile("" ::: "memory");
+}
+static __attribute__((noinline)) void vm_gate_so_integrity(void) {
+    vm_run_so_integrity();
+    __asm__ volatile("" ::: "memory");
+}
+static __attribute__((noinline)) void vm_gate_sigcheck(void) {
+    vm_run_sigcheck();
+    __asm__ volatile("" ::: "memory");
+}
+static __attribute__((noinline)) void vm_gate_antik(const antik_ctx_t *c) {
+    vm_run_antik(c);
+    __asm__ volatile("" ::: "memory");
+}
 
 // Volatile JNI dispatch table — one slot per JNI security check.
 // Declared at file scope so it lands in .data, preventing compiler folding.
