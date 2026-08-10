@@ -679,6 +679,8 @@ static __attribute__((noinline)) void vm_tgkill(long pid, long tid, long sig)
     { raw_syscall_3(131/*__NR_tgkill*/, pid, tid, sig); }
 static __attribute__((noinline)) void vm_kill(long pid, long sig)
     { raw_syscall_3(129/*__NR_kill*/, pid, sig, 0); }
+static __attribute__((noinline)) int vm_mprotect(void *a, size_t l, int prot)
+    { return (int)raw_syscall_3(226/*__NR_mprotect*/, (long)a, (long)l, (long)prot); }
 #else /* armeabi-v7a — syscall() wrapper, no inline asm */
 static __attribute__((noinline)) long vm_getdents64(int fd, void *buf, size_t n)
     { return (long)syscall(__NR_getdents64, fd, buf, n); }
@@ -693,9 +695,9 @@ static __attribute__((noinline)) long vm_gettid(void)
 static __attribute__((noinline)) void vm_tgkill(long pid, long tid, long sig)
     { syscall(__NR_tgkill, pid, tid, sig); }
 static __attribute__((noinline)) void vm_kill(long pid, long sig)
+    { syscall(__NR_kill, pid, sig); }
 static __attribute__((noinline)) int vm_mprotect(void *a, size_t l, int prot)
     { return my_mprotect(a, l, prot); }
-    { syscall(__NR_kill, pid, sig); }
 #endif
 
 // ?
