@@ -69,7 +69,6 @@
 // Format args (e.g. %d, %s) are intentionally dropped in VM-safe path;
 // the message string itself identifies which check fired.
 // Disable for release: replace vm_log_d/vm_log_w bodies with ((void)0).
-#define PH_LOG(fmt, ...)     vm_log_d(fmt)
 #define PH_NUKE(reason, ...) vm_log_w("NUKE: " reason)
 /* Forward declarations — defined near the other vm_* bridges below. */
 static void vm_log_d(const char *msg);
@@ -745,7 +744,6 @@ __attribute__((noreturn)) static void nuke_app(void) {
 // ?
 
 static __attribute__((noinline)) void detect_ptrace(void) {
-    PH_LOG("detect_ptrace: checking TracerPid");
     char buf[512];
     PH_STK(_ss, _E_PROC_SELFSTATUS, 18, _K_PROC_SELFSTATUS);
     int fd = vm_openat(AT_FDCWD, _ss, O_RDONLY | O_CLOEXEC, 0);
@@ -785,7 +783,6 @@ static __attribute__((noinline)) void detect_ptrace(void) {
 // that attach to a single worker thread rather than the main thread — a common
 // bypass of single-file TracerPid checks.
 static __attribute__((noinline)) void detect_frida_threads(void) {
-    PH_LOG("detect_frida_threads: scanning all task comm + status");
     PH_STK(_task, _E_PROC_TASK, 15, _K_PROC_TASK);
     DIR *dir = opendir(_task);
     PH_ZERO(_task, 16);
@@ -932,7 +929,6 @@ static int check_frida_port(int port) {
 }
 
 static __attribute__((noinline)) void detect_frida_websocket(void) {
-    PH_LOG("detect_frida_websocket: scanning for Frida server WebSocket fingerprint");
 
     // Ports to probe — Frida default + common alternatives used in the wild.
     // Connecting to a closed port is instant; this list runs in < 1 ms total
@@ -962,7 +958,6 @@ static __attribute__((noinline)) void detect_frida_websocket(void) {
 }
 
 static __attribute__((noinline)) void detect_frida_namedpipe(void) {
-    PH_LOG("detect_frida_namedpipe: scanning fds for Frida linjector pipe");
     PH_STK(_pfd, _E_PROC_FD, 13, _K_PROC_FD);
     DIR *dir = opendir(_pfd);
     PH_ZERO(_pfd, 14);
@@ -1097,7 +1092,6 @@ static int hook_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
 }
 
 static void detect_riru_zygisk(void) {
-    PH_LOG("detect_riru_zygisk: scanning maps + phdr + paths");
 
     // ── 1. /proc/self/maps scan ───────────────────────────────────────────────
     // Open a fresh fd each call — avoids cross-thread fd sharing.
@@ -1169,7 +1163,6 @@ static void detect_riru_zygisk(void) {
 // ?
 
 static void detect_root(void) {
-    PH_LOG("detect_root: checking su binaries + Magisk mounts");
 
     // ── A. su binary existence — stack-per-use decrypt ───────────────────────
     #define _CHK_SU(enc, n, key) do {         PH_STK(_su, enc, n, key);         int _fd = vm_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_su, (n)+1);         if (_fd >= 0) { vm_close(_fd); PH_NUKE("su binary"); nuke_app(); }     } while(0)
@@ -1990,7 +1983,6 @@ static void ph_patch_providers_native(JNIEnv *env, jobject activityThread, jobje
         (*env)->DeleteLocalRef(env, pcr);
     }
     (*env)->DeleteLocalRef(env, arr);
-    PH_LOG("ph_patch_providers_native: patched %d provider record(s)", (int)len);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2017,7 +2009,6 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
         jobject baseContext) {
 
     (void)klass;
-    PH_LOG("nativeSwapApplication: start");
 
     jobject result = NULL;
 
@@ -2120,7 +2111,6 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
 
     /* Fallback: LoadedApk.makeApplication(false, null) */
     if (!realApp) {
-        PH_LOG("nativeSwapApplication: newApplication() failed — fallback makeApplication()");
         if (mAppFid) (*env)->SetObjectField(env, loadedApk, mAppFid, NULL);
         jmethodID makeAppMid = (*env)->GetMethodID(env, laCls, "makeApplication",
                 "(ZLandroid/app/Instrumentation;)Landroid/app/Application;");
@@ -2132,13 +2122,11 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
             if (mInitFid) (*env)->SetObjectField(env, thread, mInitFid, realApp);
             ph_patch_providers_native(env, thread, realApp);
             result = (*env)->NewGlobalRef(env, realApp);
-            PH_LOG("nativeSwapApplication: fallback OK");
         }
         (*env)->DeleteLocalRef(env, laCls);
         goto done;
     }
 
-    PH_LOG("nativeSwapApplication: newApplication() OK");
 
     /* ── Update mAllApplications ─────────────────────────────────────────── */
     if (mAllApps) {
@@ -2162,7 +2150,6 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
     ph_patch_providers_native(env, thread, realApp);
 
     result = (*env)->NewGlobalRef(env, realApp);
-    PH_LOG("nativeSwapApplication: done");
 
     (*env)->DeleteLocalRef(env, laCls);
 
