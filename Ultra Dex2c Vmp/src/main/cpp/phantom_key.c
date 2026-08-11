@@ -1381,6 +1381,9 @@ static const uint32_t K256[64] = {
     0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 };
 
+__attribute__((noinline))
+__attribute__((noinline))
+__attribute__((annotate("+vm_virtualize")))
 static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
     uint32_t w[64];
     int i;
@@ -1407,6 +1410,8 @@ static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
     h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
 }
 
+__attribute__((noinline))
+__attribute__((annotate("+vm_virtualize")))
 static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
     uint32_t h[8] = {
         0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
