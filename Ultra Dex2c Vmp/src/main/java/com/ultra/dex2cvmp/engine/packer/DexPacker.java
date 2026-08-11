@@ -116,12 +116,31 @@ public class DexPacker {
         File shardsDir = new File(workDir, "shards");
         shardsDir.mkdirs();
 
+        // Collect every classes*.dex present in extractDir, sorted in canonical
+        // DEX order (classes.dex first, then classes2.dex, classes3.dex, …).
+        // We must NOT use a sequential-break loop ("stop at first missing number")
+        // because FastZip.extract() may have skipped a numbered DEX if the original
+        // APK stored it with a "./" prefix.  Scanning the directory avoids silently
+        // dropping all higher-numbered DEX files when a gap exists.
+        File[] extractedFiles = extractDir.listFiles();
+        List<File> dexFiles = new ArrayList<>();
+        if (extractedFiles != null) {
+            for (File f : extractedFiles) {
+                if (f.getName().matches("classes(\\d*)\\.dex")) dexFiles.add(f);
+            }
+        }
+        // Sort: classes.dex (no number) first, then classes2, classes3, … numerically.
+        dexFiles.sort((a, b) -> {
+            String na = a.getName(), nb = b.getName();
+            int ia = na.equals("classes.dex") ? 1
+                    : Integer.parseInt(na.replace("classes", "").replace(".dex", ""));
+            int ib = nb.equals("classes.dex") ? 1
+                    : Integer.parseInt(nb.replace("classes", "").replace(".dex", ""));
+            return Integer.compare(ia, ib);
+        });
+
         List<byte[]> shards = new ArrayList<>();
-        File classesDex = new File(extractDir, "classes.dex");
-        if (classesDex.exists()) shards.add(encryptDexToBytes(classesDex, key));
-        for (int i = 2; ; i++) {
-            File dex = new File(extractDir, "classes" + i + ".dex");
-            if (!dex.exists()) break;
+        for (File dex : dexFiles) {
             shards.add(encryptDexToBytes(dex, key));
         }
 

@@ -35,10 +35,17 @@ public class FastZip {
             ZipEntry entry = entries.nextElement();
             String name = entry.getName();
             if (entry.isDirectory()) continue;
-            if (name.equals("AndroidManifest.xml")
-                    || name.matches("classes\\.dex")
-                    || name.matches("classes\\d+\\.dex")) {
-                File out = new File(extractDir, name);
+
+            // Strip optional leading "./" emitted by some build tools (e.g. apktool, AAPT1).
+            // ApkRebuilder.isDexEntry() already does this; FastZip must match.
+            String bare = name.startsWith("./") ? name.substring(2) : name;
+
+            if (bare.equals("AndroidManifest.xml")
+                    || bare.matches("classes\\.dex")
+                    || bare.matches("classes\\d+\\.dex")) {
+                // Always write to the bare name so DexPacker's loop finds "classes2.dex",
+                // not "./classes2.dex", regardless of how the APK stored the entry.
+                File out = new File(extractDir, bare);
                 out.getParentFile().mkdirs();
                 try (InputStream is = apk.getInputStream(entry);
                      FileOutputStream fos = new FileOutputStream(out)) {
