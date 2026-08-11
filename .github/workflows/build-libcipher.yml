@@ -114,13 +114,9 @@ jobs:
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm64.o 2>&1
-          # --strip-debug removes .debug_* sections only.
-          # --discard-locals is removed: amice's indirect-call pass creates
-          # .L.amice_indirect_call_table which is referenced by a relocation —
-          # llvm-objcopy refuses to strip any local that a reloc points at.
           "$TC/bin/llvm-objcopy" --strip-debug guard_arm64.o
           echo ""
-          echo "── Compiler + strip done ──"
+          echo "── Compiler done ──"
           echo "guard_arm64.o size: $(wc -c < guard_arm64.o) bytes"
 
       - name: Inspect guard_arm64.o — VMP section audit
@@ -183,7 +179,7 @@ jobs:
             -c guard.cpp -o guard_arm32.o 2>&1
           "$TC/bin/llvm-objcopy" --strip-debug guard_arm32.o
           echo ""
-          echo "── Compiler + strip done ──"
+          echo "── Compiler done ──"
           echo "guard_arm32.o size: $(wc -c < guard_arm32.o) bytes"
           "$TC/bin/llvm-ar" rcs libcipher_armeabi-v7a.a guard_arm32.o
           echo "✅ libcipher_armeabi-v7a.a — $(wc -c < libcipher_armeabi-v7a.a) bytes"
