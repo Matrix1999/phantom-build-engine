@@ -111,7 +111,7 @@ jobs:
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -fexceptions -frtti \
             -fvisibility=hidden \
-            -ffunction-sections -fdata-sections \
+            -ffunction-sections \
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm64.o 2>&1
@@ -175,7 +175,7 @@ jobs:
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -fexceptions -frtti \
             -fvisibility=hidden \
-            -ffunction-sections -fdata-sections \
+            -ffunction-sections \
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm32.o 2>&1
