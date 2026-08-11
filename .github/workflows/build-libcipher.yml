@@ -111,10 +111,11 @@ jobs:
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -fexceptions -frtti \
             -fvisibility=hidden \
+            -ffunction-sections -fdata-sections \
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm64.o 2>&1
-          "$TC/bin/llvm-objcopy" --strip-debug guard_arm64.o
+
           echo ""
           echo "── Compiler done ──"
           echo "guard_arm64.o size: $(wc -c < guard_arm64.o) bytes"
@@ -174,10 +175,11 @@ jobs:
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -fexceptions -frtti \
             -fvisibility=hidden \
+            -ffunction-sections -fdata-sections \
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm32.o 2>&1
-          "$TC/bin/llvm-objcopy" --strip-debug guard_arm32.o
+
           echo ""
           echo "── Compiler done ──"
           echo "guard_arm32.o size: $(wc -c < guard_arm32.o) bytes"
