@@ -1744,7 +1744,6 @@ static __attribute__((noinline)) void vm_run(void) {
 
 // One-time startup check (manifest hash + dex count), run from fonts_init()
 // through the opaque interpreter instead of a directly-callable function.
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_run_startup(void) {
     vm_exec(FONTS_BC_STARTUP_ENC, FONTS_BC_STARTUP_LEN, FONTS_BC_XOR);
 }
@@ -1793,7 +1792,6 @@ static void _init_lvm_dispatch(void) {
 // VCore/VirtualApp check — LVCFULL opcode inside an lvm_exec program.
 // fonts_init() calls this instead of check_render_backend() directly so
 // a disassembler sees only an opaque indirect VM call, not a named check.
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_run_vccheck(void) {
     LVM_CALL(LBC_VCCHECK_KHI, LBC_VCCHECK_KLO,
              LBC_VCCHECK_IHI, LBC_VCCHECK_ILO,
@@ -1805,7 +1803,6 @@ static __attribute__((noinline)) void vm_run_vccheck(void) {
 // fonts_init() calls this wrapper so a disassembler sees only an opaque
 // indirect VM call — no gvm_sig_check or detect_sig_tamper in fonts_init() disasm.
 // Bytecode: LSIGCHK → JZ+2 → CRASH → HALT  (crash if tamper detected).
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_run_sigcheck(void) {
     LVM_CALL(LBC_SIGCHK_KHI, LBC_SIGCHK_KLO,
              LBC_SIGCHK_IHI, LBC_SIGCHK_ILO,
@@ -1818,7 +1815,6 @@ static __attribute__((noinline)) void vm_run_sigcheck(void) {
 // the disassembler sees only an opaque indirect VM call — zero cbnz branch,
 // zero crash_now() call site, zero gvm_so_integrity reference in ARM64 disasm.
 // Bytecode: LSOINT → HALT  (crash happens inside the 0x5D case in lvm_exec).
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_run_so_integrity(void) {
     LVM_CALL(LBC_SOINT_KHI, LBC_SOINT_KLO,
              LBC_SOINT_IHI, LBC_SOINT_ILO,
@@ -1831,7 +1827,6 @@ static __attribute__((noinline)) void vm_run_so_integrity(void) {
 // directly so the disassembler sees only an opaque indirect VM call:
 //   zero bl _cipher_map_layout_scan, zero cbnz, zero crash_now in ARM64 disasm.
 // Bytecode: LMAPSCAN → HALT  (crash happens inside the 0x5E case in lvm_exec).
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_run_mapscan(void) {
     LVM_CALL(LBC_MAPSCAN_KHI, LBC_MAPSCAN_KLO,
              LBC_MAPSCAN_IHI, LBC_MAPSCAN_ILO,
@@ -1863,7 +1858,6 @@ static __attribute__((noinline)) void _vck_checks_b(pid_t ppid) {
     _LCKILL(LBC_METRICS_KHI, LBC_METRICS_KLO, LBC_METRICS_IHI, LBC_METRICS_ILO, LBC_METRICS_ENC, LBC_METRICS_LEN, LBC_METRICS_CS, ppid);
 }
 // Thin dispatcher — 2 BBs, easily VMP-virtualizable.
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
     _vck_checks_a(parent_pid);
     _vck_checks_b(parent_pid);
@@ -1877,11 +1871,11 @@ static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
 // late-attach detection.
 // ════════════════════════════════════════════════════════════════════════════
 
-static __attribute__((noinline)) void *watchdog_thread(void *) {
+static void *watchdog_thread(void *) {
     struct timespec ts = {3, 0};
     for (;;) {
         nanosleep(&ts, NULL);
-        vm_run();   // ← vm_run() IS annotated("vm") — opaque to IDA
+        vm_run();
     }
     return NULL;
 }
@@ -3521,7 +3515,6 @@ static volatile const uint8_t LBC_ANTIK_ENC[] = {
 
 // Dispatches LANTIK check through the same indirect VM dispatch used by all
 // other native checks.  Ghidra sees: blr xN (g_lvm_dispatch) — opaque indirect.
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_run_antik(const antik_ctx_t *ctx) {
     LVM_CALL_CTX(LBC_ANTIK_KHI, LBC_ANTIK_KLO,
                  LBC_ANTIK_IHI, LBC_ANTIK_ILO,
@@ -3536,27 +3529,22 @@ static __attribute__((noinline)) void vm_run_antik(const antik_ctx_t *ctx) {
 // identical in shape to vm_run() and vm_run_startup() and virtualizes them.
 // The underlying AES lvm_exec dispatch still runs inside the wrapped function.
 // ─────────────────────────────────────────────────────────────────────────────
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_gate_mapscan(void) {
     vm_run_mapscan();
     __asm__ volatile("" ::: "memory");
 }
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_gate_vccheck(void) {
     vm_run_vccheck();
     __asm__ volatile("" ::: "memory");
 }
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_gate_so_integrity(void) {
     vm_run_so_integrity();
     __asm__ volatile("" ::: "memory");
 }
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_gate_sigcheck(void) {
     vm_run_sigcheck();
     __asm__ volatile("" ::: "memory");
 }
-[[clang::annotate("vm_virtualize")]]
 static __attribute__((noinline)) void vm_gate_antik(const antik_ctx_t *c) {
     vm_run_antik(c);
     __asm__ volatile("" ::: "memory");
