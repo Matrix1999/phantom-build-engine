@@ -102,6 +102,16 @@ jobs:
           AMICE_VM_VIRTUALIZE=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
+          AMICE_BOGUS_CONTROL_FLOW=true \
+          AMICE_BOGUS_CONTROL_FLOW_PROB=100 \
+          AMICE_STRING_ENCRYPTION=true \
+          AMICE_STRING_ALGORITHM=simd_xor \
+          AMICE_STRING_DECRYPT_TIMING=lazy \
+          AMICE_STRING_INLINE_DECRYPT_FN=true \
+          AMICE_MBA=true \
+          AMICE_ALIAS_ACCESS=true \
+          AMICE_INDIRECT_CALL=true \
+          AMICE_INDIRECT_BRANCH=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
@@ -111,13 +121,20 @@ jobs:
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -fexceptions -frtti \
             -fvisibility=hidden \
-            -ffunction-sections -fdata-sections \
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm64.o 2>&1
-
+          # ── strip debug symbols from the .o ────────────────────────────────
+          # --strip-debug removes .debug_* sections and STAB entries.
+          # --discard-locals removes compiler-generated local symbols (L*, .L*)
+          # that leak internal label names into .strtab.
+          # Global symbol definitions must survive for the linker — only locals go.
+          "$TC/bin/llvm-objcopy" \
+            --strip-debug \
+            --discard-locals \
+            guard_arm64.o
           echo ""
-          echo "── Compiler done ──"
+          echo "── Compiler + strip done ──"
           echo "guard_arm64.o size: $(wc -c < guard_arm64.o) bytes"
 
       - name: Inspect guard_arm64.o — VMP section audit
@@ -166,6 +183,16 @@ jobs:
           AMICE_VM_VIRTUALIZE=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
+          AMICE_BOGUS_CONTROL_FLOW=true \
+          AMICE_BOGUS_CONTROL_FLOW_PROB=100 \
+          AMICE_STRING_ENCRYPTION=true \
+          AMICE_STRING_ALGORITHM=simd_xor \
+          AMICE_STRING_DECRYPT_TIMING=lazy \
+          AMICE_STRING_INLINE_DECRYPT_FN=true \
+          AMICE_MBA=true \
+          AMICE_ALIAS_ACCESS=true \
+          AMICE_INDIRECT_CALL=true \
+          AMICE_INDIRECT_BRANCH=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
@@ -175,13 +202,15 @@ jobs:
             -fno-unwind-tables -fno-asynchronous-unwind-tables \
             -fexceptions -frtti \
             -fvisibility=hidden \
-            -ffunction-sections -fdata-sections \
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm32.o 2>&1
-
+          "$TC/bin/llvm-objcopy" \
+            --strip-debug \
+            --discard-locals \
+            guard_arm32.o
           echo ""
-          echo "── Compiler done ──"
+          echo "── Compiler + strip done ──"
           echo "guard_arm32.o size: $(wc -c < guard_arm32.o) bytes"
           "$TC/bin/llvm-ar" rcs libcipher_armeabi-v7a.a guard_arm32.o
           echo "✅ libcipher_armeabi-v7a.a — $(wc -c < libcipher_armeabi-v7a.a) bytes"
