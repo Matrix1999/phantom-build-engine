@@ -1866,11 +1866,20 @@ static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
 // late-attach detection.
 // ════════════════════════════════════════════════════════════════════════════
 
+// watchdog_tick — single-call helper so amice can annotate("vm") it safely.
+// The for(;;) infinite loop lives in watchdog_thread (native) so amice's
+// CFG pass never sees an unbounded back-edge.  The actual vm_run() dispatch
+// is buried inside VMP bytecode here and is invisible to IDA/Ghidra.
+[[clang::annotate("vm")]]
+static __attribute__((noinline)) void watchdog_tick(void) {
+    vm_run();
+}
+
 static __attribute__((noinline)) void *watchdog_thread(void *) {
     struct timespec ts = {3, 0};
     for (;;) {
         nanosleep(&ts, NULL);
-        vm_run();
+        watchdog_tick();   // VMP-protected; patching this bl kills the check
     }
     return NULL;
 }
