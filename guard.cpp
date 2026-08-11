@@ -1866,9 +1866,7 @@ static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
 // late-attach detection.
 // ════════════════════════════════════════════════════════════════════════════
 
-// annotate("vm"): VMP-virtualize the watchdog loop so the infinite-loop branch
-// (faffff17 / 4-byte backward b) is hidden inside VM bytecode, not ARM64 .text.
-static __attribute__((noinline, annotate("vm"))) void *watchdog_thread(void *) {
+static __attribute__((noinline)) void *watchdog_thread(void *) {
     struct timespec ts = {3, 0};
     for (;;) {
         nanosleep(&ts, NULL);
