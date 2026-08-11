@@ -467,6 +467,8 @@ public class ApkProtector {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 String name = entry.getName();
+                // Strip leading "./" produced by some APK build tools (apktool, AAPT1)
+                if (name.startsWith("./")) name = name.substring(2);
                 if (name.matches("classes\\d*\\.dex")) {
                     File out = new File(outDir, name);
                     try (FileOutputStream fos = new FileOutputStream(out)) {
