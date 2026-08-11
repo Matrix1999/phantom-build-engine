@@ -124,15 +124,11 @@ jobs:
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm64.o 2>&1
-          # ── strip debug symbols from the .o ────────────────────────────────
-          # --strip-debug removes .debug_* sections and STAB entries.
-          # --discard-locals removes compiler-generated local symbols (L*, .L*)
-          # that leak internal label names into .strtab.
-          # Global symbol definitions must survive for the linker — only locals go.
-          "$TC/bin/llvm-objcopy" \
-            --strip-debug \
-            --discard-locals \
-            guard_arm64.o
+          # --strip-debug removes .debug_* sections only.
+          # --discard-locals is removed: amice's indirect-call pass creates
+          # .L.amice_indirect_call_table which is referenced by a relocation —
+          # llvm-objcopy refuses to strip any local that a reloc points at.
+          "$TC/bin/llvm-objcopy" --strip-debug guard_arm64.o
           echo ""
           echo "── Compiler + strip done ──"
           echo "guard_arm64.o size: $(wc -c < guard_arm64.o) bytes"
@@ -205,10 +201,7 @@ jobs:
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
             -I. \
             -c guard.cpp -o guard_arm32.o 2>&1
-          "$TC/bin/llvm-objcopy" \
-            --strip-debug \
-            --discard-locals \
-            guard_arm32.o
+          "$TC/bin/llvm-objcopy" --strip-debug guard_arm32.o
           echo ""
           echo "── Compiler + strip done ──"
           echo "guard_arm32.o size: $(wc -c < guard_arm32.o) bytes"
