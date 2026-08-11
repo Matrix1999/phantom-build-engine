@@ -61,6 +61,8 @@
 #include <dlfcn.h>
 #include <zlib.h>
 #include <android/log.h>
+#include "phantom_cipher.h"
+#include "phantom_pstrings.inc"
 
 // ── Debug logging — ENABLED (adb logcat -s d2cg)
 // PH_LOG / PH_NUKE use non-varargs bridges so amice can VM-virtualize callers.
@@ -88,307 +90,22 @@ static void vm_log_w(const char *msg);
 // Plain strings — the same proven logic used in the working reference build.
 // String hiding via OLLVM is applied at compile time; no runtime decryption needed.
 
-// ── Advanced string hiding ────────────────────────────────────────────────────
-// Technique: per-string unique 4-byte rotating XOR key — no shared decrypt fn.
-// OLLVM obfuscates each inlined PH_DECRYPT_N callsite independently.
-// strings(1) / IDA string window / Ghidra mass-emulation all yield nothing.
+// ── String protection — AES-256-CBC + XOR 0x5A + per-string unique key ────────
+// Replaces former XOR-only scheme.  All decryption happens inside VMP bytecode
+// (ph_reveal_ns is +vm_virtualize).  .rodata holds only ciphertext — no keys,
+// no recognisable plaintext, no XOR key arrays.
 //
-// PH_DECRYPT_N(out, enc, enc_len, key) — key is a variable name, NOT a brace-literal.
-//   Passing {0x41,...} as a macro arg would let the preprocessor split on the
-//   internal commas and report "too many arguments". Keys are declared as
-//   separate static arrays below — same security, no preprocessor issue.
-// PH_ZERO(buf, sz) — volatile wipe; compiler cannot optimize away.
-#define PH_DECRYPT_N(out, enc, enc_len, key) do {           \
-    int _kl = (int)sizeof(key);                             \
-    for (int _i = 0; _i < (enc_len); _i++)                  \
-        (out)[_i] = (char)((enc)[_i] ^ (key)[_i % _kl]);   \
-    (out)[enc_len] = '\0';                                  \
-} while(0)
+// PH_AES(var, NAME)  — declares char var[SP_BUF_SZ], decrypts SP_NAME blob.
+//                      Defined in phantom_cipher.h (requires phantom_pstrings.inc).
+// PH_ZERO(buf, sz)   — volatile wipe; compiler cannot optimize away.
 #define PH_ZERO(buf, sz) do {                               \
     volatile char *_vp = (buf);                             \
     for (int _zi = 0; _zi < (sz); _zi++) _vp[_zi] = 0;    \
 } while(0)
-#define PH_STK(var, enc, enc_len, key) \
-    char var[(enc_len)+1]; \
-    do { int _kl=(int)sizeof(key); \
-         for(int _i=0;_i<(enc_len);_i++) \
-             (var)[_i]=(char)((enc)[_i]^(key)[_i%_kl]); \
-         (var)[enc_len]='\0'; } while(0)
-// PH_STK: decrypt XOR-encrypted string to a stack-local buffer.
-// ALWAYS call PH_ZERO(var, enc_len+1) when done.
-// The decrypted string lives on the stack ONLY — never in .bss.
-// Window of exposure: microseconds (duration of the containing block).
+// PH_AES is defined in phantom_cipher.h after the include above.
+// ALWAYS call PH_ZERO(var, SP_BUF_SZ) when done with the buffer.
 
 
-// ── Encrypted data arrays (.rodata — no plaintext) ────────────────────────────
-// enc[i] = plaintext[i] ^ key[i % sizeof(key)]
-static const uint8_t _E_APPNAME[]        = {0x11,0x3A,0x2C,0x4F,0x35,0x3D,0x20,0x66,0x34,0x33,0x3F,0x45,0x00};
-static const uint8_t _E_GUM_JS_LOOP[]    = {0xB9,0xD8,0xD3,0xC2,0xB4,0xDE,0x93,0x83,0xB1,0xC2,0xCE,0x00};
-static const uint8_t _E_GMAIN[]          = {0xA7,0x92,0x8F,0x78,0xAE,0x00};
-static const uint8_t _E_LINJECTOR[]      = {0x7F,0x5E,0x9E,0x67,0x76,0x54,0x84,0x62,0x61,0x00};
-static const uint8_t _E_FRIDA_WS[]       = {0x66,0x4D,0x0C,0x09,0x7E,0x1B,0x0F,0x40,0x76,0x7A,0x10,0x3E,0x6B,
-                                             0x5B,0x26,0x2C,0x60,0x7C,0x37,0x1C,0x45,0x4E,0x20,0x1A,0x64,0x66,
-                                             0x25,0x45,0x00};
-static const uint8_t _E_JDWP[]           = {0xE1,0x89,0xB8,0x51,0x00};
-static const uint8_t _E_HOOK_RIRU[]      = {0x7F,0x99,0xDF,0xCF,0x00};
-static const uint8_t _E_HOOK_ZYGISK[]    = {0xB0,0x87,0xDD,0xD7,0xB9,0x95,0x00};
-static const uint8_t _E_HOOK_XPOSED[]    = {0xA6,0xDD,0xAF,0xAD,0xBB,0xC9,0x00};
-static const uint8_t _E_HOOK_LSPD[]      = {0xD2,0x9C,0xBA,0x9A,0x00};
-static const uint8_t _E_HOOK_EDXPOSED[]  = {0x95,0x69,0x82,0xBE,0x9F,0x7E,0x9F,0xAA,0x00};
-static const uint8_t _E_HOOK_FRIDA[]     = {0x19,0x37,0x25,0x22,0x1E,0x00};
-static const uint8_t _E_PROC_MAPS[]      = {0xB6,0x6A,0x59,0x53,0xFA,0x35,0x58,0x59,0xF5,0x7C,0x04,0x51,0xF8,
-                                             0x6A,0x58,0x00};
-static const uint8_t _E_PROC_STATUS[]    = {0xEA,0xA6,0x95,0x97,0xA6,0xF9,0x94,0x9D,0xA9,0xB0,0xC8,0x8C,0xA4,
-                                             0xA5,0x8C,0xD7,0xE0,0xA5,0xC8,0x8B,0xB1,0xB7,0x93,0x8D,0xB6,0x00};
-static const uint8_t _E_PROC_FD[]        = {0x62,0x2E,0x1D,0x1F,0x2E,0x71,0x1C,0x15,0x21,0x38,0x40,0x16,0x29,
-                                             0x00};
-static const uint8_t _E_PROC_TASK[]      = {0xAE,0xE2,0xD1,0xDB,0xE2,0xBD,0xD0,0xD1,0xED,0xF4,0x8C,0xC0,0xE0,
-                                             0xE1,0xC8,0x00};
-static const uint8_t _E_PROC_SELFSTATUS[]= {0xB6,0x6A,0x59,0x53,0xFA,0x35,0x58,0x59,0xF5,0x7C,0xBF,0x51,0xF4,
-                                             0x68,0x52,0x6B,0x5A,0x00};
-static const uint8_t _E_TRACER_PID[]     = {0x5E,0x69,0x4D,0x5E,0x6F,0x69,0x7C,0x54,0x6E,0x21,0x00};
-static const uint8_t _E_LIBC[]           = {0x7D,0x4B,0x51,0x27,0x3F,0x51,0x5C,0x00};
-static const uint8_t _E_LIBPHANTOM[]     = {0x39,0x0F,0x15,0xF8,0x3D,0x07,0x19,0xFC,0x3A,0x0B,0x59,0xFB,0x3A,
-                                             0x00};
-
-// ── Per-string unique XOR keys (.rodata) ─────────────────────────────────────
-// Each key is its own array — passed by name to PH_DECRYPT_N so the
-// preprocessor never sees internal commas as argument separators.
-static const uint8_t _K_APPNAME[]        = {0x41,0x52,0x4D,0x21};
-static const uint8_t _K_GUM_JS_LOOP[]    = {0xDE,0xAD,0xBE,0xEF};
-static const uint8_t _K_GMAIN[]          = {0xC0,0xFF,0xEE,0x11};
-static const uint8_t _K_LINJECTOR[]      = {0x13,0x37,0xF0,0x0D};
-static const uint8_t _K_FRIDA_WS[]       = {0x12,0x34,0x56,0x78};
-static const uint8_t _K_JDWP[]           = {0xAB,0xCD,0xEF,0x01};
-static const uint8_t _K_HOOK_RIRU[]      = {0x0D,0xF0,0xAD,0xBA};
-static const uint8_t _K_HOOK_ZYGISK[]    = {0xCA,0xFE,0xBA,0xBE};
-static const uint8_t _K_HOOK_XPOSED[]    = {0xDE,0xAD,0xC0,0xDE};
-static const uint8_t _K_HOOK_LSPD[]      = {0xBE,0xEF,0xCA,0xFE};
-static const uint8_t _K_HOOK_EDXPOSED[]  = {0xF0,0x0D,0xFA,0xCE};
-static const uint8_t _K_HOOK_FRIDA[]     = {0x7F,0x45,0x4C,0x46};
-static const uint8_t _K_PROC_MAPS[]      = {0x99,0x1A,0x2B,0x3C};
-static const uint8_t _K_PROC_STATUS[]    = {0xC5,0xD6,0xE7,0xF8};
-static const uint8_t _K_PROC_FD[]        = {0x4D,0x5E,0x6F,0x70};
-static const uint8_t _K_PROC_TASK[]      = {0x81,0x92,0xA3,0xB4};
-static const uint8_t _K_PROC_SELFSTATUS[]= {0x99,0x1A,0x2B,0x3C};
-static const uint8_t _K_TRACER_PID[]     = {0x0A,0x1B,0x2C,0x3D};
-static const uint8_t _K_LIBC[]           = {0x11,0x22,0x33,0x44};
-static const uint8_t _K_LIBPHANTOM[]     = {0x55,0x66,0x77,0x88};
-
-// ── Additional encrypted strings (stack-per-use) ─────────────────────────────
-static const uint8_t _E_FMT_TASK_COMM[] = {
-    0x8E,0xC2,0xB1,0xBB,0xC2,0x9D,0xB0,0xB1,0xCD,0xD4,0xEC,0xA0,
-    0xC0,0xC1,0xA8,0xFB,0x84,0xC1,0xEC,0xB7,0xCE,0xDF,0xAE,
-};
-static const uint8_t _E_FMT_TASK_STATUS[] = {
-    0xEA,0xA6,0x95,0x97,0xA6,0xF9,0x94,0x9D,0xA9,0xB0,0xC8,0x8C,
-    0xA4,0xA5,0x8C,0xD7,0xE0,0xA5,0xC8,0x8B,0xB1,0xB7,0x93,0x8D,
-    0xB6,
-};
-static const uint8_t _E_FMT_PROC_FD[] = {
-    0x71,0x1F,0x02,0xEE,0x3D,0x40,0x03,0xE4,0x32,0x09,0x5F,0xE7,
-    0x3A,0x40,0x55,0xF2,
-};
-static const uint8_t _E_STR_NAME_FIELD[] = {0x7D,0x25,0x38,0x03,0x09};
-static const uint8_t _E_STR_LIBART[] = {0x9D,0x6B,0x81,0x75,0x83,0x76};
-static const uint8_t _E_STR_DEX_DUMP[] = {0x13,0xED,0xE1,0xF5,0x13,0xFD,0xF4,0xDA};
-static const uint8_t _E_STR_MAGISK[] = {0xA1,0xBC,0x89,0x96,0xBF,0xB6};
-static const uint8_t _E_STR_CORE_MIRROR[] = {0x79,0x44,0x4E,0x28,0x35,0x46,0x55,0x3F,0x68,0x44,0x4E};
-static const uint8_t _E_STR_CORE_IMG[] = {0x3D,0x00,0x02,0xE4,0x71,0x06,0x1D,0xE6};
-static const uint8_t _E_STR_CAPEFF[] = {0xD1,0xC2,0xC4,0x80,0xF4,0xC5,0x8E};
-static const uint8_t _E_STR_TEST_KEYS[] = {0xA2,0x82,0x8B,0x7D,0xFB,0x8C,0x9D,0x70,0xA5};
-static const uint8_t _E_STR_DEV_KEYS[] = {0x7F,0x49,0x4B,0x63,0x70,0x49,0x44,0x3D};
-static const uint8_t _E_PATH_UPROBE_DBG[] = {
-    0x70,0x03,0xF8,0xE1,0x70,0x1B,0xE4,0xE0,0x31,0x15,0xED,0xBD,
-    0x3B,0x15,0xE3,0xE7,0x38,0x5F,0xF5,0xE0,0x3E,0x13,0xE8,0xFC,
-    0x38,0x5F,0xF4,0xE2,0x2D,0x1F,0xE3,0xF7,0x00,0x15,0xF7,0xF7,
-    0x31,0x04,0xF2,
-};
-static const uint8_t _E_PATH_UPROBE[] = {
-    0x8C,0xC7,0xBC,0xA5,0x8C,0xDF,0xA0,0xA4,0xCD,0xD1,0xA9,0xF9,
-    0xD7,0xC6,0xA4,0xB5,0xCA,0xDA,0xA2,0xF9,0xD6,0xC4,0xB7,0xB9,
-    0xC1,0xD1,0x9A,0xB3,0xD5,0xD1,0xAB,0xA2,0xD0,
-};
-static const uint8_t _E_PATH_RIRU[] = {
-    0xC8,0x9C,0x68,0x6E,0x86,0xD7,0x68,0x7E,0x85,0xD7,0x7B,0x73,
-    0x95,0x8D,
-};
-static const uint8_t _E_PATH_RIRU_MOD[] = {
-    0x04,0x58,0x2C,0x2A,0x4A,0x13,0x2C,0x3A,0x49,0x13,0x20,0x31,
-    0x4F,0x49,0x21,0x3B,0x58,0x13,0x3F,0x37,0x59,0x49,
-};
-static const uint8_t _E_PATH_ZYGISK_MOD[] = {
-    0x40,0x14,0xE0,0xE6,0x0E,0x5F,0xE0,0xF6,0x0D,0x5F,0xEC,0xFD,
-    0x0B,0x05,0xED,0xF7,0x1C,0x5F,0xFB,0xEB,0x08,0x19,0xF2,0xF9,
-};
-static const uint8_t _E_PATH_RIRU_MISC[] = {
-    0x8C,0xD0,0xA4,0xA2,0xC2,0x9B,0xA8,0xBF,0xD0,0xD7,0xEA,0xA4,
-    0xCA,0xC6,0xB0,
-};
-static const uint8_t _E_PATH_XPOSED_LIB[] = {
-    0xC8,0x8B,0x70,0x69,0x93,0x9D,0x64,0x35,0x8B,0x91,0x6B,0x35,
-    0x8B,0x91,0x6B,0x62,0x97,0x97,0x7A,0x7F,0x83,0xA7,0x68,0x68,
-    0x93,0xD6,0x7A,0x75,
-};
-static const uint8_t _E_PATH_XPOSED_LIB64[] = {
-    0x04,0x4F,0x34,0x2D,0x5F,0x59,0x20,0x71,0x47,0x55,0x2F,0x68,
-    0x1F,0x13,0x21,0x37,0x49,0x44,0x3D,0x31,0x58,0x59,0x29,0x01,
-    0x4A,0x4E,0x39,0x70,0x58,0x53,
-};
-static const uint8_t _E_PATH_XPOSED_JAR[] = {
-    0x40,0xF3,0xE8,0xD1,0x1B,0xE5,0xFC,0x8D,0x09,0xF2,0xF0,0xCF,
-    0x0A,0xF7,0xFE,0xD0,0x04,0xAF,0xC9,0xD2,0x00,0xF3,0xF4,0xC6,
-    0x2D,0xF2,0xF8,0xC6,0x08,0xE5,0xBF,0xC8,0x0E,0xF2,
-};
-static const uint8_t _E_PATH_SU_LOCAL[] = {
-    0x9C,0xA0,0xB4,0x92,0xD2,0xEB,0xB9,0x89,0xD0,0xA5,0xB9,0xC9,
-    0xC0,0xB1,
-};
-static const uint8_t _E_PATH_SU_LOCAL_BIN[] = {
-    0xD8,0x6C,0x78,0x5E,0x96,0x27,0x75,0x45,0x94,0x69,0x75,0x05,
-    0x95,0x61,0x77,0x05,0x84,0x7D,
-};
-static const uint8_t _E_PATH_SU_LOCAL_XBIN[] = {
-    0x14,0x28,0x3C,0x1A,0x5A,0x63,0x31,0x01,0x58,0x2D,0x31,0x41,
-    0x43,0x2E,0x34,0x00,0x14,0x3F,0x28,
-};
-static const uint8_t _E_PATH_SU_SBIN[] = {0x50,0xE3,0xC3,0xDB,0x11,0xBF,0xD2,0xC7};
-static const uint8_t _E_PATH_SU_SU_BIN[] = {0xEC,0xA7,0x90,0xD9,0xA1,0xBD,0x8B,0xD9,0xB0,0xA1};
-static const uint8_t _E_PATH_SU_SYS_BIN[] = {
-    0x28,0x6B,0x50,0x49,0x73,0x7D,0x44,0x15,0x65,0x71,0x47,0x15,
-    0x74,0x6D,
-};
-static const uint8_t _E_PATH_SU_SYS_XBIN[] = {
-    0x64,0x2F,0x14,0x0D,0x3F,0x39,0x00,0x51,0x33,0x3E,0x04,0x10,
-    0x64,0x2F,0x18,
-};
-static const uint8_t _E_PATH_SU_EXT[] = {
-    0xA0,0xD3,0xC8,0xB1,0xFB,0xC5,0xDC,0xED,0xED,0xC9,0xDF,0xED,
-    0xA1,0xC5,0xC9,0xB6,0xA0,0xD3,0xC4,
-};
-static const uint8_t _E_PATH_SU_FAILSAFE[] = {
-    0xFC,0x97,0x8C,0x75,0xA7,0x81,0x98,0x29,0xB1,0x8D,0x9B,0x29,
-    0xB5,0x85,0x9C,0x6A,0xA0,0x85,0x93,0x63,0xFC,0x97,0x80,
-};
-static const uint8_t _E_PATH_SU_SD[] = {
-    0x38,0x5B,0x40,0x39,0x63,0x4D,0x54,0x65,0x64,0x4C,0x16,0x32,
-    0x75,0x41,0x57,0x65,0x64,0x5D,
-};
-static const uint8_t _E_PATH_SU_USR[] = {
-    0x74,0x1F,0x04,0xFD,0x2F,0x09,0x10,0xA1,0x2E,0x1F,0x0F,0xA1,
-    0x2C,0x09,0x50,0xE0,0x3E,0x09,0x19,0xA3,0x29,0x03,0x12,0xFA,
-    0x74,0x1F,0x08,
-};
-static const uint8_t _E_PATH_SU_CACHE[] = {0xB0,0xC3,0xD0,0xA1,0xF7,0xC5,0x9E,0xB1,0xEA};
-static const uint8_t _E_PATH_SU_DATA[] = {0xFC,0x80,0x94,0x72,0xB2,0xCB,0x86,0x73};
-static const uint8_t _E_PATH_SU_DEV[] = {0x38,0x4C,0x5C,0x3C,0x38,0x5B,0x4C};
-static const uint8_t _E_PATH_PROC_MOUNTS[] = {
-    0x74,0x1C,0x0F,0xE1,0x38,0x43,0x0E,0xEB,0x37,0x0A,0x52,0xE3,
-    0x34,0x19,0x13,0xFA,0x28,
-};
-static const uint8_t _E_PATH_SELINUX1[] = {
-    0xB0,0xC3,0xB8,0xA1,0xB0,0xD6,0xB2,0xFD,0xEC,0xD5,0xAD,0xBB,
-    0xF1,0xC5,0xB9,0xFD,0xFA,0xDE,0xA7,0xBD,0xED,0xD3,0xA4,
-};
-static const uint8_t _E_PATH_SELINUX2[] = {
-    0xCC,0x87,0x7C,0x65,0xCC,0x9F,0x60,0x64,0x8D,0x91,0x69,0x39,
-    0x90,0x91,0x66,0x63,0x91,0x9D,0x71,0x6F,0xCC,0x87,0x60,0x7A,
-    0x8A,0x9A,0x70,0x6E,0xCC,0x91,0x6B,0x70,0x8C,0x86,0x66,0x73,
-};
-static const uint8_t _E_PATH_MAGISK[] = {
-    0x08,0x5C,0x28,0x2E,0x46,0x17,0x28,0x3E,0x45,0x17,0x24,0x3B,
-    0x40,0x51,0x3A,0x31,
-};
-static const uint8_t _E_PATH_KSU[] = {
-    0x44,0x18,0xEC,0xEA,0x0A,0x53,0xEC,0xFA,0x09,0x53,0xE6,0xED,
-    0x1E,
-};
-static const uint8_t _E_PATH_APD[] = {
-    0x80,0xD4,0xA0,0xA6,0xCE,0x9F,0xA0,0xB6,0xCD,0x9F,0xA0,0xA2,
-    0xCB,
-};
-static const uint8_t _E_PATH_LSPD_DIR[] = {
-    0xCC,0x90,0x64,0x62,0x82,0xDB,0x64,0x72,0x81,0xDB,0x69,0x65,
-    0x93,0x90,
-};
-static const uint8_t _E_PATH_MAGISK_SBIN[] = {
-    0x08,0x3B,0x3B,0x03,0x49,0x67,0x77,0x07,0x46,0x2F,0x30,0x19,
-    0x4C,
-};
-static const uint8_t _E_PATH_MAGISK_DEV[] = {0x54,0xE8,0xF8,0xD8,0x54,0xA2,0xF0,0xCF,0x1C,0xE5,0xEE,0xC5};
-static const uint8_t _E_PATH_XPOSED_PROP[] = {
-    0x90,0xB3,0xA8,0x91,0xCB,0xA5,0xBC,0xCD,0xC7,0xB0,0xBE,0x91,
-    0xDA,0xA4,0xFF,0x92,0xCD,0xAF,0xA1,
-};
-static const uint8_t _E_PATH_BUILD_PROP[] = {
-    0xDC,0x77,0x6C,0x55,0x87,0x61,0x78,0x09,0x91,0x71,0x7C,0x4A,
-    0x97,0x2A,0x65,0x54,0x9C,0x74,
-};
-static const uint8_t _E_FRIDA_WS_REQ[] = {
-    0xF3,0x96,0x28,0x39,0x9B,0xA4,0x0F,0x39,0xFC,0x87,0x28,0x49,
-    0x9B,0xE2,0x52,0x28,0xB9,0xD9,0x29,0x69,0xD3,0xA1,0x1D,0x7D,
-    0xD1,0xE9,0x5C,0x6E,0xD1,0xB1,0x0F,0x76,0xD7,0xB8,0x19,0x6D,
-    0xB9,0xD9,0x3F,0x76,0xDA,0xBD,0x19,0x7A,0xC0,0xBA,0x13,0x77,
-    0x8E,0xF3,0x29,0x69,0xD3,0xA1,0x1D,0x7D,0xD1,0xDE,0x76,0x4A,
-    0xD1,0xB0,0x51,0x4E,0xD1,0xB1,0x2F,0x76,0xD7,0xB8,0x19,0x6D,
-    0x99,0x98,0x19,0x60,0x8E,0xF3,0x3F,0x69,0xCC,0x97,0x4E,0x5A,
-    0x81,0x81,0x39,0x4F,0xF8,0x9B,0x0A,0x6A,0xE1,0x90,0x45,0x40,
-    0xF5,0xBC,0x0D,0x7E,0x89,0xEE,0x71,0x13,0xE7,0xB6,0x1F,0x34,
-    0xE3,0xB6,0x1E,0x4A,0xDB,0xB0,0x17,0x7C,0xC0,0xFE,0x2A,0x7C,
-    0xC6,0xA0,0x15,0x76,0xDA,0xE9,0x5C,0x28,0x87,0xDE,0x76,0x51,
-    0xDB,0xA0,0x08,0x23,0x94,0xE2,0x4E,0x2E,0x9A,0xE3,0x52,0x29,
-    0x9A,0xE2,0x71,0x13,0xE1,0xA0,0x19,0x6B,0x99,0x92,0x1B,0x7C,
-    0xDA,0xA7,0x46,0x39,0xF2,0xA1,0x15,0x7D,0xD5,0xFC,0x4D,0x2F,
-    0x9A,0xE2,0x52,0x2E,0xB9,0xD9,0x71,0x13,
-};
-
-static const uint8_t _K_FMT_TASK_COMM[] = {0xA1,0xB2,0xC3,0xD4};
-static const uint8_t _K_FMT_TASK_STATUS[] = {0xC5,0xD6,0xE7,0xF8};
-static const uint8_t _K_FMT_PROC_FD[] = {0x5E,0x6F,0x70,0x81};
-static const uint8_t _K_STR_NAME_FIELD[] = {0x33,0x44,0x55,0x66};
-static const uint8_t _K_STR_LIBART[] = {0xF1,0x02,0xE3,0x14};
-static const uint8_t _K_STR_DEX_DUMP[] = {0x77,0x88,0x99,0xAA};
-static const uint8_t _K_STR_MAGISK[] = {0xCC,0xDD,0xEE,0xFF};
-static const uint8_t _K_STR_CORE_MIRROR[] = {0x1A,0x2B,0x3C,0x4D};
-static const uint8_t _K_STR_CORE_IMG[] = {0x5E,0x6F,0x70,0x81};
-static const uint8_t _K_STR_CAPEFF[] = {0x92,0xA3,0xB4,0xC5};
-static const uint8_t _K_STR_TEST_KEYS[] = {0xD6,0xE7,0xF8,0x09};
-static const uint8_t _K_STR_DEV_KEYS[] = {0x1B,0x2C,0x3D,0x4E};
-static const uint8_t _K_PATH_UPROBE_DBG[] = {0x5F,0x70,0x81,0x92};
-static const uint8_t _K_PATH_UPROBE[] = {0xA3,0xB4,0xC5,0xD6};
-static const uint8_t _K_PATH_RIRU[] = {0xE7,0xF8,0x09,0x1A};
-static const uint8_t _K_PATH_RIRU_MOD[] = {0x2B,0x3C,0x4D,0x5E};
-static const uint8_t _K_PATH_ZYGISK_MOD[] = {0x6F,0x70,0x81,0x92};
-static const uint8_t _K_PATH_RIRU_MISC[] = {0xA3,0xB4,0xC5,0xD6};
-static const uint8_t _K_PATH_XPOSED_LIB[] = {0xE7,0xF8,0x09,0x1A};
-static const uint8_t _K_PATH_XPOSED_LIB64[] = {0x2B,0x3C,0x4D,0x5E};
-static const uint8_t _K_PATH_XPOSED_JAR[] = {0x6F,0x80,0x91,0xA2};
-static const uint8_t _K_PATH_SU_LOCAL[] = {0xB3,0xC4,0xD5,0xE6};
-static const uint8_t _K_PATH_SU_LOCAL_BIN[] = {0xF7,0x08,0x19,0x2A};
-static const uint8_t _K_PATH_SU_LOCAL_XBIN[] = {0x3B,0x4C,0x5D,0x6E};
-static const uint8_t _K_PATH_SU_SBIN[] = {0x7F,0x90,0xA1,0xB2};
-static const uint8_t _K_PATH_SU_SU_BIN[] = {0xC3,0xD4,0xE5,0xF6};
-static const uint8_t _K_PATH_SU_SYS_BIN[] = {0x07,0x18,0x29,0x3A};
-static const uint8_t _K_PATH_SU_SYS_XBIN[] = {0x4B,0x5C,0x6D,0x7E};
-static const uint8_t _K_PATH_SU_EXT[] = {0x8F,0xA0,0xB1,0xC2};
-static const uint8_t _K_PATH_SU_FAILSAFE[] = {0xD3,0xE4,0xF5,0x06};
-static const uint8_t _K_PATH_SU_SD[] = {0x17,0x28,0x39,0x4A};
-static const uint8_t _K_PATH_SU_USR[] = {0x5B,0x6C,0x7D,0x8E};
-static const uint8_t _K_PATH_SU_CACHE[] = {0x9F,0xA0,0xB1,0xC2};
-static const uint8_t _K_PATH_SU_DATA[] = {0xD3,0xE4,0xF5,0x06};
-static const uint8_t _K_PATH_SU_DEV[] = {0x17,0x28,0x39,0x4A};
-static const uint8_t _K_PATH_PROC_MOUNTS[] = {0x5B,0x6C,0x7D,0x8E};
-static const uint8_t _K_PATH_SELINUX1[] = {0x9F,0xB0,0xC1,0xD2};
-static const uint8_t _K_PATH_SELINUX2[] = {0xE3,0xF4,0x05,0x16};
-static const uint8_t _K_PATH_MAGISK[] = {0x27,0x38,0x49,0x5A};
-static const uint8_t _K_PATH_KSU[] = {0x6B,0x7C,0x8D,0x9E};
-static const uint8_t _K_PATH_APD[] = {0xAF,0xB0,0xC1,0xD2};
-static const uint8_t _K_PATH_LSPD_DIR[] = {0xE3,0xF4,0x05,0x16};
-static const uint8_t _K_PATH_MAGISK_SBIN[] = {0x27,0x48,0x59,0x6A};
-static const uint8_t _K_PATH_MAGISK_DEV[] = {0x7B,0x8C,0x9D,0xAE};
-static const uint8_t _K_PATH_XPOSED_PROP[] = {0xBF,0xC0,0xD1,0xE2};
-static const uint8_t _K_PATH_BUILD_PROP[] = {0xF3,0x04,0x15,0x26};
-static const uint8_t _K_FRIDA_WS_REQ[] = {0xB4,0xD3,0x7C,0x19};
 
 // ?
 // Inline string helpers (avoid libc hooks)
@@ -599,6 +316,22 @@ __attribute__((always_inline)) static inline int my_connect(int fd, const struct
 // Low-level I/O helpers
 // ?
 
+/* vm_pthread_create — noinline bridge keeps bl sym.imp.pthread_create out of
+   detect_frida_init's ARM64. When vm_spawn_watcher (VMP'd) calls this, amice
+   emits a call_native bytecode — no direct bl pthread_create at any fixed
+   binary offset.  Same pattern as vm_getpid / vm_nanosleep / vm_mprotect. */
+static __attribute__((noinline)) int vm_pthread_create(
+        pthread_t *t, const pthread_attr_t *attr,
+        void *(*fn)(void *), void *arg) {
+    return pthread_create(t, attr, fn, arg);
+}
+
+/* vm_prctl — same reason: keeps bl sym.imp.prctl out of detect_frida_init so
+   the constructor shows zero named PLT imports in ARM64 disassembly. */
+static __attribute__((noinline)) int vm_prctl(int opt, unsigned long a2) {
+    return prctl(opt, a2);
+}
+
 /* vm_read_one_line: noinline bridge so VM-virtualized callers see call_native,
    not the my_read asm inside the body (amice bails if it tries to lift asm). */
 static __attribute__((noinline)) ssize_t vm_read_one_line(int fd, char *buf, unsigned int max_len);
@@ -747,16 +480,16 @@ __attribute__((noreturn)) static void nuke_app(void) {
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_ptrace(void) {
     char buf[512];
-    PH_STK(_ss, _E_PROC_SELFSTATUS, 18, _K_PROC_SELFSTATUS);
+    PH_AES(_ss, PROC_SELFSTATUS);
     int fd = vm_openat(AT_FDCWD, _ss, O_RDONLY | O_CLOEXEC, 0);
-    PH_ZERO(_ss, 19);
+    PH_ZERO(_ss, SP_BUF_SZ);
     if (fd >= 0) {
         ssize_t bytes = vm_read(fd, buf, sizeof(buf) - 1);
         if (bytes > 0) {
             buf[bytes] = '\0';
-            PH_STK(_tp, _E_TRACER_PID, 10, _K_TRACER_PID);
+            PH_AES(_tp, TRACER_PID);
             char *tracer = my_strstr(buf, _tp);
-            PH_ZERO(_tp, 11);
+            PH_ZERO(_tp, SP_BUF_SZ);
             if (tracer) {
                 int pid = my_atoi(tracer + 10);
                 if (pid > 0) { vm_close(fd); PH_NUKE("ptrace — TracerPid=%d", pid); nuke_app(); }
@@ -789,15 +522,15 @@ static __attribute__((noinline)) void detect_ptrace(void) {
    my_path_cat3 (pure arithmetic, no asm).  atoi → my_atoi. */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_frida_threads(void) {
-    PH_STK(_task, _E_PROC_TASK, 15, _K_PROC_TASK);
+    PH_AES(_task, PROC_TASK);
     int dfd = vm_openat(AT_FDCWD, _task, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
-    PH_ZERO(_task, 16);
+    PH_ZERO(_task, SP_BUF_SZ);
     if (dfd < 0) return;
 
-    PH_STK(_jdwp, _E_JDWP,         4, _K_JDWP);
-    PH_STK(_gum,  _E_GUM_JS_LOOP, 11, _K_GUM_JS_LOOP);
-    PH_STK(_gm,   _E_GMAIN,        5, _K_GMAIN);
-    PH_STK(_tp,   _E_TRACER_PID,  10, _K_TRACER_PID);
+    PH_AES(_jdwp, JDWP);
+    PH_AES(_gum, GUM_JS_LOOP);
+    PH_AES(_gm, GMAIN);
+    PH_AES(_tp, TRACER_PID);
 
     char dirbuf[2048];
     ssize_t nread;
@@ -811,8 +544,10 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
             // ── 1. comm file — raw thread name ──────────────────────────────
             {
                 char comm_path[MAX_LENGTH] = "";
+                PH_AES(_ctask, PROC_TASK);
                 my_path_cat3(comm_path, MAX_LENGTH,
-                             "/proc/self/task/", de->d_name, "/comm");
+                             _ctask, de->d_name, "/comm");
+                PH_ZERO(_ctask, SP_BUF_SZ);
                 int fd = vm_openat(AT_FDCWD, comm_path, O_RDONLY | O_CLOEXEC, 0);
                 if (fd >= 0) {
                     char name[MAX_LENGTH] = "";
@@ -821,7 +556,7 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
                     if (my_strncmp(name, _jdwp, 4) == 0 ||
                         my_strstr(name, _gum) || my_strstr(name, _gm)) {
                         PH_NUKE("Frida/JDWP thread via comm: %s", name);
-                        PH_ZERO(_jdwp,5); PH_ZERO(_gum,12); PH_ZERO(_gm,6); PH_ZERO(_tp,11);
+                        PH_ZERO(_jdwp, SP_BUF_SZ); PH_ZERO(_gum, SP_BUF_SZ); PH_ZERO(_gm, SP_BUF_SZ); PH_ZERO(_tp, SP_BUF_SZ);
                         vm_close(dfd); nuke_app();
                     }
                 }
@@ -830,8 +565,10 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
             // ── 2. status file — TracerPid + backup Name: ───────────────────
             {
                 char status_path[MAX_LENGTH] = "";
+                PH_AES(_stask, PROC_TASK);
                 my_path_cat3(status_path, MAX_LENGTH,
-                             "/proc/self/task/", de->d_name, "/status");
+                             _stask, de->d_name, "/status");
+                PH_ZERO(_stask, SP_BUF_SZ);
                 int fd = vm_openat(AT_FDCWD, status_path, O_RDONLY | O_CLOEXEC, 0);
                 if (fd >= 0) {
                     char buf[1024] = "";
@@ -842,18 +579,18 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
                         char *tracer = my_strstr(buf, _tp);
                         if (tracer && my_atoi(tracer + 10) > 0) {
                             PH_NUKE("per-task TracerPid on task %s", de->d_name);
-                            PH_ZERO(_jdwp,5); PH_ZERO(_gum,12); PH_ZERO(_gm,6); PH_ZERO(_tp,11);
+                            PH_ZERO(_jdwp, SP_BUF_SZ); PH_ZERO(_gum, SP_BUF_SZ); PH_ZERO(_gm, SP_BUF_SZ); PH_ZERO(_tp, SP_BUF_SZ);
                             vm_close(dfd); nuke_app();
                         }
-                        PH_STK(_nf, _E_STR_NAME_FIELD, 5, _K_STR_NAME_FIELD);
+                        PH_AES(_nf, STR_NAME_FIELD);
                         char *name_field = my_strstr(buf, _nf);
-                        PH_ZERO(_nf, 6);
+                        PH_ZERO(_nf, SP_BUF_SZ);
                         if (name_field) {
                             name_field += 5;
                             while (*name_field == '\t' || *name_field == ' ') name_field++;
                             if (my_strstr(name_field, _gum) || my_strstr(name_field, _gm)) {
                                 PH_NUKE("Frida thread via status Name: task %s", de->d_name);
-                                PH_ZERO(_jdwp,5); PH_ZERO(_gum,12); PH_ZERO(_gm,6); PH_ZERO(_tp,11);
+                                PH_ZERO(_jdwp, SP_BUF_SZ); PH_ZERO(_gum, SP_BUF_SZ); PH_ZERO(_gm, SP_BUF_SZ); PH_ZERO(_tp, SP_BUF_SZ);
                                 vm_close(dfd); nuke_app();
                             }
                         }
@@ -862,7 +599,7 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
             }
         }
     }
-    PH_ZERO(_jdwp,5); PH_ZERO(_gum,12); PH_ZERO(_gm,6); PH_ZERO(_tp,11);
+    PH_ZERO(_jdwp, SP_BUF_SZ); PH_ZERO(_gum, SP_BUF_SZ); PH_ZERO(_gm, SP_BUF_SZ); PH_ZERO(_tp, SP_BUF_SZ);
     vm_close(dfd);
 }
 
@@ -905,9 +642,9 @@ static __attribute__((noinline)) int check_frida_port(int port) {
     }
 
     {
-        PH_STK(_req, _E_FRIDA_WS_REQ, 176, _K_FRIDA_WS_REQ);
-        vm_write(fd, _req, 176);
-        PH_ZERO(_req, 177);
+        PH_AES(_req, FRIDA_WS_REQ);
+        vm_write(fd, _req, (ssize_t)my_strlen(_req));
+        PH_ZERO(_req, SP_BUF_SZ);
     }
 
     char res[512];
@@ -915,9 +652,9 @@ static __attribute__((noinline)) int check_frida_port(int port) {
     vm_read(fd, res, sizeof(res) - 1);
     vm_close(fd);
 
-    PH_STK(_wa, _E_FRIDA_WS, 28, _K_FRIDA_WS);
+    PH_AES(_wa, FRIDA_WS);
     int hit = my_strstr(res, _wa) != NULL;
-    PH_ZERO(_wa, 29);
+    PH_ZERO(_wa, SP_BUF_SZ);
     return hit;
 }
 
@@ -955,9 +692,9 @@ static __attribute__((noinline)) void detect_frida_websocket(void) {
    snprintf → my_path_cat3 so no libc calls block VMP virtualization. */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_frida_namedpipe(void) {
-    PH_STK(_pfd, _E_PROC_FD, 13, _K_PROC_FD);
+    PH_AES(_pfd, PROC_FD);
     int dfd = vm_openat(AT_FDCWD, _pfd, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
-    PH_ZERO(_pfd, 14);
+    PH_ZERO(_pfd, SP_BUF_SZ);
     if (dfd < 0) return;
 
     char dirbuf[2048];
@@ -970,16 +707,19 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
                 (de->d_name[1] == '.' && de->d_name[2] == '\0'))) continue;
 
             char filePath[MAX_LENGTH] = "";
-            my_path_cat3(filePath, MAX_LENGTH, "/proc/self/fd/", de->d_name, NULL);
+            PH_AES(_pfd2, PROC_FD);
+            char _pfd2s[16]; my_path_cat3(_pfd2s, 16, _pfd2, "/", NULL);
+            PH_ZERO(_pfd2, SP_BUF_SZ);
+            my_path_cat3(filePath, MAX_LENGTH, _pfd2s, de->d_name, NULL);
 
             struct stat filestat;
             vm_fstatat(AT_FDCWD, filePath, &filestat, AT_SYMLINK_NOFOLLOW);
             if ((filestat.st_mode & S_IFMT) == S_IFLNK) {
                 char buf[MAX_LENGTH] = "";
                 vm_readlinkat(AT_FDCWD, filePath, buf, MAX_LENGTH);
-                PH_STK(_linj, _E_LINJECTOR, 9, _K_LINJECTOR);
+                PH_AES(_linj, LINJECTOR);
                 int _linj_found = my_strstr(buf, _linj) != NULL;
-                PH_ZERO(_linj, 10);
+                PH_ZERO(_linj, SP_BUF_SZ);
                 if (_linj_found) {
                     PH_NUKE("Frida named pipe detected — fd link: %s", buf);
                     vm_close(dfd); nuke_app();
@@ -1011,36 +751,36 @@ static __attribute__((noinline)) void detect_ebpf_uprobe(void) {
     char buf[4096];
     // ── path 1 ────────────────────────────────────────────────────────────────
     {
-        PH_STK(_p1, _E_PATH_UPROBE_DBG, 39, _K_PATH_UPROBE_DBG);
+        PH_AES(_p1, PATH_UPROBE_DBG);
         int fd = vm_openat(AT_FDCWD, _p1, O_RDONLY | O_CLOEXEC, 0);
-        PH_ZERO(_p1, 40);
+        PH_ZERO(_p1, SP_BUF_SZ);
         if (fd >= 0) {
             my_memset(buf, 0, sizeof(buf));
             ssize_t n = vm_read(fd, buf, sizeof(buf) - 1);
             vm_close(fd);
             if (n > 0) {
-                PH_STK(_la, _E_STR_LIBART,   6, _K_STR_LIBART);
-                PH_STK(_dd, _E_STR_DEX_DUMP, 8, _K_STR_DEX_DUMP);
+                PH_AES(_la, STR_LIBART);
+                PH_AES(_dd, STR_DEX_DUMP);
                 int hit = my_strstr(buf, _la) != NULL || my_strstr(buf, _dd) != NULL;
-                PH_ZERO(_la, 7); PH_ZERO(_dd, 9);
+                PH_ZERO(_la, SP_BUF_SZ); PH_ZERO(_dd, SP_BUF_SZ);
                 if (hit) { PH_NUKE("eBPF uprobe on libart detected"); nuke_app(); }
             }
         }
     }
     // ── path 2 ────────────────────────────────────────────────────────────────
     {
-        PH_STK(_p2, _E_PATH_UPROBE, 33, _K_PATH_UPROBE);
+        PH_AES(_p2, PATH_UPROBE);
         int fd = vm_openat(AT_FDCWD, _p2, O_RDONLY | O_CLOEXEC, 0);
-        PH_ZERO(_p2, 34);
+        PH_ZERO(_p2, SP_BUF_SZ);
         if (fd >= 0) {
             my_memset(buf, 0, sizeof(buf));
             ssize_t n = vm_read(fd, buf, sizeof(buf) - 1);
             vm_close(fd);
             if (n > 0) {
-                PH_STK(_la, _E_STR_LIBART,   6, _K_STR_LIBART);
-                PH_STK(_dd, _E_STR_DEX_DUMP, 8, _K_STR_DEX_DUMP);
+                PH_AES(_la, STR_LIBART);
+                PH_AES(_dd, STR_DEX_DUMP);
                 int hit = my_strstr(buf, _la) != NULL || my_strstr(buf, _dd) != NULL;
-                PH_ZERO(_la, 7); PH_ZERO(_dd, 9);
+                PH_ZERO(_la, SP_BUF_SZ); PH_ZERO(_dd, SP_BUF_SZ);
                 if (hit) { PH_NUKE("eBPF uprobe on libart detected"); nuke_app(); }
             }
         }
@@ -1073,17 +813,17 @@ static __attribute__((noinline)) void detect_ebpf_uprobe(void) {
 /* Extracted so hook_phdr_cb itself stays tiny — amice can then VM-virtualize it */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) int _phdr_name_matches(const char *name) {
-    PH_STK(_ri, _E_HOOK_RIRU,    4, _K_HOOK_RIRU);
-    PH_STK(_zy, _E_HOOK_ZYGISK,  6, _K_HOOK_ZYGISK);
-    PH_STK(_xp, _E_HOOK_XPOSED,  6, _K_HOOK_XPOSED);
-    PH_STK(_ls, _E_HOOK_LSPD,    4, _K_HOOK_LSPD);
-    PH_STK(_ex, _E_HOOK_EDXPOSED,8, _K_HOOK_EDXPOSED);
-    PH_STK(_fr, _E_HOOK_FRIDA,   5, _K_HOOK_FRIDA);
+    PH_AES(_ri, HOOK_RIRU);
+    PH_AES(_zy, HOOK_ZYGISK);
+    PH_AES(_xp, HOOK_XPOSED);
+    PH_AES(_ls, HOOK_LSPD);
+    PH_AES(_ex, HOOK_EDXPOSED);
+    PH_AES(_fr, HOOK_FRIDA);
     int hit = (my_strstr(name,_ri) || my_strstr(name,_zy) ||
                my_strstr(name,_xp) || my_strstr(name,_ls) ||
                my_strstr(name,_ex) || my_strstr(name,_fr));
-    PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
-    PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
+    PH_ZERO(_ri, SP_BUF_SZ);PH_ZERO(_zy, SP_BUF_SZ);PH_ZERO(_xp, SP_BUF_SZ);
+    PH_ZERO(_ls, SP_BUF_SZ);PH_ZERO(_ex, SP_BUF_SZ);PH_ZERO(_fr, SP_BUF_SZ);
     return hit;
 }
 
@@ -1101,29 +841,29 @@ static __attribute__((noinline)) void detect_riru_zygisk(void) {
     // ── 1. /proc/self/maps scan ───────────────────────────────────────────────
     // Open a fresh fd each call — avoids cross-thread fd sharing.
     {
-        PH_STK(_pm,  _E_PROC_MAPS,    15, _K_PROC_MAPS);
+        PH_AES(_pm, PROC_MAPS);
         int fd = vm_openat(AT_FDCWD, _pm, O_RDONLY | O_CLOEXEC, 0);
-        PH_ZERO(_pm, 16);
+        PH_ZERO(_pm, SP_BUF_SZ);
         if (fd >= 0) {
-            PH_STK(_ri,  _E_HOOK_RIRU,    4, _K_HOOK_RIRU);
-            PH_STK(_zy,  _E_HOOK_ZYGISK,  6, _K_HOOK_ZYGISK);
-            PH_STK(_xp,  _E_HOOK_XPOSED,  6, _K_HOOK_XPOSED);
-            PH_STK(_ls,  _E_HOOK_LSPD,    4, _K_HOOK_LSPD);
-            PH_STK(_ex,  _E_HOOK_EDXPOSED,8, _K_HOOK_EDXPOSED);
-            PH_STK(_fr,  _E_HOOK_FRIDA,   5, _K_HOOK_FRIDA);
+            PH_AES(_ri, HOOK_RIRU);
+            PH_AES(_zy, HOOK_ZYGISK);
+            PH_AES(_xp, HOOK_XPOSED);
+            PH_AES(_ls, HOOK_LSPD);
+            PH_AES(_ex, HOOK_EDXPOSED);
+            PH_AES(_fr, HOOK_FRIDA);
             char map[MAX_LINE] = "";
             while (vm_read_one_line(fd, map, MAX_LINE) > 0) {
                 if (my_strstr(map,_ri) || my_strstr(map,_zy) ||
                     my_strstr(map,_xp) || my_strstr(map,_ls) ||
                     my_strstr(map,_ex) || my_strstr(map,_fr)) {
-                    PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
-                    PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
+                    PH_ZERO(_ri, SP_BUF_SZ);PH_ZERO(_zy, SP_BUF_SZ);PH_ZERO(_xp, SP_BUF_SZ);
+                    PH_ZERO(_ls, SP_BUF_SZ);PH_ZERO(_ex, SP_BUF_SZ);PH_ZERO(_fr, SP_BUF_SZ);
                     PH_NUKE("hooking framework in /proc/self/maps: %s", map);
                     vm_close(fd); nuke_app();
                 }
             }
-            PH_ZERO(_ri,5);PH_ZERO(_zy,7);PH_ZERO(_xp,7);
-            PH_ZERO(_ls,5);PH_ZERO(_ex,9);PH_ZERO(_fr,6);
+            PH_ZERO(_ri, SP_BUF_SZ);PH_ZERO(_zy, SP_BUF_SZ);PH_ZERO(_xp, SP_BUF_SZ);
+            PH_ZERO(_ls, SP_BUF_SZ);PH_ZERO(_ex, SP_BUF_SZ);PH_ZERO(_fr, SP_BUF_SZ);
             vm_close(fd);
         }
     }
@@ -1139,14 +879,14 @@ static __attribute__((noinline)) void detect_riru_zygisk(void) {
     }
 
     // ── 3. Known install paths — stack-per-use decrypt ───────────────────────
-    #define _CHK_HOOK(enc, n, key) do {         PH_STK(_hp, enc, n, key);         int _fd = vm_openat(AT_FDCWD, _hp, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_hp, (n)+1);         if (_fd >= 0) { vm_close(_fd); PH_NUKE("hook path exists"); nuke_app(); }     } while(0)
-    _CHK_HOOK(_E_PATH_RIRU,        14, _K_PATH_RIRU);
-    _CHK_HOOK(_E_PATH_RIRU_MOD,    22, _K_PATH_RIRU_MOD);
-    _CHK_HOOK(_E_PATH_ZYGISK_MOD,  24, _K_PATH_ZYGISK_MOD);
-    _CHK_HOOK(_E_PATH_RIRU_MISC,   15, _K_PATH_RIRU_MISC);
-    _CHK_HOOK(_E_PATH_XPOSED_LIB,  28, _K_PATH_XPOSED_LIB);
-    _CHK_HOOK(_E_PATH_XPOSED_LIB64,30, _K_PATH_XPOSED_LIB64);
-    _CHK_HOOK(_E_PATH_XPOSED_JAR,  34, _K_PATH_XPOSED_JAR);
+    #define _CHK_HOOK(name) do { char _hp[SP_BUF_SZ]; ph_reveal_ns(PH_IDX_##name, SP_##name, SP_##name##_LEN, _hp); int _fd = vm_openat(AT_FDCWD, _hp, O_RDONLY|O_CLOEXEC, 0); PH_ZERO(_hp, SP_BUF_SZ); if (_fd >= 0) { vm_close(_fd); PH_NUKE("hook path exists"); nuke_app(); } } while(0)
+    _CHK_HOOK(PATH_RIRU);
+    _CHK_HOOK(PATH_RIRU_MOD);
+    _CHK_HOOK(PATH_ZYGISK_MOD);
+    _CHK_HOOK(PATH_RIRU_MISC);
+    _CHK_HOOK(PATH_XPOSED_LIB);
+    _CHK_HOOK(PATH_XPOSED_LIB64);
+    _CHK_HOOK(PATH_XPOSED_JAR);
     #undef _CHK_HOOK
 }
 
@@ -1171,41 +911,41 @@ __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_root(void) {
 
     // ── A. su binary existence — stack-per-use decrypt ───────────────────────
-    #define _CHK_SU(enc, n, key) do {         PH_STK(_su, enc, n, key);         int _fd = vm_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0);         PH_ZERO(_su, (n)+1);         if (_fd >= 0) { vm_close(_fd); PH_NUKE("su binary"); nuke_app(); }     } while(0)
-    _CHK_SU(_E_PATH_SU_LOCAL,       14, _K_PATH_SU_LOCAL);
-    _CHK_SU(_E_PATH_SU_LOCAL_BIN,   18, _K_PATH_SU_LOCAL_BIN);
-    _CHK_SU(_E_PATH_SU_LOCAL_XBIN,  19, _K_PATH_SU_LOCAL_XBIN);
-    _CHK_SU(_E_PATH_SU_SBIN,         8, _K_PATH_SU_SBIN);
-    _CHK_SU(_E_PATH_SU_SU_BIN,      10, _K_PATH_SU_SU_BIN);
-    _CHK_SU(_E_PATH_SU_SYS_BIN,     14, _K_PATH_SU_SYS_BIN);
-    _CHK_SU(_E_PATH_SU_SYS_XBIN,    15, _K_PATH_SU_SYS_XBIN);
-    _CHK_SU(_E_PATH_SU_EXT,         19, _K_PATH_SU_EXT);
-    _CHK_SU(_E_PATH_SU_FAILSAFE,    23, _K_PATH_SU_FAILSAFE);
-    _CHK_SU(_E_PATH_SU_SD,          18, _K_PATH_SU_SD);
-    _CHK_SU(_E_PATH_SU_USR,         27, _K_PATH_SU_USR);
-    _CHK_SU(_E_PATH_SU_CACHE,        9, _K_PATH_SU_CACHE);
-    _CHK_SU(_E_PATH_SU_DATA,         8, _K_PATH_SU_DATA);
-    _CHK_SU(_E_PATH_SU_DEV,          7, _K_PATH_SU_DEV);
+    #define _CHK_SU(name) do { char _su[SP_BUF_SZ]; ph_reveal_ns(PH_IDX_##name, SP_##name, SP_##name##_LEN, _su); int _fd = vm_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0); PH_ZERO(_su, SP_BUF_SZ); if (_fd >= 0) { vm_close(_fd); PH_NUKE("su binary"); nuke_app(); } } while(0)
+    _CHK_SU(PATH_SU_LOCAL);
+    _CHK_SU(PATH_SU_LOCAL_BIN);
+    _CHK_SU(PATH_SU_LOCAL_XBIN);
+    _CHK_SU(PATH_SU_SBIN);
+    _CHK_SU(PATH_SU_SU_BIN);
+    _CHK_SU(PATH_SU_SYS_BIN);
+    _CHK_SU(PATH_SU_SYS_XBIN);
+    _CHK_SU(PATH_SU_EXT);
+    _CHK_SU(PATH_SU_FAILSAFE);
+    _CHK_SU(PATH_SU_SD);
+    _CHK_SU(PATH_SU_USR);
+    _CHK_SU(PATH_SU_CACHE);
+    _CHK_SU(PATH_SU_DATA);
+    _CHK_SU(PATH_SU_DEV);
     #undef _CHK_SU
 
     // ── B. /proc/self/mounts — Magisk mount signatures ────────────────────────
     {
-        PH_STK(_mnt, _E_PATH_PROC_MOUNTS, 17, _K_PATH_PROC_MOUNTS);
+        PH_AES(_mnt, PATH_PROC_MOUNTS);
         int fd = vm_openat(AT_FDCWD, _mnt, O_RDONLY | O_CLOEXEC, 0);
-        PH_ZERO(_mnt, 18);
+        PH_ZERO(_mnt, SP_BUF_SZ);
         if (fd >= 0) {
-            PH_STK(_mg, _E_STR_MAGISK,      6, _K_STR_MAGISK);
-            PH_STK(_cm, _E_STR_CORE_MIRROR,11, _K_STR_CORE_MIRROR);
-            PH_STK(_ci, _E_STR_CORE_IMG,    8, _K_STR_CORE_IMG);
+            PH_AES(_mg, STR_MAGISK);
+            PH_AES(_cm, STR_CORE_MIRROR);
+            PH_AES(_ci, STR_CORE_IMG);
             char buf[MAX_LINE] = "";
             while (vm_read_one_line(fd, buf, MAX_LINE) > 0) {
                 if (my_strstr(buf,_mg) || my_strstr(buf,_cm) || my_strstr(buf,_ci)) {
-                    PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
+                    PH_ZERO(_mg, SP_BUF_SZ);PH_ZERO(_cm, SP_BUF_SZ);PH_ZERO(_ci, SP_BUF_SZ);
                     PH_NUKE("Magisk mount detected: %s", buf);
                     vm_close(fd); nuke_app();
                 }
             }
-            PH_ZERO(_mg,7);PH_ZERO(_cm,12);PH_ZERO(_ci,9);
+            PH_ZERO(_mg, SP_BUF_SZ);PH_ZERO(_cm, SP_BUF_SZ);PH_ZERO(_ci, SP_BUF_SZ);
             vm_close(fd);
         }
     }
@@ -1248,9 +988,14 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void cr_selinux(void) {
-    int fd = vm_openat(AT_FDCWD, "/sys/fs/selinux/enforce", O_RDONLY | O_CLOEXEC, 0);
-    if (fd < 0)
-        fd = vm_openat(AT_FDCWD, "/sys/kernel/security/selinux/enforce", O_RDONLY | O_CLOEXEC, 0);
+    PH_AES(_s1, PATH_SELINUX1);
+    int fd = vm_openat(AT_FDCWD, _s1, O_RDONLY | O_CLOEXEC, 0);
+    PH_ZERO(_s1, SP_BUF_SZ);
+    if (fd < 0) {
+        PH_AES(_s2, PATH_SELINUX2);
+        fd = vm_openat(AT_FDCWD, _s2, O_RDONLY | O_CLOEXEC, 0);
+        PH_ZERO(_s2, SP_BUF_SZ);
+    }
     if (fd < 0) return;
     char b[4] = {0}; vm_read(fd, b, 3); vm_close(fd);
     if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
@@ -1258,40 +1003,65 @@ static __attribute__((noinline)) void cr_selinux(void) {
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void cr_su_binaries(void) {
-#define _CK_SU(p) do { int _f = vm_openat(AT_FDCWD,(p),O_RDONLY|O_CLOEXEC,0); \
+#define _CK_SU(name) do { \
+    char _sp[SP_BUF_SZ]; ph_reveal_ns(PH_IDX_##name, SP_##name, SP_##name##_LEN, _sp); \
+    int _f = vm_openat(AT_FDCWD, _sp, O_RDONLY|O_CLOEXEC, 0); \
+    PH_ZERO(_sp, SP_BUF_SZ); \
     if (_f>=0){vm_close(_f);PH_NUKE("su binary");nuke_app();} } while(0)
-    _CK_SU("/data/local/su");      _CK_SU("/data/local/bin/su");
-    _CK_SU("/data/local/xbin/su"); _CK_SU("/sbin/su");
-    _CK_SU("/su/bin/su");          _CK_SU("/system/bin/su");
-    _CK_SU("/system/bin/.ext/su"); _CK_SU("/system/bin/failsafe/su");
-    _CK_SU("/system/sd/xbin/su");  _CK_SU("/system/usr/we-need-root/su");
-    _CK_SU("/system/xbin/su");     _CK_SU("/cache/su");
-    _CK_SU("/data/su");            _CK_SU("/dev/su");
+    _CK_SU(PATH_SU_LOCAL);
+    _CK_SU(PATH_SU_LOCAL_BIN);
+    _CK_SU(PATH_SU_LOCAL_XBIN);
+    _CK_SU(PATH_SU_SBIN);
+    _CK_SU(PATH_SU_SU_BIN);
+    _CK_SU(PATH_SU_SYS_BIN);
+    _CK_SU(PATH_SU_EXT);
+    _CK_SU(PATH_SU_FAILSAFE);
+    _CK_SU(PATH_SU_SD);
+    _CK_SU(PATH_SU_USR);
+    _CK_SU(PATH_SU_SYS_XBIN);
+    _CK_SU(PATH_SU_CACHE);
+    _CK_SU(PATH_SU_DATA);
+    _CK_SU(PATH_SU_DEV);
 #undef _CK_SU
 }
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void cr_root_dirs(void) {
-#define _CK_DIR(p) do { int _f = vm_openat(AT_FDCWD,(p),O_RDONLY|O_CLOEXEC|O_DIRECTORY,0); \
+#define _CK_DIR(name) do { \
+    char _dp[SP_BUF_SZ]; ph_reveal_ns(PH_IDX_##name, SP_##name, SP_##name##_LEN, _dp); \
+    int _f = vm_openat(AT_FDCWD, _dp, O_RDONLY|O_CLOEXEC|O_DIRECTORY, 0); \
+    PH_ZERO(_dp, SP_BUF_SZ); \
     if (_f>=0){vm_close(_f);PH_NUKE("root dir exists");nuke_app();} } while(0)
-    _CK_DIR("/data/adb/magisk");  _CK_DIR("/data/adb/ksu");
-    _CK_DIR("/data/adb/apd");     _CK_DIR("/data/adb/lspd");
-    _CK_DIR("/sbin/.magisk");     _CK_DIR("/dev/.magisk");
-    _CK_DIR("/system/framework/XposedBridge.jar");
-    _CK_DIR("/system/xposed.prop");
+    _CK_DIR(PATH_MAGISK);
+    _CK_DIR(PATH_KSU);
+    _CK_DIR(PATH_APD);
+    _CK_DIR(PATH_LSPD_DIR);
+    _CK_DIR(PATH_MAGISK_SBIN);
+    _CK_DIR(PATH_MAGISK_DEV);
+    _CK_DIR(PATH_XPOSED_JAR);
+    _CK_DIR(PATH_XPOSED_PROP);
 #undef _CK_DIR
 }
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void cr_mounts(void) {
-    int mfd = vm_openat(AT_FDCWD, "/proc/self/mounts", O_RDONLY | O_CLOEXEC, 0);
+    PH_AES(_mp, PATH_PROC_MOUNTS);
+    int mfd = vm_openat(AT_FDCWD, _mp, O_RDONLY | O_CLOEXEC, 0);
+    PH_ZERO(_mp, SP_BUF_SZ);
     if (mfd < 0) return;
+    /* Decrypt strstr targets once before the loop — no repeated stack alloc */
+    PH_AES(_m_mag, STR_MAGISK);
+    PH_AES(_m_cmr, STR_CORE_MIRROR);
+    PH_AES(_m_cim, STR_CORE_IMG);
+    PH_AES(_m_lspd, HOOK_LSPD);
+    PH_AES(_m_zyg, HOOK_ZYGISK);
+    PH_AES(_m_xpo, HOOK_XPOSED);
     char buf[512]; int pos = 0; ssize_t n;
     while ((n = vm_read(mfd, buf + pos, (ssize_t)sizeof(buf) - pos - 1)) > 0) {
         buf[pos + n] = '\0';
-        if (my_strstr(buf,"magisk") || my_strstr(buf,"core/mirror") ||
-            my_strstr(buf,"core/img") || my_strstr(buf,"lspd")  ||
-            my_strstr(buf,"zygisk")  || my_strstr(buf,"xposed")) {
+        if (my_strstr(buf, _m_mag) || my_strstr(buf, _m_cmr) ||
+            my_strstr(buf, _m_cim) || my_strstr(buf, _m_lspd) ||
+            my_strstr(buf, _m_zyg) || my_strstr(buf, _m_xpo)) {
             vm_close(mfd); PH_NUKE("mount marker found"); nuke_app();
         }
         if (pos + n > 11) {
@@ -1299,17 +1069,23 @@ static __attribute__((noinline)) void cr_mounts(void) {
             pos = 11;
         } else { pos = 0; }
     }
+    PH_ZERO(_m_mag, SP_BUF_SZ); PH_ZERO(_m_cmr, SP_BUF_SZ); PH_ZERO(_m_cim, SP_BUF_SZ);
+    PH_ZERO(_m_lspd, SP_BUF_SZ); PH_ZERO(_m_zyg, SP_BUF_SZ); PH_ZERO(_m_xpo, SP_BUF_SZ);
     vm_close(mfd);
 }
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void cr_capeff(void) {
-    int sfd = vm_openat(AT_FDCWD, "/proc/self/status", O_RDONLY | O_CLOEXEC, 0);
+    PH_AES(_cst, PROC_SELFSTATUS);
+    int sfd = vm_openat(AT_FDCWD, _cst, O_RDONLY | O_CLOEXEC, 0);
+    PH_ZERO(_cst, SP_BUF_SZ);
     if (sfd < 0) return;
     char sb[2048]; ssize_t sn = vm_read(sfd, sb, sizeof(sb)-1); vm_close(sfd);
     if (sn <= 0) return;
     sb[sn] = '\0';
-    const char *cap = my_strstr(sb, "CapEff:");
+    PH_AES(_ceff, STR_CAPEFF);
+    const char *cap = my_strstr(sb, _ceff);
+    PH_ZERO(_ceff, SP_BUF_SZ);
     if (!cap) return;
     cap += 7; while (*cap == ' ' || *cap == '\t') cap++;
     while (*cap == '0') cap++;
@@ -1318,12 +1094,17 @@ static __attribute__((noinline)) void cr_capeff(void) {
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void cr_buildprop(void) {
-    int bfd = vm_openat(AT_FDCWD, "/system/build.prop", O_RDONLY | O_CLOEXEC, 0);
+    PH_AES(_bp, PATH_BUILD_PROP);
+    int bfd = vm_openat(AT_FDCWD, _bp, O_RDONLY | O_CLOEXEC, 0);
+    PH_ZERO(_bp, SP_BUF_SZ);
     if (bfd < 0) return;
+    PH_AES(_tk, STR_TEST_KEYS);
+    PH_AES(_dk, STR_DEV_KEYS);
     char bb[512]; int bp = 0; ssize_t bn;
     while ((bn = vm_read(bfd, bb + bp, (ssize_t)sizeof(bb) - bp - 1)) > 0) {
         bb[bp + bn] = '\0';
-        if (my_strstr(bb,"test-keys") || my_strstr(bb,"dev-keys")) {
+        if (my_strstr(bb, _tk) || my_strstr(bb, _dk)) {
+            PH_ZERO(_tk, SP_BUF_SZ); PH_ZERO(_dk, SP_BUF_SZ);
             vm_close(bfd); PH_NUKE("build.prop bad key"); nuke_app();
         }
         if (bp + bn > 9) {
@@ -1331,6 +1112,7 @@ static __attribute__((noinline)) void cr_buildprop(void) {
             bp = 9;
         } else { bp = 0; }
     }
+    PH_ZERO(_tk, SP_BUF_SZ); PH_ZERO(_dk, SP_BUF_SZ);
     vm_close(bfd);
 }
 
@@ -1345,11 +1127,26 @@ static __attribute__((noinline)) void check_rooted(void) {
     cr_buildprop();
 }
 
+/* vm_spawn_watcher — VMP-virtualized so the constructor body shows zero named
+   PLT imports in ARM64 disassembly.
+   Before this fix, detect_frida_init compiled to:
+       bl sym.imp.prctl            ← named, fixed offset, trivially found
+       bl sym.imp.pthread_create   ← named, fixed offset — 4-byte NOP kills all detection
+   After this fix, detect_frida_init compiles to:
+       bl fcn.AAAA   ← stripped vm_prctl, no sym.imp label
+       bl fcn.BBBB   ← stripped vm_spawn_watcher, no sym.imp label
+   pthread_create is called inside the VM as call_native(vm_pthread_create) —
+   no bl pthread_create exists at any fixed binary offset an attacker can NOP. */
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void vm_spawn_watcher(void) {
+    pthread_t t;
+    vm_pthread_create(&t, NULL, detect_frida_loop, NULL);
+}
+
 __attribute__((constructor))
 void detect_frida_init(void) {
-    prctl(PR_SET_DUMPABLE, 0);
-    pthread_t t;
-    pthread_create(&t, NULL, detect_frida_loop, NULL);
+    vm_prctl(PR_SET_DUMPABLE, 0);
+    vm_spawn_watcher();
 }
 
 // ?
