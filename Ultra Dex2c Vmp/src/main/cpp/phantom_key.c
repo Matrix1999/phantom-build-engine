@@ -1382,8 +1382,6 @@ static const uint32_t K256[64] = {
 };
 
 __attribute__((noinline))
-__attribute__((noinline))
-__attribute__((annotate("+vm_virtualize")))
 static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
     uint32_t w[64];
     int i;
@@ -1410,8 +1408,6 @@ static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
     h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
 }
 
-__attribute__((noinline))
-__attribute__((annotate("+vm_virtualize")))
 static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
     uint32_t h[8] = {
         0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
@@ -1421,10 +1417,10 @@ static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
     size_t i;
     uint64_t bit_len = (uint64_t)len * 8;
     while (len >= 64) { sha256_block(h, msg); msg += 64; len -= 64; }
-    my_memset(block, 0, 64);
-    for (i = 0; i < len; i++) block[i] = msg[i];
+    memset(block, 0, 64);
+    memcpy(block, msg, len);
     block[len] = 0x80;
-    if (len >= 56) { sha256_block(h, block); my_memset(block, 0, 64); }
+    if (len >= 56) { sha256_block(h, block); memset(block, 0, 64); }
     for (i = 0; i < 8; i++) block[56+i] = (uint8_t)(bit_len >> (56 - i*8));
     sha256_block(h, block);
     for (i = 0; i < 8; i++) {
