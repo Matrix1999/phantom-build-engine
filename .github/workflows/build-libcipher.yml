@@ -81,7 +81,6 @@ jobs:
           CPPSRC
           for TARGET in aarch64-linux-android26 armv7a-linux-androideabi21; do
             AMICE_VM_VIRTUALIZE=true \
-            AMICE_VM_FLATTEN=true \
             AMICE_VM_EMIT_MARKERS=true \
             AMICE_VM_DUMP_BYTECODE=true \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
@@ -101,7 +100,6 @@ jobs:
           echo "══════════════════════════════════════════════════════"
 
           AMICE_VM_VIRTUALIZE=true \
-          AMICE_VM_FLATTEN=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
@@ -166,7 +164,6 @@ jobs:
           echo "══════════════════════════════════════════════════════"
 
           AMICE_VM_VIRTUALIZE=true \
-          AMICE_VM_FLATTEN=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
