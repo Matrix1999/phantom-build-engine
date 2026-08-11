@@ -316,20 +316,84 @@ __attribute__((always_inline)) static inline int my_connect(int fd, const struct
 // Low-level I/O helpers
 // ?
 
-/* vm_pthread_create — noinline bridge keeps bl sym.imp.pthread_create out of
-   detect_frida_init's ARM64. When vm_spawn_watcher (VMP'd) calls this, amice
-   emits a call_native bytecode — no direct bl pthread_create at any fixed
-   binary offset.  Same pattern as vm_getpid / vm_nanosleep / vm_mprotect. */
+/* ── Hidden symbol resolver (2026) ────────────────────────────────────────
+   Resolves pthread_create + prctl at runtime via dl_iterate_phdr ELF walk.
+   No dlopen / dlsym needed — removes both symbols from the PLT import table.
+   dl_iterate_phdr is already imported for hook_phdr_cb, so no new entry.    */
+typedef struct { const char *lib; const char *sym; void *addr; } _ph_res_t;
+
+static int _ph_res_cb(struct dl_phdr_info *info, size_t sz, void *ud) {
+    (void)sz;
+    _ph_res_t *ctx = (void *)ud;
+    if (!info->dlpi_name) return 0;
+    /* match soname suffix */
+    const char *n = info->dlpi_name;
+    size_t nl = 0; while (n[nl]) nl++;
+    size_t ll = 0; const char *l = ctx->lib; while (l[ll]) ll++;
+    if (nl < ll || my_strncmp(n + nl - ll, ctx->lib, ll + 1) != 0) return 0;
+
+    ElfW(Addr) base = (ElfW(Addr))info->dlpi_addr;
+    ElfW(Sym)  *sym  = NULL;
+    const char *str  = NULL;
+    uint32_t   *hash = NULL;
+
+    for (ElfW(Half) i = 0; i < info->dlpi_phnum; i++) {
+        if (info->dlpi_phdr[i].p_type != PT_DYNAMIC) continue;
+        ElfW(Dyn) *dyn = (ElfW(Dyn)*)(base + info->dlpi_phdr[i].p_vaddr);
+        for (; dyn->d_tag != DT_NULL; dyn++) {
+            if      (dyn->d_tag == DT_SYMTAB) sym  = (ElfW(Sym) *)dyn->d_un.d_ptr;
+            else if (dyn->d_tag == DT_STRTAB) str  = (const char*)dyn->d_un.d_ptr;
+            else if (dyn->d_tag == DT_HASH)   hash = (uint32_t   *)dyn->d_un.d_ptr;
+        }
+        break;
+    }
+    if (!sym || !str || !hash) return 0;
+
+    uint32_t nchain = hash[1];
+    const char *want = ctx->sym;
+    size_t wl = 0; while (want[wl]) wl++;
+    for (uint32_t i = 0; i < nchain; i++) {
+        if (!sym[i].st_name || !sym[i].st_value) continue;
+        if (my_strncmp(str + sym[i].st_name, want, wl + 1) == 0) {
+            ctx->addr = (void *)(base + (ElfW(Addr))sym[i].st_value);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* vm_pthread_create — resolves pthread_create at runtime via ELF symtab walk.
+   No PLT import: sym.imp.pthread_create is gone from the binary.
+   Names built char-by-char on stack so no .rodata string literal leaks.     */
 static __attribute__((noinline)) int vm_pthread_create(
         pthread_t *t, const pthread_attr_t *attr,
         void *(*fn)(void *), void *arg) {
-    return pthread_create(t, attr, fn, arg);
+    static volatile void *_cached = NULL;
+    if (!_cached) {
+        char _lib[8];
+        _lib[0]='l';_lib[1]='i';_lib[2]='b';_lib[3]='c';
+        _lib[4]='.';_lib[5]='s';_lib[6]='o';_lib[7]='\0';
+        char _sym[16];
+        _sym[0]='p';_sym[1]='t';_sym[2]='h';_sym[3]='r';_sym[4]='e';
+        _sym[5]='a';_sym[6]='d';_sym[7]='_';_sym[8]='c';_sym[9]='r';
+        _sym[10]='e';_sym[11]='a';_sym[12]='t';_sym[13]='e';_sym[14]='\0';
+        _ph_res_t ctx = { _lib, _sym, NULL };
+        dl_iterate_phdr(_ph_res_cb, &ctx);
+        _cached = ctx.addr;
+    }
+    if (!_cached) return -1;
+    typedef int (*_pth_t)(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
+    return ((_pth_t)(void *)_cached)(t, attr, fn, arg);
 }
 
-/* vm_prctl — same reason: keeps bl sym.imp.prctl out of detect_frida_init so
-   the constructor shows zero named PLT imports in ARM64 disassembly. */
+/* vm_prctl — raw syscall via existing raw_syscall_5 (arm64) / syscall() (arm32).
+   Removes prctl from the PLT import table entirely.                          */
 static __attribute__((noinline)) int vm_prctl(int opt, unsigned long a2) {
-    return prctl(opt, a2);
+#if defined(__aarch64__)
+    return (int)raw_syscall_5(__NR_prctl, (long)opt, (long)a2, 0L, 0L, 0L);
+#else
+    return (int)syscall(__NR_prctl, (long)opt, (long)a2, 0L, 0L, 0L);
+#endif
 }
 
 /* vm_read_one_line: noinline bridge so VM-virtualized callers see call_native,
@@ -545,8 +609,10 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
             {
                 char comm_path[MAX_LENGTH] = "";
                 PH_AES(_ctask, PROC_TASK);
+                PH_AES(_comm_sfx, COMM_SUFFIX);
                 my_path_cat3(comm_path, MAX_LENGTH,
-                             _ctask, de->d_name, "/comm");
+                             _ctask, de->d_name, _comm_sfx);
+                PH_ZERO(_comm_sfx, SP_BUF_SZ);
                 PH_ZERO(_ctask, SP_BUF_SZ);
                 int fd = vm_openat(AT_FDCWD, comm_path, O_RDONLY | O_CLOEXEC, 0);
                 if (fd >= 0) {
@@ -566,8 +632,10 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
             {
                 char status_path[MAX_LENGTH] = "";
                 PH_AES(_stask, PROC_TASK);
+                PH_AES(_stat_sfx, STATUS_SUFFIX);
                 my_path_cat3(status_path, MAX_LENGTH,
-                             _stask, de->d_name, "/status");
+                             _stask, de->d_name, _stat_sfx);
+                PH_ZERO(_stat_sfx, SP_BUF_SZ);
                 PH_ZERO(_stask, SP_BUF_SZ);
                 int fd = vm_openat(AT_FDCWD, status_path, O_RDONLY | O_CLOEXEC, 0);
                 if (fd >= 0) {
@@ -1224,7 +1292,9 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeWipeArtDex(
 {
     (void)env; (void)clazz;
 
-    int fd = vm_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
+    PH_AES(_maps, PROC_MAPS);
+    int fd = vm_openat(AT_FDCWD, _maps, O_RDONLY | O_CLOEXEC, 0);
+    PH_ZERO(_maps, SP_BUF_SZ);
     if (fd < 0) return;
 
     char line[MAX_LINE];
@@ -1543,7 +1613,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         jobject      j_parent_cl)
 {
     (void)clazz;
-    prctl(PR_SET_DUMPABLE, 0);
+    vm_prctl(PR_SET_DUMPABLE, 0);
 
     jobject  result_cl    = NULL;
     uint8_t  salt[16]     = {0};
@@ -1663,7 +1733,9 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
 
     /* ── 7. Wipe ART's internal anonymous mmap copies (Layer-2b) ─────────── */
     {
-        int mfd = vm_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY | O_CLOEXEC, 0);
+        PH_AES(_maps2, PROC_MAPS);
+        int mfd = vm_openat(AT_FDCWD, _maps2, O_RDONLY | O_CLOEXEC, 0);
+        PH_ZERO(_maps2, SP_BUF_SZ);
         if (mfd >= 0) {
             char ml[MAX_LINE];
             while (vm_read_one_line(mfd, ml, MAX_LINE) > 0) {
@@ -1998,7 +2070,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeDecryptShard(
         jbyteArray j_encrypted)
 {
     // Belt-and-suspenders: re-seal /proc/self/mem on every decrypt call.
-    prctl(PR_SET_DUMPABLE, 0);
+    vm_prctl(PR_SET_DUMPABLE, 0);
 
     jbyteArray result = NULL;
 
