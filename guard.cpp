@@ -3529,45 +3529,94 @@ static __attribute__((noinline)) void vm_run_antik(const antik_ctx_t *ctx) {
 // identical in shape to vm_run() and vm_run_startup() and virtualizes them.
 // The underlying AES lvm_exec dispatch still runs inside the wrapped function.
 // ─────────────────────────────────────────────────────────────────────────────
-// vm_gate_* stubs — padded with a volatile sentinel array so each function
-// exceeds amice's VMP complexity threshold and gets virtualized.
-// The sentinel is zero-initialized → __builtin_expect branch is never taken
-// at runtime → semantics unchanged.  The volatile reads/writes + multi-BB
-// structure push IR complexity past the heuristic threshold.
+// vm_gate_* — structured after vm_run_child_kill (the proven 2-BB VMP pattern).
+// Each gate is split into two noinline LVM_CALL helpers + a thin dispatcher.
+// Dispatcher has exactly 2 BBs → same IR shape that gets vm_run_child_kill VMP'd.
+// Double LVM_CALL = double verification (stronger) + VMP heuristic triggered.
+
+static __attribute__((noinline)) void _vg_mapscan_a(void) {
+    LVM_CALL(LBC_MAPSCAN_KHI, LBC_MAPSCAN_KLO,
+             LBC_MAPSCAN_IHI, LBC_MAPSCAN_ILO,
+             LBC_MAPSCAN_ENC, LBC_MAPSCAN_LEN,
+             LBC_MAPSCAN_CS);
+}
+static __attribute__((noinline)) void _vg_mapscan_b(void) {
+    LVM_CALL(LBC_MAPSCAN_KHI, LBC_MAPSCAN_KLO,
+             LBC_MAPSCAN_IHI, LBC_MAPSCAN_ILO,
+             LBC_MAPSCAN_ENC, LBC_MAPSCAN_LEN,
+             LBC_MAPSCAN_CS);
+}
 static __attribute__((noinline)) void vm_gate_mapscan(void) {
-    volatile uint64_t _s[8] = {};
-    if (__builtin_expect(_s[0]|_s[1]|_s[2]|_s[3]|_s[4]|_s[5]|_s[6]|_s[7], 0)) return;
-    vm_run_mapscan();
-    _s[0] = 1;
-    __asm__ volatile("" ::: "memory");
+    _vg_mapscan_a();
+    _vg_mapscan_b();
+}
+
+static __attribute__((noinline)) void _vg_vccheck_a(void) {
+    LVM_CALL(LBC_VCCHECK_KHI, LBC_VCCHECK_KLO,
+             LBC_VCCHECK_IHI, LBC_VCCHECK_ILO,
+             LBC_VCCHECK_ENC, LBC_VCCHECK_LEN,
+             LBC_VCCHECK_CS);
+}
+static __attribute__((noinline)) void _vg_vccheck_b(void) {
+    LVM_CALL(LBC_VCCHECK_KHI, LBC_VCCHECK_KLO,
+             LBC_VCCHECK_IHI, LBC_VCCHECK_ILO,
+             LBC_VCCHECK_ENC, LBC_VCCHECK_LEN,
+             LBC_VCCHECK_CS);
 }
 static __attribute__((noinline)) void vm_gate_vccheck(void) {
-    volatile uint64_t _s[8] = {};
-    if (__builtin_expect(_s[0]|_s[1]|_s[2]|_s[3]|_s[4]|_s[5]|_s[6]|_s[7], 0)) return;
-    vm_run_vccheck();
-    _s[0] = 1;
-    __asm__ volatile("" ::: "memory");
+    _vg_vccheck_a();
+    _vg_vccheck_b();
+}
+
+static __attribute__((noinline)) void _vg_soint_a(void) {
+    LVM_CALL(LBC_SOINT_KHI, LBC_SOINT_KLO,
+             LBC_SOINT_IHI, LBC_SOINT_ILO,
+             LBC_SOINT_ENC, LBC_SOINT_LEN,
+             LBC_SOINT_CS);
+}
+static __attribute__((noinline)) void _vg_soint_b(void) {
+    LVM_CALL(LBC_SOINT_KHI, LBC_SOINT_KLO,
+             LBC_SOINT_IHI, LBC_SOINT_ILO,
+             LBC_SOINT_ENC, LBC_SOINT_LEN,
+             LBC_SOINT_CS);
 }
 static __attribute__((noinline)) void vm_gate_so_integrity(void) {
-    volatile uint64_t _s[8] = {};
-    if (__builtin_expect(_s[0]|_s[1]|_s[2]|_s[3]|_s[4]|_s[5]|_s[6]|_s[7], 0)) return;
-    vm_run_so_integrity();
-    _s[0] = 1;
-    __asm__ volatile("" ::: "memory");
+    _vg_soint_a();
+    _vg_soint_b();
+}
+
+static __attribute__((noinline)) void _vg_sigchk_a(void) {
+    LVM_CALL(LBC_SIGCHK_KHI, LBC_SIGCHK_KLO,
+             LBC_SIGCHK_IHI, LBC_SIGCHK_ILO,
+             LBC_SIGCHK_ENC, LBC_SIGCHK_LEN,
+             LBC_SIGCHK_CS);
+}
+static __attribute__((noinline)) void _vg_sigchk_b(void) {
+    LVM_CALL(LBC_SIGCHK_KHI, LBC_SIGCHK_KLO,
+             LBC_SIGCHK_IHI, LBC_SIGCHK_ILO,
+             LBC_SIGCHK_ENC, LBC_SIGCHK_LEN,
+             LBC_SIGCHK_CS);
 }
 static __attribute__((noinline)) void vm_gate_sigcheck(void) {
-    volatile uint64_t _s[8] = {};
-    if (__builtin_expect(_s[0]|_s[1]|_s[2]|_s[3]|_s[4]|_s[5]|_s[6]|_s[7], 0)) return;
-    vm_run_sigcheck();
-    _s[0] = 1;
-    __asm__ volatile("" ::: "memory");
+    _vg_sigchk_a();
+    _vg_sigchk_b();
+}
+
+static __attribute__((noinline)) void _vg_antik_a(const antik_ctx_t *c) {
+    LVM_CALL_CTX(LBC_ANTIK_KHI, LBC_ANTIK_KLO,
+                 LBC_ANTIK_IHI, LBC_ANTIK_ILO,
+                 LBC_ANTIK_ENC, LBC_ANTIK_LEN,
+                 LBC_ANTIK_CS, c);
+}
+static __attribute__((noinline)) void _vg_antik_b(const antik_ctx_t *c) {
+    LVM_CALL_CTX(LBC_ANTIK_KHI, LBC_ANTIK_KLO,
+                 LBC_ANTIK_IHI, LBC_ANTIK_ILO,
+                 LBC_ANTIK_ENC, LBC_ANTIK_LEN,
+                 LBC_ANTIK_CS, c);
 }
 static __attribute__((noinline)) void vm_gate_antik(const antik_ctx_t *c) {
-    volatile uint64_t _s[8] = {};
-    if (__builtin_expect(_s[0]|_s[1]|_s[2]|_s[3]|_s[4]|_s[5]|_s[6]|_s[7], 0)) return;
-    vm_run_antik(c);
-    _s[0] = 1;
-    __asm__ volatile("" ::: "memory");
+    _vg_antik_a(c);
+    _vg_antik_b(c);
 }
 
 // Volatile JNI dispatch table — one slot per JNI security check.
