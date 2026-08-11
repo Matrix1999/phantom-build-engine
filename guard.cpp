@@ -1792,7 +1792,10 @@ static void _init_lvm_dispatch(void) {
 // VCore/VirtualApp check — LVCFULL opcode inside an lvm_exec program.
 // fonts_init() calls this instead of check_render_backend() directly so
 // a disassembler sees only an opaque indirect VM call, not a named check.
-static __attribute__((noinline)) void vm_run_vccheck(void) {
+// annotate("vm"): force amice to virtualize these regardless of complexity
+// threshold — the 64-byte LVM_CALL stub is below amice's default BB floor,
+// so without the annotation it stays native and exposes a 4-byte br patch point.
+static __attribute__((noinline, annotate("vm"))) void vm_run_vccheck(void) {
     LVM_CALL(LBC_VCCHECK_KHI, LBC_VCCHECK_KLO,
              LBC_VCCHECK_IHI, LBC_VCCHECK_ILO,
              LBC_VCCHECK_ENC, LBC_VCCHECK_LEN,
@@ -1803,7 +1806,7 @@ static __attribute__((noinline)) void vm_run_vccheck(void) {
 // fonts_init() calls this wrapper so a disassembler sees only an opaque
 // indirect VM call — no gvm_sig_check or detect_sig_tamper in fonts_init() disasm.
 // Bytecode: LSIGCHK → JZ+2 → CRASH → HALT  (crash if tamper detected).
-static __attribute__((noinline)) void vm_run_sigcheck(void) {
+static __attribute__((noinline, annotate("vm"))) void vm_run_sigcheck(void) {
     LVM_CALL(LBC_SIGCHK_KHI, LBC_SIGCHK_KLO,
              LBC_SIGCHK_IHI, LBC_SIGCHK_ILO,
              LBC_SIGCHK_ENC, LBC_SIGCHK_LEN,
@@ -1811,23 +1814,15 @@ static __attribute__((noinline)) void vm_run_sigcheck(void) {
 }
 
 // SO self-integrity — LSOINT opcode (0x5D) inside a dedicated lvm_exec program.
-// fonts_init() calls this instead of calling gvm_so_integrity() directly so
-// the disassembler sees only an opaque indirect VM call — zero cbnz branch,
-// zero crash_now() call site, zero gvm_so_integrity reference in ARM64 disasm.
-// Bytecode: LSOINT → HALT  (crash happens inside the 0x5D case in lvm_exec).
-static __attribute__((noinline)) void vm_run_so_integrity(void) {
+static __attribute__((noinline, annotate("vm"))) void vm_run_so_integrity(void) {
     LVM_CALL(LBC_SOINT_KHI, LBC_SOINT_KLO,
              LBC_SOINT_IHI, LBC_SOINT_ILO,
              LBC_SOINT_ENC, LBC_SOINT_LEN,
              LBC_SOINT_CS);
 }
 
-// DPatch/libpandora map scan — LMAPSCAN opcode (0x5E) inside a dedicated
-// lvm_exec program. fonts_init() calls this instead of _cipher_map_layout_scan()
-// directly so the disassembler sees only an opaque indirect VM call:
-//   zero bl _cipher_map_layout_scan, zero cbnz, zero crash_now in ARM64 disasm.
-// Bytecode: LMAPSCAN → HALT  (crash happens inside the 0x5E case in lvm_exec).
-static __attribute__((noinline)) void vm_run_mapscan(void) {
+// DPatch/libpandora map scan — LMAPSCAN opcode (0x5E).
+static __attribute__((noinline, annotate("vm"))) void vm_run_mapscan(void) {
     LVM_CALL(LBC_MAPSCAN_KHI, LBC_MAPSCAN_KLO,
              LBC_MAPSCAN_IHI, LBC_MAPSCAN_ILO,
              LBC_MAPSCAN_ENC, LBC_MAPSCAN_LEN,
@@ -1871,7 +1866,9 @@ static __attribute__((noinline)) void vm_run_child_kill(pid_t parent_pid) {
 // late-attach detection.
 // ════════════════════════════════════════════════════════════════════════════
 
-static void *watchdog_thread(void *) {
+// annotate("vm"): VMP-virtualize the watchdog loop so the infinite-loop branch
+// (faffff17 / 4-byte backward b) is hidden inside VM bytecode, not ARM64 .text.
+static __attribute__((noinline, annotate("vm"))) void *watchdog_thread(void *) {
     struct timespec ts = {3, 0};
     for (;;) {
         nanosleep(&ts, NULL);
@@ -3077,11 +3074,13 @@ static __attribute__((noinline)) int gvm_sig_check(void) {
 }
 
 // ── VM gate forward declarations ──────────────────────────────────────────────
-static void vm_gate_mapscan(void);
-static void vm_gate_vccheck(void);
-static void vm_gate_so_integrity(void);
-static void vm_gate_sigcheck(void);
-static void vm_gate_antik(const antik_ctx_t *c);
+// annotate("vm") on declarations ensures amice marks them in the IR before
+// seeing the definition — belt-and-suspenders alongside the definition attr.
+static __attribute__((annotate("vm"))) void vm_gate_mapscan(void);
+static __attribute__((annotate("vm"))) void vm_gate_vccheck(void);
+static __attribute__((annotate("vm"))) void vm_gate_so_integrity(void);
+static __attribute__((annotate("vm"))) void vm_gate_sigcheck(void);
+static __attribute__((annotate("vm"))) void vm_gate_antik(const antik_ctx_t *c);
 
 // ════════════════════════════════════════════════════════════════════════════
 // Constructor — runs when .so loads, before JNI_OnLoad, before any Java code
@@ -3529,23 +3528,26 @@ static __attribute__((noinline)) void vm_run_antik(const antik_ctx_t *ctx) {
 // identical in shape to vm_run() and vm_run_startup() and virtualizes them.
 // The underlying AES lvm_exec dispatch still runs inside the wrapped function.
 // ─────────────────────────────────────────────────────────────────────────────
-static __attribute__((noinline)) void vm_gate_mapscan(void) {
+// annotate("vm"): force amice VMP on each gate regardless of size threshold.
+// Without this the 20-byte stub stays native and exposes a 4-byte bl → nop
+// patch point that silences the check with a single hex edit.
+static __attribute__((noinline, annotate("vm"))) void vm_gate_mapscan(void) {
     vm_run_mapscan();
     __asm__ volatile("" ::: "memory");
 }
-static __attribute__((noinline)) void vm_gate_vccheck(void) {
+static __attribute__((noinline, annotate("vm"))) void vm_gate_vccheck(void) {
     vm_run_vccheck();
     __asm__ volatile("" ::: "memory");
 }
-static __attribute__((noinline)) void vm_gate_so_integrity(void) {
+static __attribute__((noinline, annotate("vm"))) void vm_gate_so_integrity(void) {
     vm_run_so_integrity();
     __asm__ volatile("" ::: "memory");
 }
-static __attribute__((noinline)) void vm_gate_sigcheck(void) {
+static __attribute__((noinline, annotate("vm"))) void vm_gate_sigcheck(void) {
     vm_run_sigcheck();
     __asm__ volatile("" ::: "memory");
 }
-static __attribute__((noinline)) void vm_gate_antik(const antik_ctx_t *c) {
+static __attribute__((noinline, annotate("vm"))) void vm_gate_antik(const antik_ctx_t *c) {
     vm_run_antik(c);
     __asm__ volatile("" ::: "memory");
 }
