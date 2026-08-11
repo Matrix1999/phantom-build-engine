@@ -1381,9 +1381,19 @@ static const uint32_t K256[64] = {
     0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 };
 
+/* ── sha256 split into three noinline pieces so amice x0-x31 limit is not hit ──
+   sha256_block as a monolith has w[64] stack array + 8 hash vars + temporaries
+   = too many simultaneous live values for the VM register file.
+   Split:
+     _sha_expand   — w[] message schedule expansion (pointer-based, ~8 live regs)
+     _sha_compress — 64-round compression via pointers (~17 live regs max)
+     sha256_block  — thin noinline dispatcher; amice sees it as call_native thunk
+     sha256        — driver: +vm_virtualize, calls sha256_block as call_native   */
+
+/* Step A: expand message schedule into caller-supplied w[64] */
 __attribute__((noinline))
-static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
-    uint32_t w[64];
+__attribute__((annotate("+vm_virtualize")))
+static void _sha_expand(uint32_t *w, const uint8_t *data) {
     int i;
     for (i = 0; i < 16; i++)
         w[i] = ((uint32_t)data[i*4]<<24)|((uint32_t)data[i*4+1]<<16)
@@ -1393,7 +1403,14 @@ static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
         uint32_t s1 = ROR32(w[i-2],17)^ROR32(w[i-2],19)^(w[i-2]>>10);
         w[i] = w[i-16]+s0+w[i-7]+s1;
     }
+}
+
+/* Step B: 64-round compression; w and K256 accessed via pointer loads only */
+__attribute__((noinline))
+__attribute__((annotate("+vm_virtualize")))
+static void _sha_compress(uint32_t *h, const uint32_t *w) {
     uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+    int i;
     for (i = 0; i < 64; i++) {
         uint32_t S1  = ROR32(e,6)^ROR32(e,11)^ROR32(e,25);
         uint32_t ch  = (e&f)^(~e&g);
@@ -1408,6 +1425,16 @@ static void sha256_block(uint32_t h[8], const uint8_t data[64]) {
     h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
 }
 
+/* Thin dispatcher — noinline so amice treats it as call_native from sha256 */
+static __attribute__((noinline)) void sha256_block(uint32_t h[8], const uint8_t data[64]) {
+    uint32_t w[64];
+    _sha_expand(w, data);
+    _sha_compress(h, w);
+}
+
+/* sha256 driver — +vm_virtualize, no libc calls (my_memset + byte loop) */
+__attribute__((noinline))
+__attribute__((annotate("+vm_virtualize")))
 static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
     uint32_t h[8] = {
         0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
@@ -1417,10 +1444,10 @@ static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
     size_t i;
     uint64_t bit_len = (uint64_t)len * 8;
     while (len >= 64) { sha256_block(h, msg); msg += 64; len -= 64; }
-    memset(block, 0, 64);
-    memcpy(block, msg, len);
+    my_memset(block, 0, 64);
+    for (i = 0; i < len; i++) block[i] = msg[i];
     block[len] = 0x80;
-    if (len >= 56) { sha256_block(h, block); memset(block, 0, 64); }
+    if (len >= 56) { sha256_block(h, block); my_memset(block, 0, 64); }
     for (i = 0; i < 8; i++) block[56+i] = (uint8_t)(bit_len >> (56 - i*8));
     sha256_block(h, block);
     for (i = 0; i < 8; i++) {
