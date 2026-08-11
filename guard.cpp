@@ -49,11 +49,11 @@
 #include <dirent.h>
 #include <math.h>
 #include <sys/syscall.h>
-// _lvm_kern_gate — SVC #0 helper for the forked child watchdog.
+// _lvm_toolkit_gate — SVC #0 helper for the forked child watchdog.
 // optnone: amice skips this function entirely (same as crash_now).
 // Constants are computed via inline volatile splits so the compiler cannot
 // emit a plain MOVZ #9 / MOVZ #129 even without any obfuscation pass.
-static __attribute__((noinline)) void _lvm_kern_gate(long pid) {
+static __attribute__((noinline)) void _lvm_toolkit_gate(long pid) {
 #if defined(__aarch64__)
     {
         volatile uint32_t _sh = 0x0Fu, _sl = 0x06u;
@@ -1838,12 +1838,12 @@ static __attribute__((noinline)) void vm_run_mapscan(void) {
 // with SIGKILL-to-parent + _exit() instead of crash_now(). Patching
 // crash_now() in the parent binary cannot silence this independent child.
 //
-// kill(ppid, SIGKILL) is replaced by _lvm_kern_gate():
+// kill(ppid, SIGKILL) is replaced by _lvm_toolkit_gate():
 //   • Uses SVC #0 directly — no kill@PLT entry, Frida cannot hook it
 //   • SIGKILL (9) and __NR_kill (129/37) computed via inline volatile splits —
 //     no MOVZ #9 or MOVZ #129 literal in the binary
 #define _LCKILL(khi,klo,ihi,ilo,enc,len,cs,ppid) \
-    do { if (lvm_exec(khi,klo,ihi,ilo,enc,len,cs)) { _lvm_kern_gate((long)(ppid)); _exit(1); } } while(0)
+    do { if (lvm_exec(khi,klo,ihi,ilo,enc,len,cs)) { _lvm_toolkit_gate((long)(ppid)); _exit(1); } } while(0)
 
 // Split into two halves so each has ≤ 3 lvm_exec calls (~9 BBs) — within
 // VMP's basic-block budget for virtualization on clean IR.
