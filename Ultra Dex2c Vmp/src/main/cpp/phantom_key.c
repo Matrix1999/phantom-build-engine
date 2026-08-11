@@ -1421,10 +1421,10 @@ static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
     size_t i;
     uint64_t bit_len = (uint64_t)len * 8;
     while (len >= 64) { sha256_block(h, msg); msg += 64; len -= 64; }
-    memset(block, 0, 64);
-    memcpy(block, msg, len);
+    my_memset(block, 0, 64);
+    for (i = 0; i < len; i++) block[i] = msg[i];
     block[len] = 0x80;
-    if (len >= 56) { sha256_block(h, block); memset(block, 0, 64); }
+    if (len >= 56) { sha256_block(h, block); my_memset(block, 0, 64); }
     for (i = 0; i < 8; i++) block[56+i] = (uint8_t)(bit_len >> (56 - i*8));
     sha256_block(h, block);
     for (i = 0; i < 8; i++) {
