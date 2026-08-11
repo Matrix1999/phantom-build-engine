@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bullseye / target — nova/minimal -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <!-- Outer ring -->
+    <path
+        android:fillColor="#D500F9"
+        android:pathData="M16,2 A14,14,0,1,1,15.999,2 Z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M16,6 A10,10,0,1,1,15.999,6 Z" />
+    <!-- Middle ring -->
+    <path
+        android:fillColor="#D500F9"
+        android:pathData="M16,8 A8,8,0,1,1,15.999,8 Z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M16,12 A4,4,0,1,1,15.999,12 Z" />
+    <!-- Center -->
+    <path
+        android:fillColor="#D500F9"
+        android:pathData="M16,14 A2,2,0,1,1,15.999,14 Z" />
+</vector>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/guideFragment">
+
+    <fragment
+        android:id="@+id/guideFragment"
+        android:name="com.ultra.dex2cvmp.ui.GuideFragment"
+        android:label="Guide" />
+
+    <fragment
+        android:id="@+id/protectFragment"
+        android:name="com.ultra.dex2cvmp.ui.ProtectFragment"
+        android:label="Protect" />
+
+    <fragment
+        android:id="@+id/ollvmFragment"
+        android:name="com.ultra.dex2cvmp.ui.OllvmFragment"
+        android:label="OLLVM" />
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.ultra.dex2cvmp.ui.SettingsFragment"
+        android:label="Settings" />
+
+</navigation>

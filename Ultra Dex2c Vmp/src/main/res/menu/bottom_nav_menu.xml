@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/guideFragment"
+        android:icon="@drawable/ic_nav_guide"
+        android:title="Guide" />
+    <item
+        android:id="@+id/protectFragment"
+        android:icon="@drawable/ic_nav_shield"
+        android:title="Protect" />
+    <item
+        android:id="@+id/ollvmFragment"
+        android:icon="@drawable/ic_nav_ollvm"
+        android:title="OLLVM" />
+    <item
+        android:id="@+id/settingsFragment"
+        android:icon="@drawable/ic_nav_settings"
+        android:title="Settings" />
+</menu>
