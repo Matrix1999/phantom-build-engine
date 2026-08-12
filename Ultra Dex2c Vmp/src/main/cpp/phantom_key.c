@@ -1203,6 +1203,151 @@ static volatile int g_block_rooted = 0;
    watchdog nukes immediately.  Volatile: must not be cached across threads. */
 static volatile long g_watcher_tick = 0;
 
+/* ─────────────────────────────────────────────────────────────────────────
+   detect_selinux_permissive_always()
+
+   AppDumper / Matrix Dumper calls "setenforce 0" unconditionally (line 114,
+   DumperService.java) as the FIRST step of every dump, before the target
+   app is even launched.  It needs permissive SELinux so that an external
+   root process can open /proc/<PID>/mem on modern Android (Android 10+
+   enforces that path even for uid=0 when SELinux is enforcing).
+
+   Unlike cr_selinux() in check_rooted(), this check fires regardless of the
+   g_block_rooted toggle — SELinux-permissive is a dump-tool signal, not
+   merely a "rooted device" signal.  It is therefore not a false positive for
+   users who run our app on a rooted device with the root-blocking toggle OFF.
+
+   Path stack-constructed: never appears in .rodata.
+   ───────────────────────────────────────────────────────────────────────── */
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_selinux_permissive_always(void) {
+    /* "/sys/fs/selinux/enforce"  — 23 chars */
+    char p[24];
+    p[ 0]='/'; p[ 1]='s'; p[ 2]='y'; p[ 3]='s'; p[ 4]='/';
+    p[ 5]='f'; p[ 6]='s'; p[ 7]='/'; p[ 8]='s'; p[ 9]='e';
+    p[10]='l'; p[11]='i'; p[12]='n'; p[13]='u'; p[14]='x';
+    p[15]='/'; p[16]='e'; p[17]='n'; p[18]='f'; p[19]='o';
+    p[20]='r'; p[21]='c'; p[22]='e'; p[23]='\0';
+
+    int fd = vm_openat(AT_FDCWD, p, O_RDONLY | O_CLOEXEC, 0);
+    volatile char *vp = (volatile char *)p;
+    for (int i = 0; i < 24; i++) vp[i] = 0;          /* zero the path off stack */
+
+    if (fd < 0) return;                                /* node not present — skip */
+    char b[4] = {0};
+    vm_read(fd, b, 3);
+    vm_close(fd);
+
+    /* "0" == permissive; "1" == enforcing (production default). */
+    if (b[0] == '0') {
+        PH_NUKE("selinux-permissive-dump-tool");
+        nuke_app();
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   detect_dumper_artifacts()
+
+   Matrix Dumper / AppDumper writes several characteristic files to
+   /data/local/tmp/ BEFORE launching the target app (DumperService.java
+   lines 133–135 and 342–373).  Because these paths are created prior to our
+   ProxyApplication cold-starting, they are visible to detect_frida_init()
+   at the very first .so-constructor call — no race, no timing gap.
+
+   Checked paths (all stack-built — zero'd after use):
+     • /data/local/tmp/matrix_dumper_tmp   (staging dir created at line 133)
+     • /data/local/tmp/dump_dex_mem.py     (fallback script, line 366)
+     • /data/local/tmp/matrix_py3.sh       (Stage-1 python launcher, line 438)
+     • /data/local/tmp/matrix_py3_dl.sh    (download launcher, line 407)
+     • /data/data/com.termux/files/home/dump_dex_mem.py  (primary script, line 356)
+
+   Any one present → immediate nuke.
+   ───────────────────────────────────────────────────────────────────────── */
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_dumper_artifacts(void) {
+
+    /* ── 1. staging directory: /data/local/tmp/matrix_dumper_tmp (33 chars) ── */
+    {
+        char d[34];
+        d[ 0]='/'; d[ 1]='d'; d[ 2]='a'; d[ 3]='t'; d[ 4]='a'; d[ 5]='/';
+        d[ 6]='l'; d[ 7]='o'; d[ 8]='c'; d[ 9]='a'; d[10]='l'; d[11]='/';
+        d[12]='t'; d[13]='m'; d[14]='p'; d[15]='/';
+        d[16]='m'; d[17]='a'; d[18]='t'; d[19]='r'; d[20]='i'; d[21]='x';
+        d[22]='_'; d[23]='d'; d[24]='u'; d[25]='m'; d[26]='p'; d[27]='e';
+        d[28]='r'; d[29]='_'; d[30]='t'; d[31]='m'; d[32]='p'; d[33]='\0';
+        int fd = vm_openat(AT_FDCWD, d, O_RDONLY | O_CLOEXEC, 0);
+        volatile char *vd = (volatile char *)d;
+        for (int i = 0; i < 34; i++) vd[i] = 0;
+        if (fd >= 0) { vm_close(fd); PH_NUKE("matrix-dumper-tmp-dir"); nuke_app(); }
+    }
+
+    /* ── 2. fallback script: /data/local/tmp/dump_dex_mem.py (31 chars) ── */
+    {
+        char f[32];
+        f[ 0]='/'; f[ 1]='d'; f[ 2]='a'; f[ 3]='t'; f[ 4]='a'; f[ 5]='/';
+        f[ 6]='l'; f[ 7]='o'; f[ 8]='c'; f[ 9]='a'; f[10]='l'; f[11]='/';
+        f[12]='t'; f[13]='m'; f[14]='p'; f[15]='/';
+        f[16]='d'; f[17]='u'; f[18]='m'; f[19]='p'; f[20]='_';
+        f[21]='d'; f[22]='e'; f[23]='x'; f[24]='_';
+        f[25]='m'; f[26]='e'; f[27]='m'; f[28]='.'; f[29]='p'; f[30]='y';
+        f[31]='\0';
+        int fd = vm_openat(AT_FDCWD, f, O_RDONLY | O_CLOEXEC, 0);
+        volatile char *vf = (volatile char *)f;
+        for (int i = 0; i < 32; i++) vf[i] = 0;
+        if (fd >= 0) { vm_close(fd); PH_NUKE("dump-dex-script-tmp"); nuke_app(); }
+    }
+
+    /* ── 3. Stage-1 launcher: /data/local/tmp/matrix_py3.sh (29 chars) ── */
+    {
+        char g[30];
+        g[ 0]='/'; g[ 1]='d'; g[ 2]='a'; g[ 3]='t'; g[ 4]='a'; g[ 5]='/';
+        g[ 6]='l'; g[ 7]='o'; g[ 8]='c'; g[ 9]='a'; g[10]='l'; g[11]='/';
+        g[12]='t'; g[13]='m'; g[14]='p'; g[15]='/';
+        g[16]='m'; g[17]='a'; g[18]='t'; g[19]='r'; g[20]='i'; g[21]='x';
+        g[22]='_'; g[23]='p'; g[24]='y'; g[25]='3'; g[26]='.';
+        g[27]='s'; g[28]='h'; g[29]='\0';
+        int fd = vm_openat(AT_FDCWD, g, O_RDONLY | O_CLOEXEC, 0);
+        volatile char *vg = (volatile char *)g;
+        for (int i = 0; i < 30; i++) vg[i] = 0;
+        if (fd >= 0) { vm_close(fd); PH_NUKE("matrix-py3-launcher"); nuke_app(); }
+    }
+
+    /* ── 4. download launcher: /data/local/tmp/matrix_py3_dl.sh (32 chars) ── */
+    {
+        char h[33];
+        h[ 0]='/'; h[ 1]='d'; h[ 2]='a'; h[ 3]='t'; h[ 4]='a'; h[ 5]='/';
+        h[ 6]='l'; h[ 7]='o'; h[ 8]='c'; h[ 9]='a'; h[10]='l'; h[11]='/';
+        h[12]='t'; h[13]='m'; h[14]='p'; h[15]='/';
+        h[16]='m'; h[17]='a'; h[18]='t'; h[19]='r'; h[20]='i'; h[21]='x';
+        h[22]='_'; h[23]='p'; h[24]='y'; h[25]='3'; h[26]='_';
+        h[27]='d'; h[28]='l'; h[29]='.'; h[30]='s'; h[31]='h'; h[32]='\0';
+        int fd = vm_openat(AT_FDCWD, h, O_RDONLY | O_CLOEXEC, 0);
+        volatile char *vh = (volatile char *)h;
+        for (int i = 0; i < 33; i++) vh[i] = 0;
+        if (fd >= 0) { vm_close(fd); PH_NUKE("matrix-py3-dl-launcher"); nuke_app(); }
+    }
+
+    /* ── 5. Termux-home script: /data/data/com.termux/files/home/dump_dex_mem.py
+            (48 chars) ── */
+    {
+        char t[49];
+        t[ 0]='/'; t[ 1]='d'; t[ 2]='a'; t[ 3]='t'; t[ 4]='a'; t[ 5]='/';
+        t[ 6]='d'; t[ 7]='a'; t[ 8]='t'; t[ 9]='a'; t[10]='/';
+        t[11]='c'; t[12]='o'; t[13]='m'; t[14]='.'; t[15]='t'; t[16]='e';
+        t[17]='r'; t[18]='m'; t[19]='u'; t[20]='x'; t[21]='/';
+        t[22]='f'; t[23]='i'; t[24]='l'; t[25]='e'; t[26]='s'; t[27]='/';
+        t[28]='h'; t[29]='o'; t[30]='m'; t[31]='e'; t[32]='/';
+        t[33]='d'; t[34]='u'; t[35]='m'; t[36]='p'; t[37]='_';
+        t[38]='d'; t[39]='e'; t[40]='x'; t[41]='_';
+        t[42]='m'; t[43]='e'; t[44]='m'; t[45]='.'; t[46]='p'; t[47]='y';
+        t[48]='\0';
+        int fd = vm_openat(AT_FDCWD, t, O_RDONLY | O_CLOEXEC, 0);
+        volatile char *vt = (volatile char *)t;
+        for (int i = 0; i < 49; i++) vt[i] = 0;
+        if (fd >= 0) { vm_close(fd); PH_NUKE("termux-dump-dex-script"); nuke_app(); }
+    }
+}
+
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     (void)args;
@@ -1229,6 +1374,8 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
         // re-enable dumpability by setting PR_SET_DUMPABLE once between checks.
         vm_prctl(4 /*PR_SET_DUMPABLE*/, 0);
 
+        detect_selinux_permissive_always();        // setenforce 0 → AppDumper/Matrix Dumper prerequisite (unconditional)
+        detect_dumper_artifacts();                // Matrix Dumper staging dir + scripts in /data/local/tmp
         detect_monkey();                           // _MONKEY env var + /proc scan for com.android.commands.monkey
         detect_frida_threads();                   // JDWP + per-task TracerPid + gum-js-loop/gmain
         detect_frida_namedpipe();
@@ -1557,7 +1704,12 @@ static __attribute__((noinline)) void vm_spawn_watcher(void) {
 __attribute__((constructor))
 void detect_frida_init(void) {
     vm_prctl(PR_SET_DUMPABLE, 0);
-    detect_monkey();       // immediate check at .so load, before any shard decrypts
+    /* AppDumper/Matrix Dumper sets setenforce 0 and drops its staging files
+       BEFORE launching the target app, so both checks fire cold here — no race.
+       detect_monkey() is kept for belt-and-suspenders (some other launchers). */
+    detect_selinux_permissive_always();  // setenforce 0 prerequisite always present before app starts
+    detect_dumper_artifacts();           // matrix_dumper_tmp / dump_dex_mem.py present before app starts
+    detect_monkey();                     // _MONKEY env var + /proc scan for monkey process
     vm_spawn_watcher();
 }
 
