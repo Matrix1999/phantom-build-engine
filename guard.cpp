@@ -2993,6 +2993,18 @@ static __attribute__((noinline)) int _dsig_open_and_scan(
     }
     free(cd);
 
+    // UNIVERSAL UNSIGNED-APK BLOCK (Phase 1 — early hard-fail).
+    // If no META-INF *.RSA / *.DSA / *.EC entry exists the APK has no V1
+    // signature at all.  This is the CorePatch / unsigned-install attack:
+    // CorePatch patches the OS installer to accept signature-less APKs, but
+    // it cannot add a cert to an APK that does not have one.  We reject here
+    // unconditionally — before font_kern.dat is even checked — so sentinel
+    // mode, bypass tools, and any runtime hook cannot override the decision.
+    // Return code -12 routes to the hard-fail branch in detect_sig_tamper().
+    if (!certInfo_out->found) {
+        GLOGE("D2CG sig: no META-INF signing cert — unsigned APK, hard-fail");
+        g_sig_close(fd); return -12;
+    }
     if (!kernInfo_out->found) {
         GLOGE("D2CG sig: font_kern.dat MISSING"); g_sig_close(fd); return -11;
     }
@@ -3030,18 +3042,29 @@ static __attribute__((noinline)) int _dsig_read_and_verify(
         return 1;
     }
 
+    // UNIVERSAL UNSIGNED-APK BLOCK (Phase 2 — belt-and-suspenders).
+    // cert-presence check fires BEFORE the sentinel gate so that even when
+    // the expected-hash check is disabled (sentinel = all-zeros), an APK
+    // with no V1 signing cert is still rejected.  Phase 1 already hard-fails
+    // for unsigned APKs (-12), but Phase 2 defends against any path that
+    // reaches here with certInfo->found == 0 (e.g. memory patching of the
+    // phase-1 return value).  No bypass tool, CorePatch, NP Manager, or
+    // sentinel configuration can make an unsigned APK pass this gate.
+    if (!cert_buf || cert_len == 0) {
+        GLOGE("D2CG sig: no META-INF cert (unsigned APK) — blocked unconditionally");
+        if (cert_buf) { memset(cert_buf, 0, certInfo->uncomp_size + 16); free(cert_buf); }
+        return 1;
+    }
+
     int allzero = 1;
     for (int i = 0; i < 32; i++) if (kernPlain[i]) { allzero = 0; break; }
     if (allzero) {
-        GLOGI("D2CG sig: sentinel(0) — check disabled, skip");
+        // APK IS signed (cert present above), but expected-hash check is
+        // disabled.  The sentinel only skips the hash comparison — the
+        // presence requirement has already been satisfied.
+        GLOGI("D2CG sig: sentinel(0) — APK signed, hash check disabled");
         if (cert_buf) { memset(cert_buf, 0, certInfo->uncomp_size + 16); free(cert_buf); }
         return 0;
-    }
-
-    if (!cert_buf || cert_len == 0) {
-        GLOGE("D2CG sig: no META-INF cert entry (V1 sig absent or stripped)");
-        if (cert_buf) { memset(cert_buf, 0, certInfo->uncomp_size + 16); free(cert_buf); }
-        return 1;
     }
 
     uint8_t computed[32];
