@@ -1,0 +1,783 @@
+'use strict';
+/**
+ * hook_one.js — trace ONE jiagu VMP native method via JNI env function table
+ *
+ * jiagu VMP calls Android APIs through raw JNIEnv* slots, bypassing Java
+ * method dispatch. This script hooks those slots directly, activates tracing
+ * only while the target method is on the stack, and resolves class/method
+ * names from the JNI arguments.
+ *
+ * Set TARGET_CLASS / TARGET_METHOD / TARGET_INDEX below, then:
+ *   curl -L ".../hook_one.js" -o /sdcard/hook_one.js
+ *   HOME=/data/data/com.termux/files/home \
+ *   /data/data/com.termux/files/usr/bin/frida \
+ *   -H 127.0.0.1:27043 -f internet.king.promax.modded \
+ *   -l /sdcard/hook_one.js
+ *
+ * Output → /data/local/tmp/hook_one/
+ */
+
+// ═══════════════════════════════════════════════════════════
+var TARGET_CLASS  = 'com.munowatch.lite.Dashboard';
+var TARGET_METHOD = 'onCreate';
+var TARGET_INDEX  = 0x1378;
+// ═══════════════════════════════════════════════════════════
+
+var OUT_DIR = '/data/data/internet.king.promax.modded/files/';
+var _calls  = [];
+var _depth  = 0;      // call depth inside target method
+var _active = false;  // true while we're inside the target fn
+
+// ─── file I/O ─────────────────────────────────────────────────────────────────
+
+var _lc   = Process.findModuleByName('libc.so');
+var _open = new NativeFunction(_lc.findExportByName('open'),  'int', ['pointer','int','int']);
+var _writ = new NativeFunction(_lc.findExportByName('write'), 'int', ['int','pointer','int']);
+var _clos = new NativeFunction(_lc.findExportByName('close'), 'int', ['int']);
+var _mkdr = new NativeFunction(_lc.findExportByName('mkdir'), 'int', ['pointer','int']);
+
+function mkdirP(dir) {
+    dir.replace(/\/$/, '').split('/').reduce(function(cur, p) {
+        if (!p) return cur; cur += '/' + p;
+        _mkdr(Memory.allocUtf8String(cur), 0x1ff); return cur;
+    }, '');
+}
+function writeText(path, text) {
+    var buf = Memory.allocUtf8String(text);
+    var len = 0; while (buf.add(len).readU8() !== 0) len++;
+    var fd  = _open(Memory.allocUtf8String(path), 1|64|512, 0x1a4);
+    if (fd < 0) { console.log('[-] writeText FAILED fd=' + fd + ' path=' + path); return false; }
+    var written = _writ(fd, buf, len);
+    _clos(fd);
+    if (written < 0) { console.log('[-] writeText write() returned ' + written + ' for ' + path); return false; }
+    return true;
+}
+// Persistent log fd — opened once at startup, kept open the whole session
+var _logFd = -1;
+function openLogFile() {
+    // O_WRONLY|O_CREAT|O_TRUNC = 1|64|512
+    _logFd = _open(Memory.allocUtf8String(OUT_DIR + 'session.log'), 1|64|512, 0x1a4);
+    if (_logFd < 0) console.log('[-] Cannot open session.log (fd=' + _logFd + ')');
+    else             console.log('[*] Logging to ' + OUT_DIR + 'session.log');
+}
+function appendLog(text) {
+    if (_logFd < 0) return;
+    var line = text + '\n';
+    var buf  = Memory.allocUtf8String(line);
+    var len  = 0; while (buf.add(len).readU8() !== 0) len++;
+    _writ(_logFd, buf, len);
+}
+// clog — print to Frida console AND write to session.log
+function clog(msg) { console.log(msg); appendLog(msg); }
+function safeStr(p) { try { return p && !p.isNull() ? p.readCString().substring(0,200) : '(null)'; } catch(e) { return '?'; } }
+
+// ─── JNI env slot helpers ─────────────────────────────────────────────────────
+
+var _envFns    = null;  // JNINativeInterface* — filled once we have an env
+var _jniHooked = false;
+
+// Build a NativeFunction to call a JNI slot (for resolving names at runtime)
+function envFn(slot, ret, args) {
+    if (!_envFns) return null;
+    try { return new NativeFunction(_envFns.add(slot * Process.pointerSize).readPointer(), ret, args); }
+    catch(e) { return null; }
+}
+
+// Resolve jclass → "Landroid/app/Activity;" style string at runtime
+function resolveClass(env, jcls) {
+    try {
+        if (!_envFns) return '?cls';
+        // GetObjectClass is slot 31, GetNameForClass isn't a JNI fn —
+        // use cached lookup via FindClass doesn't work in reverse.
+        // Instead: call java.lang.Class.getName() via JNI
+        // GetMethodID on java/lang/Class for getName()
+        var FC = envFn(6,  'pointer', ['pointer','pointer']); // FindClass
+        var GM = envFn(33, 'pointer', ['pointer','pointer','pointer','pointer']); // GetMethodID
+        var CO = envFn(34, 'pointer', ['pointer','pointer','pointer','...']);     // CallObjectMethod
+        var GS = envFn(175,'pointer', ['pointer','pointer','pointer']);           // GetStringUTFChars
+        if (!FC||!GM||!CO||!GS) return '?cls';
+        var clsCls = FC(env, Memory.allocUtf8String('java/lang/Class'));
+        var mid    = GM(env, clsCls, Memory.allocUtf8String('getName'), Memory.allocUtf8String('()Ljava/lang/String;'));
+        var jstr   = CO(env, jcls, mid);
+        var cstr   = GS(env, jstr, ptr(0));
+        return cstr && !cstr.isNull() ? cstr.readCString().replace(/\./g,'/') : '?cls';
+    } catch(e) { return '?cls'; }
+}
+
+// ─── JNI table hooks — called only when _active ───────────────────────────────
+
+function hookJniTable(env) {
+    if (_jniHooked) return;
+    _jniHooked = true;
+    _envFns    = env.readPointer();   // JNINativeInterface*
+
+    function slot(idx) { return _envFns.add(idx * Process.pointerSize).readPointer(); }
+
+    function guardAttach(idx, label, cb) {
+        try {
+            Interceptor.attach(slot(idx), {
+                onEnter:  function(a) { if (!_active) return; this._skip = false; cb.call(this, a); },
+                onLeave:  function()  {}
+            });
+        } catch(e) { clog('[-] slot ' + idx + ' (' + label + '): ' + e); }
+    }
+
+    // ── FindClass(env, name) → jclass ────────────────────────────────────────
+    guardAttach(6, 'FindClass', function(a) {
+        var name = safeStr(a[1]);
+        _calls.push('[FindClass] L' + name + ';');
+        clog('  [FindClass] ' + name);
+    });
+
+    // ── GetMethodID(env, jcls, name, sig) ────────────────────────────────────
+    guardAttach(33, 'GetMethodID', function(a) {
+        var nm  = safeStr(a[2]), sig = safeStr(a[3]);
+        _calls.push('[GetMethodID] ' + nm + sig);
+        clog('  [GetMethodID] ' + nm + sig);
+    });
+
+    // ── GetStaticMethodID(env, jcls, name, sig) ───────────────────────────────
+    guardAttach(113, 'GetStaticMethodID', function(a) {
+        var nm = safeStr(a[2]), sig = safeStr(a[3]);
+        _calls.push('[GetStaticMethodID] ' + nm + sig);
+        clog('  [GetStaticMethodID] ' + nm + sig);
+    });
+
+    // ── GetFieldID(env, jcls, name, sig) ─────────────────────────────────────
+    guardAttach(94, 'GetFieldID', function(a) {
+        var nm = safeStr(a[2]), sig = safeStr(a[3]);
+        _calls.push('[GetFieldID] ' + nm + ' ' + sig);
+        clog('  [GetFieldID] ' + nm + ' ' + sig);
+    });
+
+    // ── GetStaticFieldID(env, jcls, name, sig) ────────────────────────────────
+    guardAttach(144, 'GetStaticFieldID', function(a) {
+        var nm = safeStr(a[2]), sig = safeStr(a[3]);
+        _calls.push('[GetStaticFieldID] ' + nm + ' ' + sig);
+        clog('  [GetStaticFieldID] ' + nm + ' ' + sig);
+    });
+
+    // ── CallVoidMethod(env, obj, mid, ...) ────────────────────────────────────
+    guardAttach(61, 'CallVoidMethod', function(a) {
+        _calls.push('[CallVoidMethod]');
+        clog('  [CallVoidMethod]');
+    });
+
+    // ── CallObjectMethod(env, obj, mid, ...) ──────────────────────────────────
+    guardAttach(34, 'CallObjectMethod', function(a) {
+        _calls.push('[CallObjectMethod]');
+        clog('  [CallObjectMethod]');
+    });
+
+    // ── CallBooleanMethod ──────────────────────────────────────────────────────
+    guardAttach(37, 'CallBooleanMethod', function(a) {
+        _calls.push('[CallBooleanMethod]');
+        clog('  [CallBooleanMethod]');
+    });
+
+    // ── CallIntMethod ─────────────────────────────────────────────────────────
+    guardAttach(49, 'CallIntMethod', function(a) {
+        _calls.push('[CallIntMethod]');
+        clog('  [CallIntMethod]');
+    });
+
+    // ── CallStaticVoidMethod(env, jcls, mid, ...) ─────────────────────────────
+    guardAttach(141, 'CallStaticVoidMethod', function(a) {
+        _calls.push('[CallStaticVoidMethod]');
+        clog('  [CallStaticVoidMethod]');
+    });
+
+    // ── CallStaticObjectMethod ────────────────────────────────────────────────
+    guardAttach(114, 'CallStaticObjectMethod', function(a) {
+        _calls.push('[CallStaticObjectMethod]');
+        clog('  [CallStaticObjectMethod]');
+    });
+
+    // ── CallStaticIntMethod ───────────────────────────────────────────────────
+    guardAttach(120, 'CallStaticIntMethod', function(a) {
+        _calls.push('[CallStaticIntMethod]');
+        clog('  [CallStaticIntMethod]');
+    });
+
+    // ── NewStringUTF(env, bytes) ──────────────────────────────────────────────
+    guardAttach(167, 'NewStringUTF', function(a) {
+        var s = safeStr(a[1]);
+        _calls.push('[NewStringUTF] "' + s + '"');
+        clog('  [NewStringUTF] "' + s + '"');
+    });
+
+    // ── GetStringUTFChars(env, jstr, isCopy) ─────────────────────────────────
+    guardAttach(169, 'GetStringUTFChars', function(a) {
+        _calls.push('[GetStringUTFChars]');
+        clog('  [GetStringUTFChars]');
+    });
+
+    // ── SetObjectField(env, obj, fid, val) ────────────────────────────────────
+    guardAttach(104, 'SetObjectField', function(a) {
+        _calls.push('[SetObjectField]');
+        clog('  [SetObjectField]');
+    });
+
+    // ── SetIntField ───────────────────────────────────────────────────────────
+    guardAttach(112, 'SetIntField', function(a) {
+        _calls.push('[SetIntField]');
+        clog('  [SetIntField]');
+    });
+
+    // ── GetObjectField ────────────────────────────────────────────────────────
+    guardAttach(95, 'GetObjectField', function(a) {
+        _calls.push('[GetObjectField]');
+        clog('  [GetObjectField]');
+    });
+
+    // ── GetIntField ───────────────────────────────────────────────────────────
+    guardAttach(96, 'GetIntField', function(a) {
+        _calls.push('[GetIntField]');
+        clog('  [GetIntField]');
+    });
+
+    // ── NewObject(env, jcls, mid, ...) ───────────────────────────────────────
+    guardAttach(28, 'NewObject', function(a) {
+        _calls.push('[NewObject]');
+        clog('  [NewObject]');
+    });
+
+    // ── NewGlobalRef / DeleteGlobalRef ────────────────────────────────────────
+    guardAttach(21, 'NewGlobalRef', function(a) {
+        _calls.push('[NewGlobalRef]');
+    });
+
+    clog('[*] JNI table hooks installed (' + _envFns + ')');
+}
+
+// ─── save trace ───────────────────────────────────────────────────────────────
+
+function saveTrace() {
+    var out = '╔══════════════════════════════════════════════════════════╗\n';
+    out += '║  ' + TARGET_CLASS + '.' + TARGET_METHOD + '\n';
+    out += '╚══════════════════════════════════════════════════════════╝\n\n';
+    out += 'JNI calls captured: ' + _calls.length + '\n\n';
+    _calls.forEach(function(c, i) { out += '[' + (i+1) + '] ' + c + '\n'; });
+    var path = OUT_DIR + TARGET_CLASS.split('.').pop() + '_' + TARGET_METHOD + '.txt';
+    var ok = writeText(path, out);
+    if (ok) clog('\n[✓] Saved → ' + path + '  (' + _calls.length + ' JNI calls)');
+    else    clog('\n[✗] WRITE FAILED — dumping to console instead:\n' + out);
+}
+
+// ─── hook the target function pointer ────────────────────────────────────────
+
+function hookFnPtr(fn) {
+    clog('[*] Hooking ' + TARGET_METHOD + ' @ ' + fn);
+    Interceptor.attach(fn, {
+        onEnter: function(args) {
+            var env = args[0];
+            _active = true;
+            _calls  = [];
+            clog('\n[→] ' + TARGET_CLASS + '.' + TARGET_METHOD + ' ENTERED');
+            hookJniTable(env);
+        },
+        onLeave: function() {
+            _active = false;
+            clog('[←] returned — ' + _calls.length + ' JNI calls');
+            saveTrace();
+        }
+    });
+    clog('[✓] Hook active — open the ' + TARGET_CLASS.split('.').pop() + ' screen now');
+}
+
+// ─── RegisterNatives → capture our fn ptr ────────────────────────────────────
+
+function setupRegisterNativesHook() {
+    try {
+        var vm        = Java.vm.handle;
+        var invokeFns = vm.readPointer();
+        var getEnvFn  = new NativeFunction(
+            invokeFns.add(6 * Process.pointerSize).readPointer(),
+            'int', ['pointer','pointer','int']);
+        var envBuf    = Memory.alloc(Process.pointerSize);
+        getEnvFn(vm, envBuf, 0x00010006);
+        var env       = envBuf.readPointer();
+        var nativeFns = env.readPointer();
+        var rnFn      = nativeFns.add(215 * Process.pointerSize).readPointer();
+        clog('[*] RegisterNatives @ ' + rnFn);
+
+        Interceptor.attach(rnFn, {
+            onEnter: function(args) {
+                try {
+                    var methods = args[2], count = args[3].toInt32();
+                    if (count <= 0 || count > 500) return;
+                    var hooked = false;
+                    for (var i = 0; i < count; i++) {
+                        var e   = methods.add(i * 24);
+                        var nm  = e.readPointer().readCString() || '';
+                        var sig = e.add(8).readPointer().readCString() || '';
+                        var fn  = e.add(16).readPointer();
+                        clog('[RN] ' + nm + sig + ' @ ' + fn);
+                        if (nm === TARGET_METHOD && !hooked) {
+                            hooked = true;
+                            hookFnPtr(fn);
+                        }
+                    }
+                } catch(e) {}
+            }
+        });
+        clog('[*] RegisterNatives hooked ✓');
+    } catch(e) {
+        clog('[-] RegisterNatives setup: ' + e);
+    }
+}
+
+// ─── MAIN ─────────────────────────────────────────────────────────────────────
+
+mkdirP(OUT_DIR);
+
+// Trigger A: RegisterNatives — works if jiagu registers onCreate via RN
+setupRegisterNativesHook();
+
+Java.perform(function() {
+    openLogFile();
+
+    // Pre-install JNI table hooks now so they are ready regardless of trigger
+    try {
+        var vm       = Java.vm.handle;
+        var invFns   = vm.readPointer();
+        var getEnvFn = new NativeFunction(
+            invFns.add(6 * Process.pointerSize).readPointer(),
+            'int', ['pointer','pointer','int']);
+        var envBuf = Memory.alloc(Process.pointerSize);
+        getEnvFn(vm, envBuf, 0x00010006);
+        hookJniTable(envBuf.readPointer());
+    } catch(e) { clog('[-] pre-install JNI hooks: ' + e); }
+
+    // Trigger B: poll until jiagu decrypts Dashboard, then hook via Java layer.
+    // jiagu may never call RegisterNatives for VMP stubs — it patches ArtMethod
+    // entries directly. Java.use works once the class is loaded in the JVM.
+    var _javaHooked = false;
+    function tryJavaHook() {
+        if (_javaHooked) return;
+        try {
+            var Dash = Java.use(TARGET_CLASS);
+            Dash[TARGET_METHOD].overload('android.os.Bundle').implementation = function(bundle) {
+                _calls  = [];
+                _active = true;
+                clog('\n[→] ' + TARGET_CLASS + '.' + TARGET_METHOD + ' ENTERED (Java hook)');
+                this[TARGET_METHOD](bundle);
+                _active = false;
+                clog('[←] returned — ' + _calls.length + ' JNI calls');
+                saveTrace();
+            };
+            _javaHooked = true;
+            clog('[*] Java hook on ' + TARGET_CLASS + '.' + TARGET_METHOD + ' installed ✓');
+            clog('[hook_one]  → Open/navigate to the Dashboard screen now');
+        } catch(e) {
+            // Class not loaded yet — retry after 500 ms
+            setTimeout(tryJavaHook, 500);
+        }
+    }
+
+    // Give jiagu 5 s to decrypt the real DEX, then start polling
+    clog('[*] Waiting 5 s for jiagu to decrypt DEX...');
+    setTimeout(tryJavaHook, 5000);
+
+    clog('');
+    clog('[hook_one] ════════════════════════════════════════════');
+    clog('[hook_one]  Target : ' + TARGET_CLASS + '.' + TARGET_METHOD);
+    clog('[hook_one]  Log    : ' + OUT_DIR + 'session.log');
+    clog('[hook_one]  Trigger A: RegisterNatives (instant)');
+    clog('[hook_one]  Trigger B: Java hook poll (starts in 5 s)');
+    clog('[hook_one]  → Watch for "[*] Java hook ... installed" then open screen');
+    clog('[hook_one] ════════════════════════════════════════════');
+    clog('');
+});
+
+
+'use strict';
+
+var OUTPUT_DIR = '/data/local/tmp/memscan_dex/';
+var MAX_DEX_SIZE = 100 * 1024 * 1024;
+var WAIT_MS = 7000;
+
+// ─── Anti-Frida bypass (ported from clsdumper antiFrida.ts) ──────────────────
+
+function installAntiFridaBypass() {
+  console.log('[*] Installing anti-Frida bypass...');
+  var patched = 0;
+  patched += patchSignalHandlers();
+  patched += patchProcMaps();
+  patched += patchPthreadCreate();
+  console.log('[*] Anti-Frida bypass installed (' + patched + ' patches)');
+}
+
+function patchSignalHandlers() {
+  var libc = Process.findModuleByName('libc.so');
+  if (!libc) return 0;
+  var patched = 0;
+  var SIGILL = 4, SIGTRAP = 5;
+  var SIG_DFL = ptr(0);
+  var protected_sigs = [SIGILL, SIGTRAP];
+
+  var sigactionAddr = libc.findExportByName('sigaction');
+  if (sigactionAddr) {
+    try {
+      Interceptor.attach(sigactionAddr, {
+        onEnter: function(args) {
+          var signum = args[0].toInt32();
+          if (protected_sigs.indexOf(signum) !== -1) {
+            var actPtr = args[1];
+            if (!actPtr.isNull()) {
+              try { actPtr.writePointer(SIG_DFL); } catch(e) {}
+              try {
+                var flagsOff = 8 + 128; // arm64
+                var flags = actPtr.add(flagsOff).readU32();
+                actPtr.add(flagsOff).writeU32(flags & ~0x4);
+              } catch(e) {}
+            }
+          }
+        }
+      });
+      patched++;
+    } catch(e) {}
+  }
+
+  var signalAddr = libc.findExportByName('signal');
+  if (signalAddr) {
+    try {
+      Interceptor.attach(signalAddr, {
+        onEnter: function(args) {
+          var signum = args[0].toInt32();
+          if (protected_sigs.indexOf(signum) !== -1) {
+            args[1] = SIG_DFL;
+          }
+        }
+      });
+      patched++;
+    } catch(e) {}
+  }
+  return patched;
+}
+
+function patchProcMaps() {
+  var libc = Process.findModuleByName('libc.so');
+  if (!libc) return 0;
+  var patched = 0;
+
+  var fridaPatterns = ['frida', 'gmain', 'gdbus', 'gum-js-loop', 'linjector'];
+
+  function isMapsPath(path) {
+    return /\/proc\/(self|\d+)\/(maps|smaps)/.test(path);
+  }
+
+  var readAddr   = libc.findExportByName('read');
+  var writeAddr  = libc.findExportByName('write');
+  var closeAddr  = libc.findExportByName('close');
+  var lseekAddr  = libc.findExportByName('lseek');
+  if (!readAddr || !writeAddr || !closeAddr || !lseekAddr) return 0;
+
+  var readNative  = new NativeFunction(readAddr,  'int', ['int', 'pointer', 'int']);
+  var writeNative = new NativeFunction(writeAddr, 'int', ['int', 'pointer', 'int']);
+  var closeNative = new NativeFunction(closeAddr, 'int', ['int']);
+  var lseekNative = new NativeFunction(lseekAddr, 'int', ['int', 'int', 'int']);
+
+  var filenoAddr = libc.findExportByName('fileno');
+  var fdopenAddr = libc.findExportByName('fdopen');
+  var fcloseAddr = libc.findExportByName('fclose');
+  var filenoNative = filenoAddr ? new NativeFunction(filenoAddr, 'int',     ['pointer'])          : null;
+  var fdopenNative = fdopenAddr ? new NativeFunction(fdopenAddr, 'pointer', ['int', 'pointer'])   : null;
+  var fcloseNative = fcloseAddr ? new NativeFunction(fcloseAddr, 'int',     ['pointer'])          : null;
+
+  var memfdCreateFn = null;
+  var memfdName = Memory.allocUtf8String('m');
+  var memfdLibcAddr = libc.findExportByName('memfd_create');
+  if (memfdLibcAddr) {
+    var _mf = new NativeFunction(memfdLibcAddr, 'int', ['pointer', 'uint']);
+    memfdCreateFn = function() { return _mf(memfdName, 0); };
+  } else {
+    var syscallAddr = libc.findExportByName('syscall');
+    if (syscallAddr) {
+      var SYS_memfd_create = 279; // arm64
+      var _sc = new NativeFunction(syscallAddr, 'int', ['int', 'pointer', 'uint']);
+      memfdCreateFn = function() { return _sc(SYS_memfd_create, memfdName, 0); };
+    }
+  }
+  if (!memfdCreateFn) return 0;
+
+  var rMode = Memory.allocUtf8String('r');
+
+  function readAllFromFd(fd) {
+    var BUF_SIZE = 256 * 1024;
+    var buf = Memory.alloc(BUF_SIZE);
+    var content = '';
+    while (true) {
+      var n = readNative(fd, buf, BUF_SIZE);
+      if (n <= 0) break;
+      content += buf.readUtf8String(n);
+    }
+    return content;
+  }
+
+  function createFilteredMemfd(content) {
+    var filtered = content.split('\n').filter(function(line) {
+      if (line.length === 0) return true;
+      var lower = line.toLowerCase();
+      return !fridaPatterns.some(function(p) { return lower.indexOf(p) !== -1; });
+    }).join('\n');
+
+    var memfd = memfdCreateFn();
+    if (memfd < 0) return -1;
+
+    if (filtered.length > 0) {
+      var filteredBuf = Memory.allocUtf8String(filtered);
+      var byteLen = 0;
+      while (byteLen < filtered.length * 4) {
+        if (filteredBuf.add(byteLen).readU8() === 0) break;
+        byteLen++;
+      }
+      var written = 0;
+      while (written < byteLen) {
+        var w = writeNative(memfd, filteredBuf.add(written), byteLen - written);
+        if (w <= 0) break;
+        written += w;
+      }
+    }
+    lseekNative(memfd, 0, 0);
+    return memfd;
+  }
+
+  function replaceFdRetval(retval) {
+    var realFd = retval.toInt32();
+    if (realFd < 0) return;
+    try {
+      var content = readAllFromFd(realFd);
+      var memfd = createFilteredMemfd(content);
+      if (memfd >= 0) {
+        closeNative(realFd);
+        retval.replace(ptr(memfd));
+      } else {
+        lseekNative(realFd, 0, 0);
+      }
+    } catch(e) {
+      try { lseekNative(realFd, 0, 0); } catch(e2) {}
+    }
+  }
+
+  var openAddr = libc.findExportByName('open');
+  if (openAddr) {
+    try {
+      Interceptor.attach(openAddr, {
+        onEnter: function(args) {
+          try { var p = args[0].readCString(); if (p && isMapsPath(p)) this.isMaps = true; } catch(e) {}
+        },
+        onLeave: function(retval) { if (this.isMaps) replaceFdRetval(retval); }
+      });
+      patched++;
+    } catch(e) {}
+  }
+
+  var openatAddr = libc.findExportByName('openat');
+  if (openatAddr) {
+    try {
+      Interceptor.attach(openatAddr, {
+        onEnter: function(args) {
+          try { var p = args[1].readCString(); if (p && isMapsPath(p)) this.isMaps = true; } catch(e) {}
+        },
+        onLeave: function(retval) { if (this.isMaps) replaceFdRetval(retval); }
+      });
+      patched++;
+    } catch(e) {}
+  }
+
+  if (filenoNative && fdopenNative && fcloseNative) {
+    var fopenAddr = libc.findExportByName('fopen');
+    if (fopenAddr) {
+      try {
+        Interceptor.attach(fopenAddr, {
+          onEnter: function(args) {
+            try { var p = args[0].readCString(); if (p && isMapsPath(p)) this.isMaps = true; } catch(e) {}
+          },
+          onLeave: function(retval) {
+            if (!this.isMaps || retval.isNull()) return;
+            try {
+              var realFd = filenoNative(retval);
+              if (realFd < 0) return;
+              var content = readAllFromFd(realFd);
+              var memfd = createFilteredMemfd(content);
+              if (memfd < 0) { lseekNative(realFd, 0, 0); return; }
+              var newFile = fdopenNative(memfd, rMode);
+              if (newFile.isNull()) { closeNative(memfd); lseekNative(realFd, 0, 0); return; }
+              fcloseNative(retval);
+              retval.replace(newFile);
+            } catch(e) {
+              try { lseekNative(filenoNative(retval), 0, 0); } catch(e2) {}
+            }
+          }
+        });
+        patched++;
+      } catch(e) {}
+    }
+  }
+
+  return patched;
+}
+
+function patchPthreadCreate() {
+  var libc = Process.findModuleByName('libc.so');
+  if (!libc) return 0;
+
+  var suspiciousModules = ['libcoldstart.so', 'libliger.so', 'libsec.so', 'libprotect.so', 'libjgdtc.so'];
+  var pthreadCreateAddr = libc.findExportByName('pthread_create');
+  if (!pthreadCreateAddr) return 0;
+
+  var noopFunc = null;
+  try {
+    var noop = Memory.alloc(Process.pageSize);
+    noop.writeU32(0xd65f03c0); // arm64: ret
+    Memory.protect(noop, Process.pageSize, 'r-x');
+    noopFunc = noop;
+  } catch(e) { return 0; }
+
+  try {
+    Interceptor.attach(pthreadCreateAddr, {
+      onEnter: function(args) {
+        var startRoutine = args[2];
+        if (startRoutine.isNull()) return;
+        try {
+          var mod = Process.findModuleByAddress(startRoutine);
+          if (mod && suspiciousModules.some(function(s) { return mod.name.indexOf(s) !== -1; })) {
+            console.log('[*] Neutralized watchdog thread from ' + mod.name);
+            if (noopFunc) args[2] = noopFunc;
+          }
+        } catch(e) {}
+      }
+    });
+    return 1;
+  } catch(e) { return 0; }
+}
+
+// ─── DEX validation ──────────────────────────────────────────────────────────
+
+function validateDex(addr) {
+  try {
+    var b = addr.readByteArray(4);
+    var a = new Uint8Array(b);
+    if (a[0] !== 0x64 || a[1] !== 0x65 || a[2] !== 0x78 || a[3] !== 0x0a) return 0;
+    var fileSize = addr.add(0x20).readU32();
+    if (fileSize < 0x70 || fileSize > MAX_DEX_SIZE) return 0;
+    var endian = addr.add(0x28).readU32();
+    if (endian !== 0x12345678) return 0;
+    return fileSize;
+  } catch(e) { return 0; }
+}
+
+// ─── Simple hash for dedup (FNV-1a 32-bit on first 4KB) ─────────────────────
+
+function quickHash(addr, size) {
+  var sampleSize = Math.min(size, 4096);
+  var bytes = new Uint8Array(addr.readByteArray(sampleSize));
+  var hash = 0x811c9dc5;
+  for (var i = 0; i < bytes.length; i++) {
+    hash ^= bytes[i];
+    hash = (hash * 0x01000193) >>> 0;
+  }
+  return hash.toString(16);
+}
+
+// ─── Save DEX via native libc (bypasses Java storage permissions) ────────────
+
+var _libc = Process.findModuleByName('libc.so');
+var _openNative  = new NativeFunction(_libc.findExportByName('open'),   'int', ['pointer', 'int', 'int']);
+var _writeNative = new NativeFunction(_libc.findExportByName('write'),  'int', ['int', 'pointer', 'int']);
+var _closeNative = new NativeFunction(_libc.findExportByName('close'),  'int', ['int']);
+var _mkdirNative = new NativeFunction(_libc.findExportByName('mkdir'),  'int', ['pointer', 'int']);
+var O_WRONLY = 1, O_CREAT = 64, O_TRUNC = 512;
+
+function ensureDir(dirPath) {
+  var buf = Memory.allocUtf8String(dirPath);
+  _mkdirNative(buf, 0x1ff); // 0777 — ignore error if already exists
+}
+
+function saveDex(addr, size, index, regionPath) {
+  try {
+    var hash = quickHash(addr, size);
+    var filename = OUTPUT_DIR + 'classes_' + index + '_' + hash + '.dex';
+    ensureDir(OUTPUT_DIR);
+    var filenameBuf = Memory.allocUtf8String(filename);
+    var fd = _openNative(filenameBuf, O_WRONLY | O_CREAT | O_TRUNC, 0x1a4); // 0644
+    if (fd < 0) {
+      console.log('[-] open() failed (fd=' + fd + ') for ' + filename);
+      return false;
+    }
+    var offset = 0;
+    var CHUNK = 4 * 1024 * 1024;
+    while (offset < size) {
+      var chunk = Math.min(size - offset, CHUNK);
+      var n = _writeNative(fd, addr.add(offset), chunk);
+      if (n <= 0) break;
+      offset += n;
+    }
+    _closeNative(fd);
+    console.log('[+] DEX #' + index + ' @ ' + addr + ' size=' + size +
+      ' hash=' + hash + ' src=' + (regionPath || 'anon') + ' -> ' + filename);
+    return true;
+  } catch(e) {
+    console.log('[-] Save failed DEX #' + index + ': ' + e);
+    return false;
+  }
+}
+
+// ─── Main ────────────────────────────────────────────────────────────────────
+
+installAntiFridaBypass();
+
+console.log('[*] memscan.js ready. Waiting ' + (WAIT_MS/1000) + 's for jiagu to decrypt...');
+
+setTimeout(function() {
+  console.log('[*] Starting full memory scan (no size limit)...');
+
+  var found = 0;
+  var scanned = 0;
+  var seenHashes = {};
+
+  var ranges = Process.enumerateRanges('r--');
+  console.log('[*] Readable memory regions: ' + ranges.length);
+
+  for (var i = 0; i < ranges.length; i++) {
+    var range = ranges[i];
+    scanned++;
+
+    var regionPath = (range.file && range.file.path) ? range.file.path : null;
+    if (regionPath) {
+      var lp = regionPath.toLowerCase();
+      if (lp.endsWith('.so') || lp.endsWith('.oat') || lp.endsWith('.vdex') ||
+          lp.endsWith('.art') || lp.endsWith('.odex') || lp.endsWith('.apk') ||
+          lp.endsWith('.jar') || regionPath.startsWith('/dev/') ||
+          regionPath.startsWith('/sys/') || regionPath.startsWith('/proc/')) {
+        continue;
+      }
+    }
+
+    try {
+      var matches = Memory.scanSync(range.base, range.size, '64 65 78 0a');
+      for (var m = 0; m < matches.length; m++) {
+        var matchAddr = matches[m].address;
+        var fileSize = validateDex(matchAddr);
+        if (fileSize === 0) continue;
+        if (matchAddr.add(fileSize).compare(range.base.add(range.size)) > 0) continue;
+
+        var h = quickHash(matchAddr, fileSize);
+        if (seenHashes[h]) continue;
+        seenHashes[h] = true;
+
+        saveDex(matchAddr, fileSize, found, regionPath);
+        found++;
+      }
+    } catch(e) {}
+
+    if (scanned % 200 === 0) {
+      console.log('[*] Progress: ' + scanned + '/' + ranges.length + ' | DEX found: ' + found);
+    }
+  }
+
+  console.log('[*] SCAN COMPLETE. ' + found + ' unique DEX files -> ' + OUTPUT_DIR);
+  send({ type: 'done', found: found });
+
+}, WAIT_MS);
