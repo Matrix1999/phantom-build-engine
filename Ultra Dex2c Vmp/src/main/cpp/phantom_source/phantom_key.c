@@ -189,6 +189,14 @@ static inline void my_path_cat3(char *dst, int dstmax,
     dst[n] = '\0';
 }
 
+/* ph_is_digits: return 1 if s is non-empty and all decimal digits (PID dir names). */
+__attribute__((always_inline))
+static inline int ph_is_digits(const char *s) {
+    if (!*s) return 0;
+    while (*s) { if (*s < '0' || *s > '9') return 0; s++; }
+    return 1;
+}
+
 /* Minimal linux_dirent64 for vm_getdents64 — replaces opendir/readdir. */
 struct ph_dirent64 {
     uint64_t d_ino;
@@ -565,6 +573,147 @@ static __attribute__((noinline)) void detect_ptrace(void) {
 
 
 // ?
+
+// detect_monkey -- Monkey UI Exerciser & automated-dump detection
+//
+// Called from both detect_frida_init() (constructor, fires once at .so load)
+// and detect_frida_loop() (every 5 s).
+//
+// CHECK A  /proc/self/environ → "_MONKEY"
+//   AOSP frameworks/base/cmds/monkey explicitly writes _MONKEY=1 into the
+//   launched app's initial environment before forking via Zygote.
+//   /proc/self/environ is the initial env block, NUL-separated KEY=VALUE.
+//   Reading it and scanning for "_MONKEY" is the canonical native check.
+//
+// CHECK B  Walk /proc/<pid>/cmdline for "com.android.commands.monkey"
+//   The Monkey process stays alive briefly after dispatching the launch.
+//   Iterate every numeric /proc/<pid>/ entry; read cmdline (NUL-separated
+//   argv) and scan for the Monkey class name.  Uses vm_getdents64 (raw
+//   syscall) — same infrastructure as detect_frida_threads().
+//
+// All strings are constructed character-by-character on the stack.
+// No .rodata blob — nothing for `strings` or a hex editor to find.
+// OLLVM +vm_virtualize obfuscates every assignment at compile time.
+// ?
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_monkey(void) {
+
+    // ── CHECK A: /proc/self/environ → "_MONKEY" ──────────────────────────────
+    {
+        char env_path[20]; // "/proc/self/environ"
+        env_path[ 0]='/'; env_path[ 1]='p'; env_path[ 2]='r'; env_path[ 3]='o';
+        env_path[ 4]='c'; env_path[ 5]='/'; env_path[ 6]='s'; env_path[ 7]='e';
+        env_path[ 8]='l'; env_path[ 9]='f'; env_path[10]='/'; env_path[11]='e';
+        env_path[12]='n'; env_path[13]='v'; env_path[14]='i'; env_path[15]='r';
+        env_path[16]='o'; env_path[17]='n'; env_path[18]='\0';
+
+        int efd = vm_openat(AT_FDCWD, env_path, O_RDONLY | O_CLOEXEC, 0);
+        volatile char *ep = (volatile char *)env_path;
+        for (int i = 0; i < 19; i++) ep[i] = 0;
+
+        if (efd >= 0) {
+            // "_MONKEY\0" — built on stack, never in .rodata
+            char needle[8];
+            needle[0]='_'; needle[1]='M'; needle[2]='O'; needle[3]='N';
+            needle[4]='K'; needle[5]='E'; needle[6]='Y'; needle[7]='\0';
+
+            // Read environ in 2 KB chunks; carry last 7 bytes across chunks
+            // so a split needle (chunk boundary cuts "_MONKEY") is not missed.
+            char buf[2048];
+            char carry[8]; int carry_len = 0;
+            int found = 0;
+            ssize_t n;
+            while (!found) {
+                n = vm_read(efd, buf, sizeof(buf));
+                if (n <= 0) break;
+                // Window = previous-tail + current chunk
+                char win[2056]; // 8 carry + 2048 buf
+                for (int i = 0; i < carry_len; i++) win[i] = carry[i];
+                for (ssize_t i = 0; i < n; i++) win[carry_len + i] = buf[i];
+                int wlen = carry_len + (int)n;
+                win[wlen] = '\0';
+                if (my_strstr(win, needle)) found = 1;
+                // Save last 7 bytes as carry for next iteration
+                carry_len = (wlen >= 7) ? 7 : wlen;
+                for (int i = 0; i < carry_len; i++) carry[i] = win[wlen - carry_len + i];
+            }
+            vm_close(efd);
+            volatile char *np = (volatile char *)needle;
+            for (int i = 0; i < 8; i++) np[i] = 0;
+            if (found) { PH_NUKE("_MONKEY environ"); nuke_app(); }
+        }
+    }
+
+    // ── CHECK B: /proc scan — Monkey process in cmdline ───────────────────────
+    // "com.android.commands.monkey" — Monkey's main class, present in every
+    // invocation's cmdline (app_process ... com.android.commands.monkey ...).
+    {
+        // Target string — stack-constructed, wiped after use
+        char str_mky[28];
+        str_mky[ 0]='c'; str_mky[ 1]='o'; str_mky[ 2]='m'; str_mky[ 3]='.';
+        str_mky[ 4]='a'; str_mky[ 5]='n'; str_mky[ 6]='d'; str_mky[ 7]='r';
+        str_mky[ 8]='o'; str_mky[ 9]='i'; str_mky[10]='d'; str_mky[11]='.';
+        str_mky[12]='c'; str_mky[13]='o'; str_mky[14]='m'; str_mky[15]='m';
+        str_mky[16]='a'; str_mky[17]='n'; str_mky[18]='d'; str_mky[19]='s';
+        str_mky[20]='.'; str_mky[21]='m'; str_mky[22]='o'; str_mky[23]='n';
+        str_mky[24]='k'; str_mky[25]='e'; str_mky[26]='y'; str_mky[27]='\0';
+
+        // Open /proc/ directory using vm_getdents64 (no libc opendir)
+        char proc_dir[7];
+        proc_dir[0]='/'; proc_dir[1]='p'; proc_dir[2]='r';
+        proc_dir[3]='o'; proc_dir[4]='c'; proc_dir[5]='/'; proc_dir[6]='\0';
+        int dfd = vm_openat(AT_FDCWD, proc_dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
+        volatile char *dp = (volatile char *)proc_dir;
+        for (int i = 0; i < 7; i++) dp[i] = 0;
+
+        int found = 0;
+        if (dfd >= 0) {
+            char dirbuf[2048];
+            ssize_t nread;
+            while (!found && (nread = vm_getdents64(dfd, dirbuf, sizeof(dirbuf))) > 0) {
+                int off = 0;
+                while (off < (int)nread && !found) {
+                    struct ph_dirent64 *de = (struct ph_dirent64 *)(dirbuf + off);
+                    off += de->d_reclen;
+                    // Only look at numeric entries (PID directories)
+                    if (!ph_is_digits(de->d_name)) continue;
+
+                    // Build "/proc/<pid>/cmdline" on the stack
+                    char cl_path[64];
+                    cl_path[0]='/'; cl_path[1]='p'; cl_path[2]='r';
+                    cl_path[3]='o'; cl_path[4]='c'; cl_path[5]='/';
+                    int nl = 0;
+                    const char *dn = de->d_name;
+                    while (*dn) cl_path[6 + nl++] = *dn++;
+                    cl_path[6+nl]='/';
+                    cl_path[7+nl]='c'; cl_path[8+nl]='m'; cl_path[ 9+nl]='d';
+                    cl_path[10+nl]='l'; cl_path[11+nl]='i'; cl_path[12+nl]='n';
+                    cl_path[13+nl]='e'; cl_path[14+nl]='\0';
+
+                    // O_NONBLOCK: some special /proc entries can block on open
+                    int cfd = vm_openat(AT_FDCWD, cl_path,
+                                        O_RDONLY | O_CLOEXEC | O_NONBLOCK, 0);
+                    if (cfd < 0) continue;
+                    char cbuf[256];
+                    ssize_t cn = vm_read(cfd, cbuf, sizeof(cbuf) - 1);
+                    vm_close(cfd);
+                    if (cn <= 0) continue;
+                    // cmdline is NUL-separated argv[] — replace NUL with space
+                    // so my_strstr can find the class name across arg boundaries
+                    for (ssize_t i = 0; i < cn - 1; i++)
+                        if (cbuf[i] == '\0') cbuf[i] = ' ';
+                    cbuf[cn] = '\0';
+                    if (my_strstr(cbuf, str_mky)) found = 1;
+                }
+            }
+            vm_close(dfd);
+        }
+        volatile char *vp = (volatile char *)str_mky;
+        for (int i = 0; i < 28; i++) vp[i] = 0;
+        if (found) { PH_NUKE("Monkey process in /proc"); nuke_app(); }
+    }
+}
+
 
 // detect_frida_threads — three checks per task, matching darvincisec + NativeShield:
 //
@@ -1038,6 +1187,7 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     timereq.tv_sec  = 5;
     timereq.tv_nsec = 0;
     while (1) {
+        detect_monkey();                           // _MONKEY env var + /proc scan for com.android.commands.monkey
         detect_frida_threads();                   // JDWP + per-task TracerPid + gum-js-loop/gmain
         detect_frida_namedpipe();
         detect_frida_websocket();                 // WebSocket fingerprint: tyZql/Y8dNFFyopTrHadWzvbvRs=
@@ -1214,6 +1364,7 @@ static __attribute__((noinline)) void vm_spawn_watcher(void) {
 __attribute__((constructor))
 void detect_frida_init(void) {
     vm_prctl(PR_SET_DUMPABLE, 0);
+    detect_monkey();       // immediate check at .so load, before any shard decrypts
     vm_spawn_watcher();
 }
 
