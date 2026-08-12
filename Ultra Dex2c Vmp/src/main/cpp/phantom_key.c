@@ -14,7 +14,7 @@
 // Zeroes the ENTIRE Java byte[] that nativeDecryptShard returned so the heap
 // contains no reconstructable DEX bytecode.
 //
-// LAYER 2  detect_frida_loop()  [5 s cadence, background thread]
+// LAYER 2  detect_frida_loop()  [2 s cadence, background thread] + watcher_guard_loop() [3 s watchdog]
 // Frida/ptrace heuristics PLUS eBPF uprobe detection, JDWP thread scan,
 // Riru/Zygisk/Xposed detection, root detection, and disk-vs-mem ELF compare.
 //
@@ -189,6 +189,14 @@ static inline void my_path_cat3(char *dst, int dstmax,
     dst[n] = '\0';
 }
 
+/* ph_is_digits: return 1 if s is non-empty and all decimal digits (PID dir names). */
+__attribute__((always_inline))
+static inline int ph_is_digits(const char *s) {
+    if (!*s) return 0;
+    while (*s) { if (*s < '0' || *s > '9') return 0; s++; }
+    return 1;
+}
+
 /* Minimal linux_dirent64 for vm_getdents64 — replaces opendir/readdir. */
 struct ph_dirent64 {
     uint64_t d_ino;
@@ -271,6 +279,23 @@ static inline long raw_syscall_5(long no, long a1, long a2, long a3, long a4, lo
     register long x4 __asm__("x4") = a5;
     __asm__ volatile("svc #0\n"
         : "=r"(x0) : "r"(x8), "0"(x0), "r"(x1), "r"(x2), "r"(x3), "r"(x4) : "memory", "cc");
+    return x0;
+}
+
+/* raw_syscall_6 — 6-argument syscall wrapper (arm64).
+   Required for mmap(__NR_mmap = 222) which takes 6 arguments.
+   Used by ph_anon_alloc to create anonymous executable pages for trampolines. */
+__attribute__((always_inline))
+static inline long raw_syscall_6(long no, long a1, long a2, long a3, long a4, long a5, long a6) {
+    register long x8 __asm__("x8") = no;
+    register long x0 __asm__("x0") = a1;
+    register long x1 __asm__("x1") = a2;
+    register long x2 __asm__("x2") = a3;
+    register long x3 __asm__("x3") = a4;
+    register long x4 __asm__("x4") = a5;
+    register long x5 __asm__("x5") = a6;
+    __asm__ volatile("svc #0\n"
+        : "=r"(x0) : "r"(x8), "0"(x0), "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5) : "memory", "cc");
     return x0;
 }
 
@@ -565,6 +590,147 @@ static __attribute__((noinline)) void detect_ptrace(void) {
 
 
 // ?
+
+// detect_monkey -- Monkey UI Exerciser & automated-dump detection
+//
+// Called from both detect_frida_init() (constructor, fires once at .so load)
+// and detect_frida_loop() (every 2 s).
+//
+// CHECK A  /proc/self/environ → "_MONKEY"
+//   AOSP frameworks/base/cmds/monkey explicitly writes _MONKEY=1 into the
+//   launched app's initial environment before forking via Zygote.
+//   /proc/self/environ is the initial env block, NUL-separated KEY=VALUE.
+//   Reading it and scanning for "_MONKEY" is the canonical native check.
+//
+// CHECK B  Walk /proc/<pid>/cmdline for "com.android.commands.monkey"
+//   The Monkey process stays alive briefly after dispatching the launch.
+//   Iterate every numeric /proc/<pid>/ entry; read cmdline (NUL-separated
+//   argv) and scan for the Monkey class name.  Uses vm_getdents64 (raw
+//   syscall) — same infrastructure as detect_frida_threads().
+//
+// All strings are constructed character-by-character on the stack.
+// No .rodata blob — nothing for `strings` or a hex editor to find.
+// OLLVM +vm_virtualize obfuscates every assignment at compile time.
+// ?
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_monkey(void) {
+
+    // ── CHECK A: /proc/self/environ → "_MONKEY" ──────────────────────────────
+    {
+        char env_path[20]; // "/proc/self/environ"
+        env_path[ 0]='/'; env_path[ 1]='p'; env_path[ 2]='r'; env_path[ 3]='o';
+        env_path[ 4]='c'; env_path[ 5]='/'; env_path[ 6]='s'; env_path[ 7]='e';
+        env_path[ 8]='l'; env_path[ 9]='f'; env_path[10]='/'; env_path[11]='e';
+        env_path[12]='n'; env_path[13]='v'; env_path[14]='i'; env_path[15]='r';
+        env_path[16]='o'; env_path[17]='n'; env_path[18]='\0';
+
+        int efd = vm_openat(AT_FDCWD, env_path, O_RDONLY | O_CLOEXEC, 0);
+        volatile char *ep = (volatile char *)env_path;
+        for (int i = 0; i < 19; i++) ep[i] = 0;
+
+        if (efd >= 0) {
+            // "_MONKEY\0" — built on stack, never in .rodata
+            char needle[8];
+            needle[0]='_'; needle[1]='M'; needle[2]='O'; needle[3]='N';
+            needle[4]='K'; needle[5]='E'; needle[6]='Y'; needle[7]='\0';
+
+            // Read environ in 2 KB chunks; carry last 7 bytes across chunks
+            // so a split needle (chunk boundary cuts "_MONKEY") is not missed.
+            char buf[2048];
+            char carry[8]; int carry_len = 0;
+            int found = 0;
+            ssize_t n;
+            while (!found) {
+                n = vm_read(efd, buf, sizeof(buf));
+                if (n <= 0) break;
+                // Window = previous-tail + current chunk
+                char win[2056]; // 8 carry + 2048 buf
+                for (int i = 0; i < carry_len; i++) win[i] = carry[i];
+                for (ssize_t i = 0; i < n; i++) win[carry_len + i] = buf[i];
+                int wlen = carry_len + (int)n;
+                win[wlen] = '\0';
+                if (my_strstr(win, needle)) found = 1;
+                // Save last 7 bytes as carry for next iteration
+                carry_len = (wlen >= 7) ? 7 : wlen;
+                for (int i = 0; i < carry_len; i++) carry[i] = win[wlen - carry_len + i];
+            }
+            vm_close(efd);
+            volatile char *np = (volatile char *)needle;
+            for (int i = 0; i < 8; i++) np[i] = 0;
+            if (found) { PH_NUKE("_MONKEY environ"); nuke_app(); }
+        }
+    }
+
+    // ── CHECK B: /proc scan — Monkey process in cmdline ───────────────────────
+    // "com.android.commands.monkey" — Monkey's main class, present in every
+    // invocation's cmdline (app_process ... com.android.commands.monkey ...).
+    {
+        // Target string — stack-constructed, wiped after use
+        char str_mky[28];
+        str_mky[ 0]='c'; str_mky[ 1]='o'; str_mky[ 2]='m'; str_mky[ 3]='.';
+        str_mky[ 4]='a'; str_mky[ 5]='n'; str_mky[ 6]='d'; str_mky[ 7]='r';
+        str_mky[ 8]='o'; str_mky[ 9]='i'; str_mky[10]='d'; str_mky[11]='.';
+        str_mky[12]='c'; str_mky[13]='o'; str_mky[14]='m'; str_mky[15]='m';
+        str_mky[16]='a'; str_mky[17]='n'; str_mky[18]='d'; str_mky[19]='s';
+        str_mky[20]='.'; str_mky[21]='m'; str_mky[22]='o'; str_mky[23]='n';
+        str_mky[24]='k'; str_mky[25]='e'; str_mky[26]='y'; str_mky[27]='\0';
+
+        // Open /proc/ directory using vm_getdents64 (no libc opendir)
+        char proc_dir[7];
+        proc_dir[0]='/'; proc_dir[1]='p'; proc_dir[2]='r';
+        proc_dir[3]='o'; proc_dir[4]='c'; proc_dir[5]='/'; proc_dir[6]='\0';
+        int dfd = vm_openat(AT_FDCWD, proc_dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
+        volatile char *dp = (volatile char *)proc_dir;
+        for (int i = 0; i < 7; i++) dp[i] = 0;
+
+        int found = 0;
+        if (dfd >= 0) {
+            char dirbuf[2048];
+            ssize_t nread;
+            while (!found && (nread = vm_getdents64(dfd, dirbuf, sizeof(dirbuf))) > 0) {
+                int off = 0;
+                while (off < (int)nread && !found) {
+                    struct ph_dirent64 *de = (struct ph_dirent64 *)(dirbuf + off);
+                    off += de->d_reclen;
+                    // Only look at numeric entries (PID directories)
+                    if (!ph_is_digits(de->d_name)) continue;
+
+                    // Build "/proc/<pid>/cmdline" on the stack
+                    char cl_path[64];
+                    cl_path[0]='/'; cl_path[1]='p'; cl_path[2]='r';
+                    cl_path[3]='o'; cl_path[4]='c'; cl_path[5]='/';
+                    int nl = 0;
+                    const char *dn = de->d_name;
+                    while (*dn) cl_path[6 + nl++] = *dn++;
+                    cl_path[6+nl]='/';
+                    cl_path[7+nl]='c'; cl_path[8+nl]='m'; cl_path[ 9+nl]='d';
+                    cl_path[10+nl]='l'; cl_path[11+nl]='i'; cl_path[12+nl]='n';
+                    cl_path[13+nl]='e'; cl_path[14+nl]='\0';
+
+                    // O_NONBLOCK: some special /proc entries can block on open
+                    int cfd = vm_openat(AT_FDCWD, cl_path,
+                                        O_RDONLY | O_CLOEXEC | O_NONBLOCK, 0);
+                    if (cfd < 0) continue;
+                    char cbuf[256];
+                    ssize_t cn = vm_read(cfd, cbuf, sizeof(cbuf) - 1);
+                    vm_close(cfd);
+                    if (cn <= 0) continue;
+                    // cmdline is NUL-separated argv[] — replace NUL with space
+                    // so my_strstr can find the class name across arg boundaries
+                    for (ssize_t i = 0; i < cn - 1; i++)
+                        if (cbuf[i] == '\0') cbuf[i] = ' ';
+                    cbuf[cn] = '\0';
+                    if (my_strstr(cbuf, str_mky)) found = 1;
+                }
+            }
+            vm_close(dfd);
+        }
+        volatile char *vp = (volatile char *)str_mky;
+        for (int i = 0; i < 28; i++) vp[i] = 0;
+        if (found) { PH_NUKE("Monkey process in /proc"); nuke_app(); }
+    }
+}
+
 
 // detect_frida_threads — three checks per task, matching darvincisec + NativeShield:
 //
@@ -1031,13 +1197,39 @@ static __attribute__((noinline)) void detect_root(void) {
    Declared volatile so the compiler does not cache it across loop iterations. */
 static volatile int g_block_rooted = 0;
 
+/* g_watcher_tick — heartbeat counter incremented by detect_frida_loop on every
+   completed cycle.  The watchdog thread reads this; if it does not change within
+   its check window it means the main detection thread was suspended or killed —
+   watchdog nukes immediately.  Volatile: must not be cached across threads. */
+static volatile long g_watcher_tick = 0;
+
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     (void)args;
+
+    // Disguise this thread as a normal ART system thread so it is invisible
+    // in thread-listing tools.  "HeapTaskDaemon" exists in every Android app.
+    // Stack-constructed — never appears in .rodata.
+    {
+        char tname[16];
+        tname[ 0]='H'; tname[ 1]='e'; tname[ 2]='a'; tname[ 3]='p';
+        tname[ 4]='T'; tname[ 5]='a'; tname[ 6]='s'; tname[ 7]='k';
+        tname[ 8]='D'; tname[ 9]='a'; tname[10]='e'; tname[11]='m';
+        tname[12]='o'; tname[13]='n'; tname[14]='\0';
+        vm_prctl(15 /*PR_SET_NAME*/, (unsigned long)(uintptr_t)tname);
+        volatile char *tp = (volatile char *)tname;
+        for (int i = 0; i < 15; i++) tp[i] = 0;
+    }
+
     struct timespec timereq;
-    timereq.tv_sec  = 5;
+    timereq.tv_sec  = 2;   // 2-second cadence — was 5 s; tighter dump window
     timereq.tv_nsec = 0;
     while (1) {
+        // Re-seal /proc/PID/mem every cycle — an attacker cannot permanently
+        // re-enable dumpability by setting PR_SET_DUMPABLE once between checks.
+        vm_prctl(4 /*PR_SET_DUMPABLE*/, 0);
+
+        detect_monkey();                           // _MONKEY env var + /proc scan for com.android.commands.monkey
         detect_frida_threads();                   // JDWP + per-task TracerPid + gum-js-loop/gmain
         detect_frida_namedpipe();
         detect_frida_websocket();                 // WebSocket fingerprint: tyZql/Y8dNFFyopTrHadWzvbvRs=
@@ -1045,6 +1237,10 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
         detect_ebpf_uprobe();
         if (g_block_rooted) detect_riru_zygisk();  // Riru/Zygisk/Xposed: maps + phdr + paths — only if toggle ON
         if (g_block_rooted) detect_root();        // su binaries + Magisk mounts — only if toggle ON
+
+        // Heartbeat — watchdog thread reads this; no change = main loop dead = nuke
+        g_watcher_tick++;
+
         vm_nanosleep(&timereq, NULL);
     }
     return NULL;
@@ -1195,6 +1391,142 @@ static __attribute__((noinline)) void check_rooted(void) {
     cr_buildprop();
 }
 
+/* watcher_guard_loop — independent watchdog thread.
+ *
+ * WHY: An attacker may suspend or SIGKILL detect_frida_loop to open a dump
+ * window.  This second thread detects that the heartbeat counter has stopped
+ * advancing and nukes immediately.
+ *
+ * Design:
+ *   1. Sleep 4 s on startup (lets the main loop emit its first heartbeat).
+ *   2. Sample g_watcher_tick.
+ *   3. Sleep (interval + 1) s  — main loop ticks every 2 s, so 3 s is enough.
+ *   4. If tick has not changed → main loop is dead → nuke.
+ *   5. Loop forever.
+ *
+ * The watchdog itself is disguised as "ReferenceQueueD" — another normal ART
+ * thread present in every process — so it does not stand out in thread lists.
+ * Its own death (if an attacker also kills it) is not self-detectable, but
+ * killing two independent threads with different disguised names requires
+ * knowing they both exist — significantly harder than killing one.           */
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void *watcher_guard_loop(void *args) {
+    (void)args;
+
+    // Disguise: "ReferenceQueueD" — real ART thread name, 15 chars.
+    {
+        char tname[16];
+        tname[ 0]='R'; tname[ 1]='e'; tname[ 2]='f'; tname[ 3]='e';
+        tname[ 4]='r'; tname[ 5]='e'; tname[ 6]='n'; tname[ 7]='c';
+        tname[ 8]='e'; tname[ 9]='Q'; tname[10]='u'; tname[11]='e';
+        tname[12]='u'; tname[13]='e'; tname[14]='D'; tname[15]='\0';
+        vm_prctl(15 /*PR_SET_NAME*/, (unsigned long)(uintptr_t)tname);
+        volatile char *tp = (volatile char *)tname;
+        for (int i = 0; i < 16; i++) tp[i] = 0;
+    }
+
+    // Give the main loop time to start and emit its first tick.
+    { struct timespec s = { 4, 0 }; vm_nanosleep(&s, NULL); }
+
+    long last_tick = g_watcher_tick;
+
+    struct timespec check = { 3, 0 }; // check every 3 s (main loop ticks every 2 s)
+    while (1) {
+        vm_nanosleep(&check, NULL);
+        long cur_tick = g_watcher_tick;
+        if (cur_tick == last_tick) {
+            // Main watcher thread has stopped advancing — it was suspended,
+            // killed, or its nuke path was patched.  Nuke from this thread.
+            PH_NUKE("watcher heartbeat dead");
+            nuke_app();
+        }
+        last_tick = cur_tick;
+    }
+    return NULL;
+}
+
+/* ph_anon_alloc — allocate an anonymous RW page via raw mmap syscall.
+   Bypasses libc mmap (which Frida can hook).  Returns NULL on failure.
+   The page is intentionally never freed — it lives for the process lifetime.
+   noinline: amice lifts callers without peeking into the inline asm inside. */
+static __attribute__((noinline)) void *ph_anon_alloc(void) {
+#if defined(__aarch64__)
+    // mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+    long r = raw_syscall_6(222 /*__NR_mmap*/, 0L, 4096L,
+                           3L  /*PROT_READ|PROT_WRITE*/,
+                           34L /*MAP_PRIVATE|MAP_ANONYMOUS*/,
+                           -1L, 0L);
+    return (r < 0 || r == -1L) ? NULL : (void *)r;
+#else
+    // arm32: mmap2 syscall (192); pgoffset = 0 for anonymous
+    long r = (long)syscall(192 /*__NR_mmap2*/, 0, 4096,
+                           3  /*PROT_READ|PROT_WRITE*/,
+                           34 /*MAP_PRIVATE|MAP_ANONYMOUS*/,
+                           -1, 0);
+    return (r < 0) ? NULL : (void *)r;
+#endif
+}
+
+/* make_anon_trampoline — write a tiny machine-code jump stub into an anonymous
+   mmap page and return a pointer to it.
+ *
+ * WHY:
+ *   Frida's patchPthreadCreate hook intercepts pthread_create and checks whether
+ *   args[2] (the start_routine pointer) belongs to a module in a hard-coded
+ *   suspicious-module list via Process.findModuleByAddress().  If the pointer
+ *   lives inside libphantom.so an attacker can add that name to the list and
+ *   redirect both detection threads to a bare `ret` noop — silently killing all
+ *   continuous checks with one script edit.
+ *
+ *   Process.findModuleByAddress() returns NULL for anonymous mmap regions.
+ *   The hook's `if (mod && ...)` guard therefore fails → thread is NOT neutralized,
+ *   regardless of which module names appear in suspiciousModules.
+ *
+ * Trampoline layout:
+ *   arm64 (16 bytes):
+ *       58000040   LDR X0, #8       ; load 8-byte fn ptr at PC+8 into X0
+ *       D61F0000   BR X0            ; branch to fn
+ *       <8-byte fn address, little-endian>
+ *
+ *   arm32 (12 bytes, ARM mode):
+ *       E59FC000   LDR R12, [PC,#0] ; PC=instr+8 → load fn ptr at offset 8
+ *       E12FFF1C   BX R12           ; branch+exchange to fn
+ *       <4-byte fn address, little-endian>
+ *
+ * Falls back to returning fn directly if mmap fails (no page available).
+ * The page is made PROT_READ|PROT_EXEC before being returned.               */
+static __attribute__((noinline)) void *make_anon_trampoline(void *(*fn)(void *)) {
+    void *page = ph_anon_alloc();
+    if (!page) return (void *)fn;  // fallback: pass real fn ptr directly
+
+    volatile uint8_t *p = (volatile uint8_t *)page;
+
+#if defined(__aarch64__)
+    // LDR X0, #8 — imm19=2 → PC-relative load of 8 bytes at PC+8
+    p[0]=0x40; p[1]=0x00; p[2]=0x00; p[3]=0x58;
+    // BR X0
+    p[4]=0x00; p[5]=0x00; p[6]=0x1F; p[7]=0xD6;
+    // 8-byte function pointer, little-endian
+    uintptr_t a = (uintptr_t)(void *)fn;
+    p[ 8]=(uint8_t)(a      ); p[ 9]=(uint8_t)(a>> 8);
+    p[10]=(uint8_t)(a>>16  ); p[11]=(uint8_t)(a>>24);
+    p[12]=(uint8_t)(a>>32  ); p[13]=(uint8_t)(a>>40);
+    p[14]=(uint8_t)(a>>48  ); p[15]=(uint8_t)(a>>56);
+#else
+    // ARM32: LDR R12,[PC,#0] reads from PC+8 = trampoline+8
+    p[0]=0x00; p[1]=0xC0; p[2]=0x9F; p[3]=0xE5;  // LDR R12, [PC, #0]
+    p[4]=0x1C; p[5]=0xFF; p[6]=0x2F; p[7]=0xE1;  // BX  R12
+    // 4-byte function pointer at offset 8, little-endian
+    uintptr_t a = (uintptr_t)(void *)fn;
+    p[8]=(uint8_t)(a   ); p[9]=(uint8_t)(a>>8);
+    p[10]=(uint8_t)(a>>16); p[11]=(uint8_t)(a>>24);
+#endif
+
+    // Remove write permission; add execute — the page is now RX only
+    vm_mprotect(page, 4096, 5 /*PROT_READ|PROT_EXEC*/);
+    return page;
+}
+
 /* vm_spawn_watcher — VMP-virtualized so the constructor body shows zero named
    PLT imports in ARM64 disassembly.
    Before this fix, detect_frida_init compiled to:
@@ -1204,16 +1536,28 @@ static __attribute__((noinline)) void check_rooted(void) {
        bl fcn.AAAA   ← stripped vm_prctl, no sym.imp label
        bl fcn.BBBB   ← stripped vm_spawn_watcher, no sym.imp label
    pthread_create is called inside the VM as call_native(vm_pthread_create) —
-   no bl pthread_create exists at any fixed binary offset an attacker can NOP. */
+   no bl pthread_create exists at any fixed binary offset an attacker can NOP.
+   Both the detection loop AND the watchdog are spawned here so the constructor
+   body has a single well-hidden call site.
+   Trampolines: each thread's start_routine pointer is an anonymous mmap page,
+   not an address inside libphantom.so.  Frida's patchPthreadCreate hook calls
+   Process.findModuleByAddress(start_routine) — anonymous pages return null →
+   the suspicious-module check fails → threads are never neutralized.          */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void vm_spawn_watcher(void) {
-    pthread_t t;
-    vm_pthread_create(&t, NULL, detect_frida_loop, NULL);
+    pthread_t t1, t2;
+    // Wrap each start routine in an anonymous-mmap trampoline so
+    // Process.findModuleByAddress(start_routine) → null → not neutralized.
+    void *tramp1 = make_anon_trampoline(detect_frida_loop);
+    void *tramp2 = make_anon_trampoline(watcher_guard_loop);
+    vm_pthread_create(&t1, NULL, (void *(*)(void *))tramp1, NULL);
+    vm_pthread_create(&t2, NULL, (void *(*)(void *))tramp2, NULL);
 }
 
 __attribute__((constructor))
 void detect_frida_init(void) {
     vm_prctl(PR_SET_DUMPABLE, 0);
+    detect_monkey();       // immediate check at .so load, before any shard decrypts
     vm_spawn_watcher();
 }
 
