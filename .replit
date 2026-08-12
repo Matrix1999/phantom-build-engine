@@ -1,2 +1,3 @@
+modules = ["python-base-3.13"]
 [nix]
 channel = "stable-25_05"
