@@ -295,7 +295,7 @@ public class Tier1DexPatcher {
                         // Strip the encoded initial value.
                         newFields.add(FieldDef.of(
                                 f.getName(), f.getType(),
-                                f.getAccessFlags(), f.getHiddenApiFlags(),
+                                f.getAccessFlags(),
                                 f.getAnnotations(), null));
                         Log.d(TAG, "  string field stripped: " + f.getName() + " in " + clsType);
                     } else {
