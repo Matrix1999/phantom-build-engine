@@ -21,7 +21,14 @@ extern "C" void ph_strings_register(JNIEnv* env) {
 ```
 Not just `JNIEXPORT void JNICALL ...` — JNIEXPORT only sets visibility, it does NOT disable C++ mangling.
 
-## VMP vs DEX2C difference
+## VMP vs DEX2C JNI_OnLoad file difference
+VMP mode generates `jni_init.cpp`; DEX2C mode generates `jni_onload.cpp`.
+`patchJniInitForStrings` in ApkProtector must check BOTH filenames or it silently skips DEX2C.
+When it skips: `ph_strings_register` is never called → RegisterNatives never fires → LLD --gc-sections
+strips `Java_REVERSAL_1X_phStrInject` (no reference chain despite JNIEXPORT) → UnsatisfiedLinkError.
+Fix: fall through from `jni_init.cpp` to `jni_onload.cpp` when the first is absent.
+
+## VMP vs DEX2C symbol lookup
 VMP mode: RegisterNatives via NativeUtil.classesInit0() — function pointer, mangling irrelevant.
-DEX2C mode: ART static Java_* symbol lookup — requires exact unmangled symbol name.
-Missing extern "C" on phStrInject causes UnsatisfiedLinkError in DEX2C mode only.
+DEX2C mode: relies on ph_strings_register → RegisterNatives in JNI_OnLoad as primary path;
+static Java_* lookup is the fallback but LLD gc-sections can remove it if no reference exists.

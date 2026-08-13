@@ -458,11 +458,19 @@ public class ApkProtector {
      * regardless of ART's static Java_* lookup or LLD --gc-sections dead-stripping.
      */
     private void patchJniInitForStrings(File cSourceDir) {
+        // VMP mode generates jni_init.cpp; DEX2C mode generates jni_onload.cpp.
+        // Try both so ph_strings_register(env) is injected into JNI_OnLoad
+        // regardless of which mode was used.
         File jniInit = new File(cSourceDir, "jni_init.cpp");
         if (!jniInit.exists()) {
-            android.util.Log.w("ApkProtector", "patchJniInitForStrings: jni_init.cpp not found — skipping");
+            jniInit = new File(cSourceDir, "jni_onload.cpp");  // DEX2C fallback
+        }
+        if (!jniInit.exists()) {
+            android.util.Log.w("ApkProtector",
+                    "patchJniInitForStrings: neither jni_init.cpp nor jni_onload.cpp found — skipping");
             return;
         }
+        final String fileName = jniInit.getName();
         try {
             String src = new String(java.nio.file.Files.readAllBytes(jniInit.toPath()),
                     java.nio.charset.StandardCharsets.UTF_8);
@@ -470,15 +478,24 @@ public class ApkProtector {
             // Already patched (idempotent)
             if (src.contains("ph_strings_register")) return;
 
-            // 1. Prepend extern declaration after first #include line
+            // 1. Insert extern declaration after the last #include line so it
+            //    appears after all system headers (avoids forward-decl ordering issues).
             String externDecl = "extern \"C\" void ph_strings_register(JNIEnv* env);\n";
-            int firstInclude = src.indexOf("#include");
-            int insertDeclAt = (firstInclude >= 0)
-                    ? src.indexOf('\n', firstInclude) + 1
-                    : 0;
-            src = src.substring(0, insertDeclAt) + externDecl + src.substring(insertDeclAt);
+            int lastIncludeEnd = 0;
+            int search = 0;
+            while (true) {
+                int found = src.indexOf("#include", search);
+                if (found < 0) break;
+                int eol = src.indexOf('\n', found);
+                if (eol < 0) eol = src.length() - 1;
+                lastIncludeEnd = eol + 1;
+                search = eol + 1;
+            }
+            src = src.substring(0, lastIncludeEnd) + externDecl + src.substring(lastIncludeEnd);
 
-            // 2. Insert call before "return JNI_VERSION_1_6;"
+            // 2. Insert call before the last "return JNI_VERSION_1_6;"
+            //    NdkBuilder.patchJniOnload() uses the same anchor so this call
+            //    ends up just before both guard bootstrap and the return statement.
             String returnStmt = "return JNI_VERSION_1_6;";
             int retIdx = src.lastIndexOf(returnStmt);
             if (retIdx >= 0) {
@@ -487,14 +504,17 @@ public class ApkProtector {
                         + src.substring(retIdx);
             } else {
                 android.util.Log.w("ApkProtector",
-                        "patchJniInitForStrings: 'return JNI_VERSION_1_6;' not found in jni_init.cpp");
+                        "patchJniInitForStrings: 'return JNI_VERSION_1_6;' not found in "
+                        + fileName + " — ph_strings_register not injected");
             }
 
             java.nio.file.Files.write(jniInit.toPath(),
                     src.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            android.util.Log.i("ApkProtector", "patchJniInitForStrings: jni_init.cpp patched ✓");
+            android.util.Log.i("ApkProtector",
+                    "patchJniInitForStrings: ph_strings_register injected into " + fileName + " ✓");
         } catch (Exception e) {
-            android.util.Log.e("ApkProtector", "patchJniInitForStrings failed: " + e.getMessage());
+            android.util.Log.e("ApkProtector",
+                    "patchJniInitForStrings failed (" + fileName + "): " + e.getMessage());
         }
     }
 
