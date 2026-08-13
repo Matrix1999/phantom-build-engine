@@ -826,7 +826,7 @@ jobs:
             --no-daemon
           cd -
           APK=$(find . -name "*.apk" -not -path "*/intermediates/*" | head -1)
-          echo "BUILD_OUTPUT=$(realpath $APK)" >> $GITHUB_ENV
+          echo "BUILD_OUTPUT=$(realpath "$APK")" >> $GITHUB_ENV
 
       # ── 11. Sign APK ──────────────────────────────────────────────────────────
       - name: Sign APK
