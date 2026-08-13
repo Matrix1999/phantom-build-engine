@@ -59,8 +59,11 @@ public class Tier1DexPatcher {
     private static final TypeId  CONTEXT_TYPE         = TypeId.of("Landroid/content/Context;");
 
     // Code units prepended into <clinit> by prependLoadLibrary:
-    //   const-string (2) + invoke-static (3) = 5
-    private static final int CLINIT_PREPEND_CU = 5;
+    //   const-string (2) + invoke-static loadLibrary (3) = 5
+    private static final int CLINIT_PREPEND_CU      = 5;
+    // Extra code units when phStrInject() call is also prepended:
+    //   invoke-static phStrInject (3) = 3 more
+    private static final int CLINIT_INJECT_CU       = 3;
 
     private static final TypeId  GUARD_CLASS_TYPE  = TypeId.of("Lfonts/Metrics;");
     private static final String  GUARD_METHOD      = "measure";
@@ -97,6 +100,22 @@ public class Tier1DexPatcher {
 
     public static int patchAll(File dexDir, Set<String> compiledKeys, String libName,
                                java.util.function.Consumer<String> progress) throws IOException {
+        return patchAll(dexDir, compiledKeys, libName, Collections.emptySet(), progress);
+    }
+
+    /**
+     * Overload that additionally strips static String field initializer values
+     * and injects phStrInject() for every class in {@code classesWithStrings}.
+     *
+     * @param classesWithStrings  DEX type descriptors (e.g. "Lcom/example/Foo;")
+     *                            whose static String field values were collected and
+     *                            will be injected at runtime by ph_strings.cpp.
+     *                            phStrInject() is added to each such class and called
+     *                            from <clinit> immediately after System.loadLibrary().
+     */
+    public static int patchAll(File dexDir, Set<String> compiledKeys, String libName,
+                               Set<String> classesWithStrings,
+                               java.util.function.Consumer<String> progress) throws IOException {
         Set<String> targetTypes = new HashSet<>();
         for (String key : compiledKeys) {
             int arrow = key.indexOf("->");
@@ -127,7 +146,8 @@ public class Tier1DexPatcher {
 
             boolean addGuardHere = !guardPlaced;
             File tmp = new File(f.getParent(), f.getName() + ".patched");
-            int n = patchInPlace(f, tmp, compiledKeys, targetTypes, libName, addGuardHere);
+            int n = patchInPlace(f, tmp, compiledKeys, targetTypes, libName, addGuardHere,
+                    classesWithStrings);
             total += n;
             Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
@@ -142,7 +162,8 @@ public class Tier1DexPatcher {
         if (!guardPlaced) {
             if (primaryDex != null) {
                 File tmp = new File(primaryDex.getParent(), primaryDex.getName() + ".patched");
-                patchInPlace(primaryDex, tmp, compiledKeys, targetTypes, libName, true);
+                patchInPlace(primaryDex, tmp, compiledKeys, targetTypes, libName, true,
+                        classesWithStrings);
                 Files.move(tmp.toPath(), primaryDex.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 guardPlaced = true;
                 Log.i(TAG, "fonts.Metrics merged into classes.dex (primary — no target classes selected)");
@@ -200,7 +221,8 @@ public class Tier1DexPatcher {
                                     Set<String> compiledKeys,
                                     Set<String> targetTypes,
                                     String libName,
-                                    boolean addGuard) throws IOException {
+                                    boolean addGuard,
+                                    Set<String> classesWithStrings) throws IOException {
         byte[] data = Files.readAllBytes(dexFile.toPath());
         Dex input = DexIO.read(data);
         int count = 0;
@@ -220,6 +242,9 @@ public class Tier1DexPatcher {
             }
 
             // ── Target class: strip compiled methods, inject loadLibrary ────
+            // classesWithStrings tells us if this class also needs string injection.
+            boolean hasStrings = classesWithStrings.contains(clsType);
+
             List<MethodDef> newMethods = new ArrayList<>();
             boolean clinitFound = false;
 
@@ -238,18 +263,53 @@ public class Tier1DexPatcher {
                     }
                 } else if ("<clinit>".equals(m.getName())) {
                     clinitFound = true;
-                    newMethods.add(prependLoadLibrary(m, libName));
+                    newMethods.add(prependLoadLibrary(m, libName, hasStrings, cls.getType()));
                 } else {
                     newMethods.add(m);
                 }
             }
 
-            if (!clinitFound) newMethods.add(buildClinitMethod(libName));
+            if (!clinitFound) newMethods.add(buildClinitMethod(libName, hasStrings, cls.getType()));
+
+            // If this class has stripped string fields, add the phStrInject native method.
+            // phStrInject() is called from <clinit> (above) and implemented in ph_strings.cpp.
+            // JNI SetStaticObjectField bypasses "final" — works on all ART versions.
+            if (hasStrings) {
+                newMethods.add(buildPhStrInjectMethod());
+                Log.d(TAG, "→ phStrInject() added to: " + clsType);
+            }
+
+            // ── Strip static String initial values ──────────────────────────
+            // For classes with stripped strings: rebuild the field list, setting
+            // the initial value (static_values entry) to null for every static
+            // String field that had one.  The field declaration stays in the DEX
+            // (same as your "AFTER" screenshot) — only "= value" disappears.
+            // Non-string fields and fields with no value are left completely unchanged.
+            List<FieldDef> newFields;
+            if (hasStrings) {
+                newFields = new ArrayList<>();
+                for (FieldDef f : cls.getFields()) {
+                    if ((f.getAccessFlags() & DexConstants.ACC_STATIC) != 0
+                            && "Ljava/lang/String;".equals(f.getType().toString())
+                            && f.getInitialValue() != null) {
+                        // Strip the encoded initial value.
+                        newFields.add(FieldDef.of(
+                                f.getName(), f.getType(),
+                                f.getAccessFlags(), f.getHiddenApiFlags(),
+                                f.getAnnotations(), null));
+                        Log.d(TAG, "  string field stripped: " + f.getName() + " in " + clsType);
+                    } else {
+                        newFields.add(f);
+                    }
+                }
+            } else {
+                newFields = new ArrayList<>(cls.getFields());
+            }
 
             newClasses.add(ClassDef.of(
                     cls.getType(), cls.getAccessFlags(), cls.getSuperclass(),
                     cls.getInterfaces(), cls.getSourceFile(),
-                    cls.getFields(), newMethods, cls.getAnnotations()));
+                    newFields, newMethods, cls.getAnnotations()));
         }
 
         if (addGuard) {
@@ -284,11 +344,17 @@ public class Tier1DexPatcher {
                 flags, m.getHiddenApiFlags(), null, m.getAnnotations());
     }
 
-    /** Build a brand-new <clinit> that just calls System.loadLibrary(libName). */
-    private static MethodDef buildClinitMethod(String libName) {
+    /**
+     * Build a brand-new {@code <clinit>} that calls System.loadLibrary(libName)
+     * and, if {@code injectPhStr} is true, also calls phStrInject() immediately after
+     * to restore stripped static String field values via JNI.
+     */
+    private static MethodDef buildClinitMethod(String libName,
+                                               boolean injectPhStr, TypeId classType) {
         List<Instruction> instrs = new ArrayList<>();
         instrs.add(makeConstString(0, libName));
         instrs.add(makeInvokeLoadLibrary(0));
+        if (injectPhStr) instrs.add(makeInvokePhStrInject(classType));
         instrs.add(InstructionN0x.of(Opcode.RETURN_VOID));
         MethodImplementation impl = MethodImplementation.of(
                 1, instrs, Collections.emptyList(), Collections.emptyList());
@@ -297,29 +363,40 @@ public class Tier1DexPatcher {
                 0, impl, Collections.emptyList());
     }
 
-    /** Prepend System.loadLibrary(libName) to an existing <clinit>. */
-    private static MethodDef prependLoadLibrary(MethodDef m, String libName) {
+    /**
+     * Prepend System.loadLibrary(libName) to an existing {@code <clinit>}.
+     * If {@code injectPhStr} is true, also prepend phStrInject() immediately after
+     * loadLibrary so stripped static String fields are restored before any class
+     * code runs.
+     *
+     * Try-catch address offsets are shifted by the exact number of code units
+     * prepended (5 for loadLibrary only, 8 when phStrInject is also added).
+     */
+    private static MethodDef prependLoadLibrary(MethodDef m, String libName,
+                                                boolean injectPhStr, TypeId classType) {
         MethodImplementation impl = m.getImplementation();
-        if (impl == null) return buildClinitMethod(libName);
+        if (impl == null) return buildClinitMethod(libName, injectPhStr, classType);
 
         List<Instruction> newInstrs = new ArrayList<>();
         newInstrs.add(makeConstString(0, libName));
         newInstrs.add(makeInvokeLoadLibrary(0));
+        if (injectPhStr) newInstrs.add(makeInvokePhStrInject(classType));
         newInstrs.addAll(impl.getInstructions());
 
         int newRegCount = Math.max(impl.getRegisterCount(), 1);
+        int shift = CLINIT_PREPEND_CU + (injectPhStr ? CLINIT_INJECT_CU : 0);
 
         List<TryBlock> newTryBlocks = new ArrayList<>();
         for (TryBlock tb : impl.getTryBlocks()) {
             List<ExceptionHandler> newHandlers = new ArrayList<>();
             for (ExceptionHandler eh : tb.getHandlers()) {
                 newHandlers.add(ExceptionHandler.of(
-                        eh.getExceptionType(), eh.getAddress() + CLINIT_PREPEND_CU));
+                        eh.getExceptionType(), eh.getAddress() + shift));
             }
             Integer newCatchAll = tb.getCatchAllAddress() != null
-                    ? tb.getCatchAllAddress() + CLINIT_PREPEND_CU : null;
+                    ? tb.getCatchAllAddress() + shift : null;
             newTryBlocks.add(TryBlock.of(
-                    tb.getStartAddress() + CLINIT_PREPEND_CU,
+                    tb.getStartAddress() + shift,
                     tb.getUnitCount(), newCatchAll, newHandlers));
         }
 
@@ -327,6 +404,29 @@ public class Tier1DexPatcher {
                 newRegCount, newInstrs, newTryBlocks, Collections.emptyList());
         return MethodDef.of(m.getName(), m.getReturnType(), m.getParameters(),
                 m.getAccessFlags(), m.getHiddenApiFlags(), newImpl, m.getAnnotations());
+    }
+
+    /**
+     * Build the synthetic {@code private static native void phStrInject()} method.
+     *
+     * This method is added to every target class that had static String field values
+     * stripped.  Its JNI implementation lives in ph_strings.cpp (generated per-APK
+     * by NativeStringGen) and is compiled into the same .so as the dex2c/VMP output.
+     *
+     * Called from {@code <clinit>} immediately after System.loadLibrary() so all
+     * static String fields are restored before any class code can read them.
+     * JNI SetStaticObjectField bypasses the "final" modifier — works on all ART versions.
+     */
+    private static MethodDef buildPhStrInjectMethod() {
+        return MethodDef.of("phStrInject", TypeId.V, Collections.emptyList(),
+                DexConstants.ACC_PRIVATE | DexConstants.ACC_STATIC | DexConstants.ACC_NATIVE,
+                0, null, Collections.emptyList());
+    }
+
+    /** invoke-static {} LClassType;->phStrInject()V  (0 args, 3 code units) */
+    private static Instruction makeInvokePhStrInject(TypeId classType) {
+        return InstructionNv5c.of(Opcode.INVOKE_STATIC, 0, 0, 0, 0, 0, 0,
+                MethodId.of(classType, "phStrInject", TypeId.V));
     }
 
     /** Build the synthetic fonts.Metrics guard ClassDef. */

@@ -157,6 +157,72 @@ public class ApkProtector {
         // NdkBuilder.getGuardSoFromNativeLibs() finds it and links it into the
         // target .so via --whole-archive.  No source, no key, no decrypt.
 
+        // ── 5.5. Bytecode strip + native string encryption (before compile) ──
+        //
+        // This block used to run AFTER compile (old step 7). It is now placed
+        // BEFORE compile so that ph_strings.cpp (generated below) is present in
+        // cSourceDir when NdkBuilder compiles step 6. patchAll only modifies DEX
+        // files in dexDir — it never touches cSourceDir — so reordering is safe.
+
+        report(53, "Determining target methods…");
+        Set<String> compiledKeys;
+        if (useVmp && transpileResult.vmpConfig != null) {
+            compiledKeys = buildVmpKeysFromShellDex(transpileResult.vmpConfig);
+            report(54, "VMP: " + compiledKeys.size() + " method(s) targeted for native strip");
+            report(54, "VMP: injecting NativeUtil class into DEX…");
+            injectVmpNativeUtil(transpileResult.vmpConfig, dexDir, libName);
+            report(54, "VMP: NativeUtil + classesInit0 hooks injected");
+        } else {
+            compiledKeys = transpileResult.compiled.keySet();
+        }
+
+        // Target class descriptors derived from compiled method keys.
+        Set<String> targetTypes = new HashSet<>();
+        for (String k : compiledKeys) {
+            int arrow = k.indexOf("->");
+            if (arrow > 0) targetTypes.add(k.substring(0, arrow));
+        }
+
+        // ── 5.5a. Pre-scan: read static String field values BEFORE patchAll ──
+        // patchAll modifies dexFiles in-place; we must read them now while they
+        // still contain the original static_values entries.
+        report(55, "Scanning static String fields in target classes…");
+        Map<String, List<NativeStringGen.StringEntry>> strTable =
+                scanStaticStrings(dexFiles, targetTypes);
+        Set<String> classesWithStrings = strTable.keySet();
+        if (!classesWithStrings.isEmpty()) {
+            int strTotal = 0;
+            for (List<NativeStringGen.StringEntry> v : strTable.values()) strTotal += v.size();
+            report(56, "Found " + strTotal + " String field(s) in "
+                    + classesWithStrings.size() + " class(es) — will strip + encrypt");
+        }
+
+        // ── 5.5b. Strip DEX bytecode (methods → ACC_NATIVE, String values → null) ──
+        report(57, "Patching " + compiledKeys.size() + " method(s) → ACC_NATIVE stubs…");
+        int stripped = Tier1DexPatcher.patchAll(dexDir, compiledKeys, libName,
+                classesWithStrings, msg -> report(58, msg));
+        report(59, "Stripped " + stripped + " method(s)");
+
+        if (!compiledKeys.isEmpty()) {
+            report(59, "Verifying " + compiledKeys.size() + " method stubs…");
+            verifyStrippedKeys(dexDir, compiledKeys);
+            report(59, "Verification passed — all stubs confirmed ACC_NATIVE");
+        }
+
+        // ── 5.5c. Generate ph_strings.cpp into cSourceDir (compiled in step 6) ──
+        if (!strTable.isEmpty()) {
+            NativeStringGen.generate(strTable, cSourceDir);
+            report(59, "ph_strings.cpp generated — string injection baked into .so");
+        }
+
+        // ── 5.5d. Export stripped DEX ZIP for user inspection ────────────────
+        String modeTag = useVmp ? "vmp" : "dex2c";
+        File strippedDexZip = exportStrippedDexZip(dexDir, modeTag);
+        if (strippedDexZip != null) {
+            report(59, "Stripped DEX → " + strippedDexZip.getName()
+                    + " (" + (strippedDexZip.length() / 1024) + " KB) — open to verify");
+        }
+
         // ── 6. Compile C++ → .so  (all ABIs in parallel) ─────────────────────
         // Before this fix, ABIs compiled sequentially — arm64 finished before
         // armeabi-v7a even started, wasting the full arm64 compile time (~4 min).
@@ -236,58 +302,8 @@ public class ApkProtector {
         // soFile alias — used for the SO integrity hash below (arm64-v8a canonical)
         File soFile = primarySoFile;
 
-        // ── 7. Strip bytecode from DEX via vova7878/DexFile ──────────────────
-        report(70, "Stripping bytecode from DEX…");
-
-        // Determine which method stubs to make ACC_NATIVE and which classes need
-        // System.loadLibrary injected into their <clinit>.
-        //
-        // dex2c mode: compiledKeys comes from the transpiler (exact method signatures).
-        // VMP mode  : we scan the original DEX files for every method that matches the
-        //             filter and passes eligibility — exactly the same reliable path that
-        //             dex2c uses.  Tier1DexPatcher then strips them directly instead of
-        //             relying on the complex shell-DEX-swap which silently failed when
-        //             the target class lived in a secondary DEX.
-        //             VMP-specific clinit hooks (NativeUtil.classesXInit0) and the
-        //             NativeUtil class itself are injected first so they are present
-        //             before Tier1DexPatcher rewrites each DEX.
-        Set<String> compiledKeys;
-        if (useVmp && transpileResult.vmpConfig != null) {
-            // Derive strip keys directly from the VMP shell DEX files.
-            compiledKeys = buildVmpKeysFromShellDex(transpileResult.vmpConfig);
-            report(71, "VMP: " + compiledKeys.size() + " method(s) targeted for native strip");
-            report(72, "VMP: injecting NativeUtil class into DEX…");
-            injectVmpNativeUtil(transpileResult.vmpConfig, dexDir, libName);
-            report(73, "VMP: NativeUtil + classesInit0 hooks injected");
-        } else {
-            compiledKeys = transpileResult.compiled.keySet();
-        }
-
-        report(74, "Patching " + compiledKeys.size() + " method(s) → ACC_NATIVE stubs…");
-        int stripped = Tier1DexPatcher.patchAll(dexDir, compiledKeys, libName,
-                msg -> report(75, msg));
-        report(78, "Stripped " + stripped + " method(s) — bytecode gone from DEX");
-
-        // Verify every selected method is actually ACC_NATIVE in the patched DEX files.
-        // Catches filter mismatches or class-not-found issues before the APK is repacked.
-        if (!compiledKeys.isEmpty()) {
-            report(79, "Verifying " + compiledKeys.size() + " method stubs…");
-            verifyStrippedKeys(dexDir, compiledKeys);
-            report(79, "Verification passed — all stubs confirmed ACC_NATIVE");
-        }
-
-        // ── 7b. Export stripped DEX files as a ZIP for user inspection ───────
-        // Placed right after verification so the ZIP always contains the final,
-        // verified stripped DEX files — regardless of whether DEX packer runs next.
-        // Both dex2c mode and VMP mode go through this same dexDir.
-        String modeTag = useVmp ? "vmp" : "dex2c";
-        File strippedDexZip = exportStrippedDexZip(dexDir, modeTag);
-        if (strippedDexZip != null) {
-            report(80, "Stripped DEX → " + strippedDexZip.getName()
-                    + " (" + (strippedDexZip.length() / 1024) + " KB) — open to verify protected methods are ACC_NATIVE");
-        }
-
-        report(80, "Bootstrap via per-class <clinit> — attachBaseContext untouched");
+        // Step 5.5 (bytecode strip + string encryption) already ran before compile.
+        report(70, "Bootstrap via per-class <clinit> — attachBaseContext untouched");
 
         // ── 8. Repack APK ─────────────────────────────────────────
         File assetsDir = new File(cacheDir, "assets_inject");
@@ -417,6 +433,55 @@ public class ApkProtector {
         dir.mkdirs();
         String ts = String.valueOf(System.currentTimeMillis());
         return new File(dir, "protected_" + ts + (signOutput ? "_unsigned.apk" : ".apk"));
+    }
+
+    /**
+     * Pre-scan DEX files for static String fields with hardcoded initializer values
+     * in the target classes. Must be called BEFORE Tier1DexPatcher.patchAll() so the
+     * original static_values entries are still present in the DEX files.
+     *
+     * Uses smali/dexlib2 (already a project dependency) whose Field API gives direct
+     * access to EncodedValue / StringEncodedValue without needing vova7878 internals.
+     *
+     * @param dexFiles    DEX files extracted from the input APK (unmodified at call time)
+     * @param targetTypes DEX type descriptors (e.g. "Lcom/example/Foo;") of target classes
+     * @return ordered map: classDesc → list of {fieldName, value} entries to strip
+     */
+    private Map<String, List<NativeStringGen.StringEntry>> scanStaticStrings(
+            List<File> dexFiles, Set<String> targetTypes) {
+        Map<String, List<NativeStringGen.StringEntry>> table = new LinkedHashMap<>();
+        if (targetTypes.isEmpty()) return table;
+        for (File f : dexFiles) {
+            try {
+                DexBackedDexFile dex = DexBackedDexFile.fromInputStream(
+                        null, new java.io.BufferedInputStream(new java.io.FileInputStream(f)));
+                for (com.android.tools.smali.dexlib2.iface.ClassDef cls : dex.getClasses()) {
+                    String clsType = cls.getType();
+                    if (!targetTypes.contains(clsType)) continue;
+                    List<NativeStringGen.StringEntry> entries = new ArrayList<>();
+                    for (com.android.tools.smali.dexlib2.iface.Field field
+                            : cls.getStaticFields()) {
+                        if (!"Ljava/lang/String;".equals(field.getType())) continue;
+                        com.android.tools.smali.dexlib2.iface.value.EncodedValue ev =
+                                field.getInitialValue();
+                        if (!(ev instanceof
+                                com.android.tools.smali.dexlib2.iface.value.StringEncodedValue))
+                            continue;
+                        String val = ((com.android.tools.smali.dexlib2.iface.value
+                                .StringEncodedValue) ev).getValue();
+                        if (val == null) continue;
+                        entries.add(new NativeStringGen.StringEntry(field.getName(), val));
+                        android.util.Log.d("ApkProtector",
+                                "  str field: " + field.getName() + " in " + clsType);
+                    }
+                    if (!entries.isEmpty()) table.put(clsType, entries);
+                }
+            } catch (Exception e) {
+                android.util.Log.w("ApkProtector",
+                        "scanStaticStrings [" + f.getName() + "]: " + e.getMessage());
+            }
+        }
+        return table;
     }
 
     /**
