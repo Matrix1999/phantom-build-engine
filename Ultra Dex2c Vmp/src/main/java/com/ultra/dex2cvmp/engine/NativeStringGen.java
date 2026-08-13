@@ -136,6 +136,40 @@ public class NativeStringGen {
             sb.append("}\n\n");
         }
 
+        // ── RegisterNatives registration function ────────────────────────────
+        // Called from JNI_OnLoad in jni_init.cpp — guarantees registration even if
+        // ART's static JNI lookup (Java_*) is skipped due to custom ClassLoaders
+        // or LLD dead-stripping of unreferenced sections.
+        sb.append("// ── ph_strings_register — called from JNI_OnLoad ──────────────────\n");
+        for (Map.Entry<String, List<StringEntry>> ce : table.entrySet()) {
+            String classDesc = ce.getKey();
+            List<StringEntry> fields = ce.getValue();
+            if (fields.isEmpty()) continue;
+            String jniCls  = toJniClassName(classDesc);
+            String funcName = "Java_" + jniCls + "_phStrInject";
+            // JNINativeMethod array (one entry per class — only phStrInject)
+            sb.append("static JNINativeMethod _phr_").append(jniCls).append("[] = {\n");
+            sb.append("    {\"phStrInject\",\"()V\",(void*)").append(funcName).append("}\n");
+            sb.append("};\n");
+        }
+        sb.append("extern \"C\" void ph_strings_register(JNIEnv* env) {\n");
+        sb.append("    jclass _c; (void)_c;\n");
+        for (Map.Entry<String, List<StringEntry>> ce : table.entrySet()) {
+            String classDesc = ce.getKey();
+            List<StringEntry> fields = ce.getValue();
+            if (fields.isEmpty()) continue;
+            // FindClass name: strip 'L' and ';', keep '/' separators
+            String fcName = classDesc;
+            if (fcName.startsWith("L")) fcName = fcName.substring(1);
+            if (fcName.endsWith(";"))   fcName = fcName.substring(0, fcName.length() - 1);
+            String jniCls = toJniClassName(classDesc);
+            sb.append("    _c=env->FindClass(\"").append(escapeStr(fcName)).append("\");\n");
+            sb.append("    if(_c){env->RegisterNatives(_c,_phr_").append(jniCls)
+              .append(",1);env->DeleteLocalRef(_c);}\n");
+            sb.append("    if(env->ExceptionCheck())env->ExceptionClear();\n");
+        }
+        sb.append("}\n");
+
         File out = new File(cSourceDir, "ph_strings.cpp");
         try (FileOutputStream fos = new FileOutputStream(out)) {
             fos.write(sb.toString().getBytes(StandardCharsets.UTF_8));
