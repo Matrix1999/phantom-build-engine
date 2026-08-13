@@ -1,0 +1,1121 @@
+SDK: 33
+PRODUCT_NAME: CK7n-GL
+DEVICE_NAME: TECNO-CK7n
+BOARD_NAME: TECNO-CK7n
+SUPPORTED_ABIS: arm64-v8a, armeabi-v7a, armeabi
+MANUFACTURER: TECNO
+BRAND: TECNO
+MODEL: TECNO CK7n
+
+1786660489.216 10237  8621  8621 I AppVisibilityProxy: onAppEnteredForeground
+1786660489.222 10237  8621  8621 D TranActivityAppturboImpl: onResumeHork
+1786660489.222 10237  8621  8621 D TranAppturboServiceImpl: onResumeHork
+1786660489.239 10237  8621  8621 D BufferQueueConsumer: [](id:21ad00000002,api:0,p:-1,c:8621) connect: controlledByApp=false
+1786660489.268 10237  8621 13514 D BLASTBufferQueue: [VRI[Dashboard]#2](f:0,a:1) acquireNextBufferLocked size=1080x2400 mFrameNumber=1 applyTransaction=true mTimestamp=77217394739525(auto) mPendingTransactions.size=0 graphicBufferId=37026913058830 transform=0
+1786660489.634 10237  8621  8621 W Glide   : Load failed for [https://apposters.b-cdn.net/laba/yo/naki/9695.jpg] with dimensions [300x450]
+1786660489.634 10237  8621  8621 W Glide   : class j5.u: Failed to load resource
+1786660489.634 10237  8621  8621 W Glide   : There was 1 root cause:
+1786660489.634 10237  8621  8621 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660489.634 10237  8621  8621 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660489.634 10237  8621  8621 W Glide   :   Cause (1 of 1): class j5.u: Fetching data failed, class java.io.InputStream, REMOTE
+1786660489.634 10237  8621  8621 W Glide   : There was 1 root cause:
+1786660489.634 10237  8621  8621 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660489.634 10237  8621  8621 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660489.634 10237  8621  8621 W Glide   :     Cause (1 of 1): class j5.u: Fetch failed
+1786660489.634 10237  8621  8621 W Glide   : There was 1 root cause:
+1786660489.634 10237  8621  8621 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660489.634 10237  8621  8621 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660489.634 10237  8621  8621 W Glide   :       Cause (1 of 1): class d2.b: Failed to connect or obtain data, status code: 404
+1786660489.634 10237  8621  8621 I Glide   : Root cause (1 of 1)
+1786660489.634 10237  8621  8621 I Glide   : d2.b: Failed to connect or obtain data, status code: 404
+1786660489.634 10237  8621  8621 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:295)
+1786660489.634 10237  8621  8621 I Glide   : 	at com.bumptech.glide.load.data.l.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:26)
+1786660489.634 10237  8621  8621 I Glide   : 	at n5.v.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660489.634 10237  8621  8621 I Glide   : 	at j5.c0.a(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:140)
+1786660489.634 10237  8621  8621 I Glide   : 	at j5.j.o(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:25)
+1786660489.634 10237  8621  8621 I Glide   : 	at j5.j.p(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:51)
+1786660489.634 10237  8621  8621 I Glide   : 	at j5.j.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660489.634 10237  8621  8621 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1100)
+1786660489.634 10237  8621  8621 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+1786660489.634 10237  8621  8621 I Glide   : 	at mb.t.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:1072)
+1786660489.634 10237  8621  8621 I Glide   : 	at java.lang.Thread.run(Thread.java:1572)
+1786660489.634 10237  8621  8621 I Glide   : 	at c9.g.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:44)
+1786660489.634 10237  8621  8621 I Glide   : Caused by: java.io.FileNotFoundException: https://apposters.b-cdn.net/laba/yo/naki/9695.jpg
+1786660489.634 10237  8621  8621 I Glide   : 	at com.android.okhttp.internal.huc.HttpURLConnectionImpl.getInputStream(HttpURLConnectionImpl.java:255)
+1786660489.634 10237  8621  8621 I Glide   : 	at com.android.okhttp.internal.huc.DelegatingHttpsURLConnection.getInputStream(DelegatingHttpsURLConnection.java:211)
+1786660489.634 10237  8621  8621 I Glide   : 	at com.android.okhttp.internal.huc.HttpsURLConnectionImpl.getInputStream(HttpsURLConnectionImpl.java:30)
+1786660489.634 10237  8621  8621 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:98)
+1786660489.634 10237  8621  8621 I Glide   : 	... 11 more
+1786660490.458 10237  8621  8621 D os.LiceInfo: instance successfully. com.transsion.message.bank.v1.MessageBankLice@5bd6fd8 from com.transsion.message.bank.IMessageBankLice
+1786660490.461 10237  8621  8621 D TranClassInfo: instance successfully. com.transsion.hubcore.internal.policy.TranDecorViewImpl@21afd6d from com.transsion.hubcore.internal.policy.ITranDecorView
+1786660490.557 10237  8621  8621 D TranClassInfo: instance successfully. com.transsion.hubcore.magellan.Implement.TranMagellanComponentImpl@65b9a33 from com.transsion.hubcore.magellan.ITranMagellanComponent
+1786660490.557 10237  8621  8621 D TranFlingManagerImpl: getYVelocity origin-value = -13178.634 ksmooth-value = -13178.634 strengthVelocity = -13178.634 final velocity = -13178.634
+1786660490.557 10237  8621  8621 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660490.557 10237  8621  8621 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660490.557 10237  8621  8621 I ScrollIdentify: update state to fling
+1786660490.558 10237  8621  8621 I ScrollIdentify: update state to finish
+1786660490.558 10237  8621  8621 D TranFlingManagerImpl: updateVelocity, scrollType = 1, currVelocity = -13169.043
+1786660490.558 10237  8621  8621 D TranFlingManagerImpl: updateCurrVelocity mFlingFlag currVelocity:-13169.043
+1786660490.558 10237  8621  8621 D TranFlingManagerImpl: updateCurrVelocity FLING_VELOCITY_START:
+1786660490.564 10237  8621  8621 D TranAppturboServiceImpl:  dont support slide jank stats.
+1786660490.565 10237  8621  8621 D TranFlingManagerImpl: getYVelocity origin-value = -16673.73 ksmooth-value = -16673.73 strengthVelocity = -16673.73 final velocity = -16673.73
+1786660490.565 10237  8621  8621 I ScrollIdentify: on fling
+1786660490.565 10237  8621  8621 D TranFlingManagerImpl: updateVelocity, scrollType = 1, currVelocity = -13169.043
+1786660490.565 10237  8621  8621 D TranFlingManagerImpl: updateCurrVelocity mFlingFlag currVelocity:-13169.043
+1786660490.565 10237  8621  8621 D TranFlingManagerImpl: updateCurrVelocity FLING_VELOCITY_START:
+1786660490.578 10237  8621  8621 D TranFlingManagerImpl: updateVelocity, scrollType = 1, currVelocity = -13147.282
+1786660490.578 10237  8621  8621 D TranFlingManagerImpl: updateCurrVelocity mFlingFlag currVelocity:-13147.282
+1786660490.578 10237  8621  8621 D TranFlingManagerImpl: updateCurrVelocity FLING_VELOCITY_START:
+1786660490.595 10237  8621  8621 D TranFlingManagerImpl: updateVelocity, scrollType = 1, currVelocity = -13076.335
+1786660490.595 10237  8621  8621 D TranFlingManagerImpl: updateCurrVelocity mFlingFlag currVelocity:-13076.335
+1786660490.595 10237  8621  8621 D TranFlingManagerImpl: updateCurrVelocity FLING_VELOCITY_START:
+1786660490.645 10237  8621  8621 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660490.645 10237  8621  8621 D TranAppturboServiceImpl:  dont support slide jank stats.
+1786660491.454 10237  8621  8621 D BLASTBufferQueue: [VRI[Dashboard]#2](f:0,a:4) destructor()
+1786660491.454 10237  8621  8621 D BufferQueueConsumer: [VRI[Dashboard]#2(BLAST Consumer)2](id:21ad00000002,api:0,p:-1,c:8621) disconnect
+1786660491.476 10237  8621  8621 I AppVisibilityProxy: onAppEnteredBackground
+1786660491.888 10237  8621  8621 D ActivityThread: mToDestroying.remove:ActivityRecord{b1951d0 token=android.os.BinderProxy@14afcd2 {com.munowatch.pro/com.munowatch.lite.Dashboard}}
+1786660493.373 10237 11197 11197 W usap64  : type=1400 audit(0.0:208353): avc: denied { read } for name="u:object_r:vendor_memfusion_size_prop:s0" dev="tmpfs" ino=441 scontext=u:r:untrusted_app:s0:c237,c256,c512,c768 tcontext=u:object_r:vendor_memfusion_size_prop:s0 tclass=file permissive=0 app=com.munowatch.pro
+1786660493.377 10237 11197 11197 W usap64  : type=1400 audit(0.0:208354): avc: denied { read } for name="u:object_r:vendor_memfusion_state_prop:s0" dev="tmpfs" ino=442 scontext=u:r:untrusted_app:s0:c237,c256,c512,c768 tcontext=u:object_r:vendor_memfusion_state_prop:s0 tclass=file permissive=0 app=com.munowatch.pro
+1786660493.377 10237 11197 11197 W usap64  : type=1400 audit(0.0:208355): avc: denied { read } for name="u:object_r:vendor_memfusion_tranlog_prop:s0" dev="tmpfs" ino=444 scontext=u:r:untrusted_app:s0:c237,c256,c512,c768 tcontext=u:object_r:vendor_memfusion_tranlog_prop:s0 tclass=file permissive=0 app=com.munowatch.pro
+1786660493.377 10237 11197 11197 W usap64  : type=1400 audit(0.0:208356): avc: denied { read } for name="u:object_r:vendor_memfusion_ui_enable_prop:s0" dev="tmpfs" ino=445 scontext=u:r:untrusted_app:s0:c237,c256,c512,c768 tcontext=u:object_r:vendor_memfusion_ui_enable_prop:s0 tclass=file permissive=0 app=com.munowatch.pro
+1786660493.384 10237 11197 11197 I m.munowatch.pro: Using generational CollectorTypeCMC GC.
+1786660493.391 10237 11197 11197 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+1786660493.424 10237 11197 11197 D CompatibilityChangeReporter: Compat change id reported: 171979766; UID 10237; state: ENABLED
+1786660493.426 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.graphics.TranGraphicImpl@745a27c from com.transsion.hubcore.graphics.ITranGraphic
+1786660493.427 10237 11197 11197 D os.SingleLiceFactory: instance successfully. com.transsion.typeface.v1.TypefaceLice@96e02a8 from android.graphics.IGraphicLice
+1786660493.427 10237 11197 11197 D os.LiceInfo: instance successfully. com.transsion.graphics.GraphicLice@8102705 from android.graphics.IGraphicLice
+1786660493.432 10237 11197 11197 D nativeloader: Configuring clns-4 for other apk /system/framework/org.apache.http.legacy.jar. target_sdk_version=35, uses_libraries=ALL, library_path=/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/lib/arm64:/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.munowatch.pro
+1786660493.432 10237 11197 11197 D nativeloader: Extending system_exposed_libraries: libapuwareapusys.mtk.so:libapuwareapusys_v2.mtk.so:libapuwarexrp.mtk.so:libapuwarexrp_v2.mtk.so:libapuwareutils.mtk.so:libapuwareutils_v2.mtk.so:libapuwarehmp.mtk.so:libmcv_runtime_usdk.mtk.so:libneuron_graph_delegate.mtk.so:libneuronusdk_adapter.mtk.so:libtflite_mtk.mtk.so:libarmnn_ndk.mtk.so:libcmdl_ndk.mtk.so:libnir_neon_driver_ndk.mtk.so:libmvpu_runtime.mtk.so:libmvpu_runtime_pub.mtk.so:libmvpu_engine_pub.mtk.so:libmvpu_pattern_pub.mtk.so:libmvpuop_mtk_cv.mtk.so:libmvpuop_mtk_nn.mtk.so:libteeservice_client.trustonic.so
+1786660493.436 10237 11197 11197 D nativeloader: Configuring clns-5 for other apk /data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk. target_sdk_version=35, uses_libraries=, library_path=/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/lib/arm64:/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.munowatch.pro
+1786660493.447 10237 11197 11197 D nativeloader: Load libframework-connectivity-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity.jar: ok
+1786660493.454 10237 11197 11197 V GraphicsEnvironment: ANGLE Developer option for 'com.munowatch.pro' set to: 'default'
+1786660493.455 10237 11197 11197 V GraphicsEnvironment: ANGLE GameManagerService for com.munowatch.pro: false
+1786660493.455 10237 11197 11197 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+1786660493.458 10237 11197 11197 I LoadedApk: No resource references to update in package com.transsion.theme.icon
+1786660493.459 10237 11197 11197 D NetworkSecurityConfig: No Network Security Config specified, using platform default
+1786660493.459 10237 11197 11197 D NetworkSecurityConfig: No Network Security Config specified, using platform default
+1786660493.507 10237 11197 11197 D nativeloader: Load /system/lib64/libz.so using class loader ns clns-5 (caller=/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk): ok
+1786660493.508 10237 11197 11197 D nativeloader: Load /data/user/0/com.munowatch.pro/code_cache/libphantom.so using class loader ns clns-5 (caller=/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk): ok
+1786660493.874 10237 11197 11197 D CompatibilityChangeReporter: Compat change id reported: 183155436; UID 10237; state: ENABLED
+1786660493.875 10237 11197 11197 D os.SingleLiceFactory: using android.app.IActivityThreadLice$DefaultImpl@a142cb9 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from android.app.IActivityThreadLice
+1786660493.887 10237 11197 11197 I FirebaseApp: Device unlocked: initializing all Firebase APIs for app [DEFAULT]
+1786660493.894 10237 11197 11197 I FirebaseInitProvider: FirebaseApp initialization successful
+1786660493.903 10237 11197 11197 W e6.s0   : You haven't set a value for AdvertiserIDCollectionEnabled. Set the flag to TRUE if you want to collect Advertiser ID for better advertising and analytics results. To request user consent before collecting data, set the flag value to FALSE, then change to TRUE once user consent is received. Learn more: https://developers.facebook.com/docs/app-events/getting-started-app-events-android#disable-auto-events.
+1786660493.912 10237 11197 14045 W m.munowatch.pro: ClassLoaderContext classpath size mismatch. expected=1, found=0 (DLC[];PCL[base.apk*1958273127]{PCL[/system/framework/org.apache.http.legacy.jar*2290010995]#PCL[/system/framework/com.android.location.provider.jar*3868789109]#PCL[/system/framework/com.android.media.remotedisplay.jar*3886290638]} | DLC[];PCL[])
+1786660493.914 10237 11197 14045 I DynamiteModule: Considering local module com.google.android.gms.measurement.dynamite:117 and remote module com.google.android.gms.measurement.dynamite:202
+1786660493.914 10237 11197 14045 I DynamiteModule: Selected remote version of com.google.android.gms.measurement.dynamite, version >= 202
+1786660493.914 10237 11197 14045 V DynamiteModule: Dynamite loader version >= 2, using loadModule2NoCrashUtils
+1786660493.918 10237 11197 14079 D libMEOW : meow new tls: 0xb400007afbe09090
+1786660493.918 10237 11197 14079 D libMEOW : meow reload base cfg path: na
+1786660493.918 10237 11197 14079 D libMEOW : meow reload overlay cfg path: na
+1786660493.919 10237 11197 14079 I libMEOW_gift: open /data/performance/gift/arc.ini
+1786660493.919 10237 11197 14079 E QT      : [QT]file does not exist
+1786660493.920 10237 11197 14079 D libMEOW : applied 1 plugins for [com.munowatch.pro]:
+1786660493.920 10237 11197 14079 D libMEOW :   plugin 1: [libMEOW_gift.so]: 0xb400007abbd8d820
+1786660493.920 10237 11197 14079 D libMEOW : rebuild call chain: 0xb400007afbe190a0
+1786660493.920 10237 11197 14079 D libMEOW : meow delete tls: 0xb400007afbe09090
+1786660493.922 10237 11197 14045 W System  : ClassLoader referenced unknown path:
+1786660493.922 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.app.TranActivityImpl@9e52d29 from com.transsion.hubcore.app.ITranActivity
+1786660493.922 10237 11197 11197 D TranActivityAppturboImpl: attach
+1786660493.925 10237 11197 14045 D nativeloader: Configuring clns-6 for other apk . target_sdk_version=37, uses_libraries=, library_path=/data/app/~~rrdmfB6pQiMABaZrdb36vw==/com.google.android.gms-CvCSpJ2L7iT6r3GgIHX2rw==/lib/arm64:/data/app/~~rrdmfB6pQiMABaZrdb36vw==/com.google.android.gms-CvCSpJ2L7iT6r3GgIHX2rw==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.google.android.gms
+1786660493.926 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.appturbo.TranAppturboServiceImpl@10ce8ae from com.transsion.hubcore.appturbo.ITranAppturboService
+1786660493.926 10237 11197 11197 D TranAppturboServiceImpl: attach
+1786660493.926 10237 11197 11197 D TranAppturboPolicyImpl: TranAppturboPolicyImpl new
+1786660493.926 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.appturbo.TranAppturboPolicyImpl@5f8464f from com.transsion.hubcore.appturbo.ITranAppturboPolicy
+1786660493.926 10237 11197 11197 D AppTurboPolicyImpl-TranBaseWrapper: TranBaseWrapper new, VERSION: KS-2.0.01KSMOOTH_V20_SUPPORT: false
+1786660493.931 10237 11197 14045 W m.munowatch.pro: ClassLoaderContext type mismatch. expected=PCL, found=IMC (DLC[];PCL[base.apk*1958273127]{PCL[/system/framework/org.apache.http.legacy.jar*2290010995]#PCL[/system/framework/com.android.location.provider.jar*3868789109]#PCL[/system/framework/com.android.media.remotedisplay.jar*3886290638]} | DLC[];IMC[<unknown>*4197709496];PCL[/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk*1466516508]{PCL[/system/framework/org.apache.http.legacy.jar*2290010995]})
+1786660493.931 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.database.sqlite.TranSQLiteDatabaseImpl@a488fc8 from com.transsion.hubcore.database.sqlite.ITranSQLiteDatabase
+1786660493.946 10237 11197 14038 D ActivityThreadLice: received OSMessage 110001
+1786660493.946 10237 11197 14038 D ActivityThreadLice: send OSMessage 110001 to [-1]
+1786660493.946 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660493.947 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.view.TranViewImpl@2772d6a from com.transsion.hubcore.view.ITranView
+1786660493.947 10237 11197 14038 D OSServiceManager: update local os service os.activity from null to android.os.BinderProxy@690d25b
+1786660493.951 10237 11197 11197 D os.SingleLice: instance successfully. com.transsion.dragdrop.v1.DragDropLice@c52b636 from com.transsion.dragdrop.DragDropLiceFactory
+1786660493.951 10237 11197 11197 D os.SingleLiceFactory: instance successfully. com.transsion.dragdrop.v1.DragDropLice@c52b636 from android.view.IViewLice
+1786660493.951 10237 11197 11197 D os.LiceInfo: instance successfully. com.transsion.view.ViewLice@6803937 from android.view.IViewLice
+1786660493.952 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.internal.TranInternalViewImpl@98bffc2 from com.transsion.hubcore.internal.ITranInternalView
+1786660493.953 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.freeform.FreeformLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.953 10237 11197 11197 D os.SingleLice: instance successfully. com.transsion.whitenavigation.v1.WhiteNavigationLice@2e6b110 from com.transsion.whitenavigation.WhiteNavigationLiceFactory
+1786660493.953 10237 11197 11197 D os.SingleLiceFactory: instance successfully. com.transsion.whitenavigation.v1.WhiteNavigationLice@2e6b110 from com.android.internal.IInternalViewLice
+1786660493.953 10237 11197 11197 D os.SingleLice: instance successfully. com.transsion.screenshothelper.v1.ScreenShotHelperImplLice@88c7409 from com.transsion.screenshothelper.ScreenShotHelperImplLiceFactory
+1786660493.953 10237 11197 11197 D os.SingleLiceFactory: instance successfully. com.transsion.screenshothelper.v1.ScreenShotHelperImplLice@88c7409 from com.android.internal.IInternalViewLice
+1786660493.953 10237 11197 11197 D os.LiceInfo: instance successfully. com.transsion.internal.InternalViewLice@71e560e from com.android.internal.IInternalViewLice
+1786660493.953 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.953 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.953 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.953 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.954 10237 11197 11197 I WhiteNavigationLice: skip Modify naviBarColor, due to windowBackgroundColor is -16777169   /windowIsTranslucent:false
+1786660493.954 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.954 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.955 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.955 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660493.955 10237 11197 11197 D ActivityThread: ++ activityComponent:com.munowatch.pro/com.munowatch.lite.SplashScreen counts:1 ALEAK_CLEAR_SUPPORT:true
+1786660493.959 10237 11197 11197 I MSYNC3-VariableRefreshRate: Variable refreshrate is disabled
+1786660493.961 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.flingmanager.TranFlingManagerImpl@3119b41 from com.transsion.hubcore.flingmanager.ITranFlingManager
+1786660493.961 10237 11197 14087 D nativeloader: Load libpowerhalwrap_jni.so using system ns (caller=/system/framework/mediatek-framework.jar): ok
+1786660493.961 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.view.TranChoreographerImpl@11318e6 from com.transsion.hubcore.view.ITranChoreographer
+1786660493.961 10237 11197 14087 I PowerHalWrapper: PowerHalWrapper.getInstance
+1786660493.961 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.appturbo.Implement.TranAppturboComponentImpl@e9bde27 from com.transsion.hubcore.appturbo.ITranAppturboComponent
+1786660493.975 10237 11197 14092 D libMEOW : meow new tls: 0xb400007afbe290b0
+1786660493.975 10237 11197 14092 D libMEOW : applied 1 plugins for [com.munowatch.pro]:
+1786660493.975 10237 11197 14092 D libMEOW :   plugin 1: [libMEOW_gift.so]: 0xb400007abbd8d820
+1786660493.975 10237 11197 14092 D libMEOW : rebuild call chain: 0xb400007afbe09090
+1786660493.975 10237 11197 14092 D libMEOW : meow delete tls: 0xb400007afbe290b0
+1786660493.977 10237 11197 14086 E m.munowatch.pro: No package ID 6a found for ID 0x6a0b0013.
+1786660493.978 10237 11197 14086 I FA      : App measurement initialized, version: 178008
+1786660493.978 10237 11197 14086 I FA      : To enable debug logging run: adb shell setprop log.tag.FA VERBOSE
+1786660493.979 10237 11197 14086 I FA      : To enable faster debug mode event logging run:
+1786660493.979 10237 11197 14086 I FA      :   adb shell setprop debug.firebase.analytics.app com.munowatch.pro
+1786660493.984 10237 11197 11197 D AppCompatDelegate: Checking for metadata for AppLocalesMetadataHolderService : Service not found
+1786660493.986 10237 11197 11197 D TranActivityAppturboImpl: attach
+1786660493.986 10237 11197 11197 D TranAppturboServiceImpl: attach
+1786660493.994 10237 11197 11197 D nativeloader: Configuring clns-7 for other apk . target_sdk_version=35, uses_libraries=ALL, library_path=/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/lib/arm64:/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand
+1786660493.994 10237 11197 11197 D nativeloader: Extending system_exposed_libraries: libapuwareapusys.mtk.so:libapuwareapusys_v2.mtk.so:libapuwarexrp.mtk.so:libapuwarexrp_v2.mtk.so:libapuwareutils.mtk.so:libapuwareutils_v2.mtk.so:libapuwarehmp.mtk.so:libmcv_runtime_usdk.mtk.so:libneuron_graph_delegate.mtk.so:libneuronusdk_adapter.mtk.so:libtflite_mtk.mtk.so:libarmnn_ndk.mtk.so:libcmdl_ndk.mtk.so:libnir_neon_driver_ndk.mtk.so:libmvpu_runtime.mtk.so:libmvpu_runtime_pub.mtk.so:libmvpu_engine_pub.mtk.so:libmvpu_pattern_pub.mtk.so:libmvpuop_mtk_cv.mtk.so:libmvpuop_mtk_nn.mtk.so:libteeservice_client.trustonic.so
+1786660494.013 10237 11197 14080 W FeatureFlagsImplExport: java.lang.NoClassDefFoundError: Class not found using the boot class loader; no stack trace available
+1786660494.363 10237 11197 11197 D nativeloader: Load /data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/lib/arm64/libjiagu.so using isolated ns clns-7 (caller=/data/user/0/com.munowatch.pro/Anonymous-DexFile@1540552516.jar!classes2.dex): ok
+1786660494.380 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.380 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.380 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.380 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.381 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.381 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.399 10237 11197 11197 D CompatibilityChangeReporter: Compat change id reported: 210923482; UID 10237; state: ENABLED
+1786660494.419 10237 11197 11197 V MediaRouter: Selecting route: RouteInfo{ name=Phone, description=null, status=null, category=RouteCategory{ name=System types=ROUTE_TYPE_LIVE_AUDIO ROUTE_TYPE_LIVE_VIDEO  groupable=false }, supportedTypes=ROUTE_TYPE_LIVE_AUDIO ROUTE_TYPE_LIVE_VIDEO , presentationDisplay=null }
+1786660494.420 10237 11197 11197 I MediaRouter: Skip setBluetoothA2dpOn(): types=8388615, isPlaybackActive()=false, BT route=null
+1786660494.421 10237 11197 11197 I GlobalMediaRouter: Found default route: MediaRouter.RouteInfo{ uniqueId=DEFAULT_ROUTE, name=Phone, description=null, iconUri=null, enabled=true, isSystemRoute=true, connectionState=0, canDisconnect=false, playbackType=0, playbackStream=3, deviceType=0, volumeHandling=1, volume=4, volumeMax=15, presentationDisplayId=-1, extras=null, settingsIntent=null, providerPackageName=android }
+1786660494.421 10237 11197 11197 I GlobalMediaRouter: Unselecting the current route because it is no longer selectable: null
+1786660494.425 10237 11197 11197 I DynamiteModule: Considering local module com.google.android.gms.cast.framework.dynamite:0 and remote module com.google.android.gms.cast.framework.dynamite:262932001
+1786660494.425 10237 11197 11197 I DynamiteModule: Selected remote version of com.google.android.gms.cast.framework.dynamite, version >= 262932001
+1786660494.425 10237 11197 11197 V DynamiteModule: Dynamite loader version >= 2, using loadModule2NoCrashUtils
+1786660494.427 10237 11197 11197 W m.munowatch.pro: ClassLoaderContext type mismatch. expected=PCL, found=IMC (DLC[];PCL[base.apk*1958273127]{PCL[/system/framework/org.apache.http.legacy.jar*2290010995]#PCL[/system/framework/com.android.location.provider.jar*3868789109]#PCL[/system/framework/com.android.media.remotedisplay.jar*3886290638]} | DLC[];IMC[<unknown>*4197709496];PCL[/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk*1466516508]{PCL[/system/framework/org.apache.http.legacy.jar*2290010995]})
+1786660494.432 10237 11197 11197 I CastDynamiteModuleImpl: ss created by ClassLoader dalvik.system.DelegateLastClassLoader[DexPathList[[zip file "/data/app/~~rrdmfB6pQiMABaZrdb36vw==/com.google.android.gms-CvCSpJ2L7iT6r3GgIHX2rw==/split_DynamiteModulesC_installtime.apk"],nativeLibraryDirectories=[/data/app/~~rrdmfB6pQiMABaZrdb36vw==/com.google.android.gms-CvCSpJ2L7iT6r3GgIHX2rw==/split_DynamiteModulesC_installtime.apk!/lib/arm64-v8a, /system/lib64, /system_ext/lib64]]].
+1786660494.450 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.450 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.467 10237 11197 11197 D ActivityThread: ++ activityComponent:com.munowatch.pro/com.munowatch.lite.Dashboard counts:1 ALEAK_CLEAR_SUPPORT:true
+1786660494.470 10237 11197 11197 I AppVisibilityProxy: onAppEnteredForeground
+1786660494.483 10237 11197 11197 D CompatibilityChangeReporter: Compat change id reported: 171228096; UID 10237; state: ENABLED
+1786660494.483 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660494.483 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660494.487 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660494.487 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660494.495 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.widget.TranOverScrollerImpl@d12f5c2 from com.transsion.hubcore.widget.ITranOverScroller
+1786660494.495 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660494.499 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.499 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.499 10237 11197 11197 D TranActivityAppturboImpl: onResumeHork
+1786660494.499 10237 11197 11197 D TranAppturboServiceImpl: onResumeHork
+1786660494.504 10237 11197 11197 I SurfaceFactory: [static] sSurfaceFactory = com.mediatek.view.impl.SurfaceFactoryImpl@533daa5
+1786660494.504 10237 11197 11197 W libc    : Access denied finding property "ro.vendor.tgpa_resolution_tuner"
+1786660494.507 10237 11197 11197 W libc    : Access denied finding property "ro.vendor.scaler_version"
+1786660494.507 10237 11197 11197 W libc    : Access denied finding property "ro.vendor.scaler_version"
+1786660494.509 10237 11197 11197 D VRI[Dashboard]: hardware acceleration = true, forceHwAccelerated = false
+1786660494.510 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.510 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.510 10237 11197 11197 I config_debug: updateDecorCaptionStatus: {1.0 620mcc1mnc [en_US] ldltr sw360dp w360dp h724dp 480dpi nrml long widecg port finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1080, 2400) mAppBounds=Rect(0, 108 - 1080, 2280) mMaxBounds=Rect(0, 0 - 1080, 2400) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mDisplayWindowingMode=fullscreen mMultiWindowMode=normal mMultiWindowId=0 mWindowResiable=6 mInLargeScreen=-1 mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0 mDisplayUniqueId=0} as.5 s.1 fontWeightAdjustment=0} fromMultiWindow: false
+1786660494.515 10237 11197 11197 D libMEOW : meow new tls: 0xb400007afbe490d0
+1786660494.515 10237 11197 11197 D libMEOW : applied 1 plugins for [com.munowatch.pro]:
+1786660494.515 10237 11197 11197 D libMEOW :   plugin 1: [libMEOW_gift.so]: 0xb400007abbd8d820
+1786660494.515 10237 11197 11197 D libMEOW : rebuild call chain: 0xb400007afbe390c0
+1786660494.516 10237 11197 11197 D InputTransport: Create ARC handle: 0xb40000791bddeaf0
+1786660494.518 10237 11197 11197 V MediaRouter: Selecting route: RouteInfo{ name=Phone, description=null, status=null, category=RouteCategory{ name=System types=ROUTE_TYPE_LIVE_AUDIO ROUTE_TYPE_LIVE_VIDEO  groupable=false }, supportedTypes=ROUTE_TYPE_LIVE_AUDIO ROUTE_TYPE_LIVE_VIDEO , presentationDisplay=null }
+1786660494.529 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.529 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.529 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.529 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.541 10237 11197 11197 D BufferQueueConsumer: [](id:2bbd00000000,api:0,p:-1,c:11197) connect: controlledByApp=false
+1786660494.543 10237 11197 11197 E FBI     : Can't load library: dlopen failed: library "libmagtsync.so" not found
+1786660494.543 10237 11197 11197 I config_debug: updateDecorCaptionStatus: {1.0 620mcc1mnc [en_US] ldltr sw360dp w360dp h724dp 480dpi nrml long widecg port finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 1080, 2400) mAppBounds=Rect(0, 108 - 1080, 2280) mMaxBounds=Rect(0, 0 - 1080, 2400) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mDisplayWindowingMode=fullscreen mMultiWindowMode=normal mMultiWindowId=0 mWindowResiable=6 mInLargeScreen=-1 mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0 mDisplayUniqueId=0} as.5 s.1 fontWeightAdjustment=0} fromMultiWindow: true
+1786660494.544 10237 11197 14077 D libMEOW : meow new tls: 0xb400007afbe690f0
+1786660494.544 10237 11197 14077 D libMEOW : applied 1 plugins for [com.munowatch.pro]:
+1786660494.544 10237 11197 14077 D libMEOW :   plugin 1: [libMEOW_gift.so]: 0xb400007abbd8d820
+1786660494.544 10237 11197 14077 D libMEOW : rebuild call chain: 0xb400007afbe590e0
+1786660494.546 10237 11197 11197 W RecyclerView: No adapter attached; skipping layout
+1786660494.555 10237 11197 14077 D skia    : GrGLMakeAssembledInterface verStr OpenGL ES 3.2 v1.r32p1-01eac0.394145956bc7cd8e697b330aba11e3d3
+1786660494.555 10237 11197 14077 D skia    : GrGLMakeAssembledGLESInterface verStr OpenGL ES 3.2 v1.r32p1-01eac0.394145956bc7cd8e697b330aba11e3d3
+1786660494.556 10237 11197 14077 D skia    : extensions init verString=OpenGL ES 3.2 v1.r32p1-01eac0.394145956bc7cd8e697b330aba11e3d3
+1786660494.591 10237 11197 14077 D BLASTBufferQueue: [VRI[Dashboard]#0](f:0,a:1) acquireNextBufferLocked size=1080x2400 mFrameNumber=1 applyTransaction=true mTimestamp=77222718185063(auto) mPendingTransactions.size=0 graphicBufferId=48090748813312 transform=0
+1786660494.593 10237 11197 14077 W Parcel  : Expecting binder but got null!
+1786660494.601 10237 11197 11197 I MediaRouterProxy: Set up output switcher flags: true (from module), true (from CastOptions)
+1786660494.602 10237 11197 11197 I MediaRouterProxy: media transfer = false, session transfer = true, transfer to local = false, in-app output switcher = false
+1786660494.617 10237 11197 11197 D os.SingleLice: instance successfully. com.transsion.view.accessibility.v1.AccessibilityNodeInfoLice@cb00476 from com.transsion.view.accessibility.AccessibilityNodeInfoLiceFactory
+1786660494.617 10237 11197 11197 D os.SingleLiceFactory: instance successfully. com.transsion.view.accessibility.v1.AccessibilityNodeInfoLice@cb00476 from android.view.accessibility.IAccessibilityLice
+1786660494.617 10237 11197 11197 D os.LiceInfo: instance successfully. com.transsion.view.accessibility.AccessibilityLice@1920a77 from android.view.accessibility.IAccessibilityLice
+1786660494.644 10237 11197 11197 D ActivityThread: mToDestroying.remove:ActivityRecord{177b668 token=android.os.BinderProxy@f7c7a7b {com.munowatch.pro/com.munowatch.lite.SplashScreen}}
+1786660494.651 10237 11197 14064 E e6.m0   : {HttpStatus: 400, errorCode: 200, subErrorCode: -1, errorType: OAuthException, errorMessage: API access disrupted. Go to the App Dashboard and complete Data Use Checkup.}
+1786660494.705 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.705 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.705 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.705 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660494.744 10237 11197 14057 E e6.m0   : {HttpStatus: 400, errorCode: 200, subErrorCode: -1, errorType: OAuthException, errorMessage: API access disrupted. Go to the App Dashboard and complete Data Use Checkup.}
+1786660495.047 10237 11197 14110 D HW_BIND : fetchChallenge URL=https://munowatch.vip.matrixxx-dev.com/api/attest/challenge
+1786660495.435 10237 11197 14057 E e6.m0   : {HttpStatus: 400, errorCode: 200, subErrorCode: -1, errorType: OAuthException, errorMessage: API access disrupted. Go to the App Dashboard and complete Data Use Checkup.}
+1786660495.785 10237 11197 14063 E e6.m0   : {HttpStatus: 400, errorCode: 200, subErrorCode: -1, errorType: OAuthException, errorMessage: API access disrupted. Go to the App Dashboard and complete Data Use Checkup.}
+1786660499.475 10237 11197 14172 D ProfileInstaller: Installing profile for com.munowatch.pro
+1786660503.532 10237 11197 11197 W Glide   : Failed to find GeneratedAppGlideModule. You should include an annotationProcessor compile dependency on com.github.bumptech.glide:compiler in your application and a @GlideModule annotated AppGlideModule implementation or LibraryGlideModules will be silently ignored
+1786660503.545 10237 11197 14296 D skia    : SkJpegCodec::onGetPixels +
+1786660503.550 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.550 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.550 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.556 10237 11197 14296 D skia    : SkJpegCodec::onGetPixels -
+1786660503.564 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.564 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.565 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.575 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.575 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.575 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.587 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.587 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.587 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.601 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.601 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.601 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.606 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.606 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.606 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.619 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.619 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.620 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.634 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.635 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.635 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.647 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.647 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.647 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.660 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.660 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.660 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.673 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.673 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.673 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.686 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.686 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.686 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660503.701 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.701 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660503.702 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660504.469 10237 11197 11197 D os.LiceInfo: instance successfully. com.transsion.message.bank.v1.MessageBankLice@ccc62e9 from com.transsion.message.bank.IMessageBankLice
+1786660504.473 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.internal.policy.TranDecorViewImpl@5c4802b from com.transsion.hubcore.internal.policy.ITranDecorView
+1786660504.557 10237 11197 11197 W OnBackInvokedCallback: OnBackInvokedCallback is not enabled for the application.
+1786660504.557 10237 11197 11197 W OnBackInvokedCallback: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+1786660504.559 10237 11197 14077 I mali    : [DebugProp] GPU Debug-Mechanism Disable !
+1786660504.610 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660504.610 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660504.624 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660504.624 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660504.630 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660504.630 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660504.630 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660504.630 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660504.630 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660504.643 10237 11197 11197 I DynamiteModule: Considering local module com.google.android.gms.cronet_dynamite:0 and remote module com.google.android.gms.cronet_dynamite:4911
+1786660504.643 10237 11197 11197 I DynamiteModule: Selected remote version of com.google.android.gms.cronet_dynamite, version >= 4911
+1786660504.643 10237 11197 11197 V DynamiteModule: Dynamite loader version >= 2, using loadModule2NoCrashUtils
+1786660504.654 10237 11197 11197 W m.munowatch.pro: ClassLoaderContext type mismatch. expected=PCL, found=IMC (DLC[];PCL[base.apk*1958273127]{PCL[/system/framework/org.apache.http.legacy.jar*2290010995]#PCL[/system/framework/com.android.location.provider.jar*3868789109]#PCL[/system/framework/com.android.media.remotedisplay.jar*3886290638]} | DLC[];IMC[<unknown>*4197709496];PCL[/data/app/~~HJ7Sy_Mn8s7Us7QeCEhvLw==/com.munowatch.pro-Pf7fbTlNdv20L_KusL0t_w==/base.apk*1466516508]{PCL[/system/framework/org.apache.http.legacy.jar*2290010995]})
+1786660504.667 10237 11197 11197 D nativeloader: Configuring clns-8 for other apk . target_sdk_version=35, uses_libraries=ALL, library_path=/data/app/~~rrdmfB6pQiMABaZrdb36vw==/com.google.android.gms-CvCSpJ2L7iT6r3GgIHX2rw==/split_CronetDynamite_installtime.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand
+1786660504.667 10237 11197 11197 D nativeloader: Extending system_exposed_libraries: libapuwareapusys.mtk.so:libapuwareapusys_v2.mtk.so:libapuwarexrp.mtk.so:libapuwarexrp_v2.mtk.so:libapuwareutils.mtk.so:libapuwareutils_v2.mtk.so:libapuwarehmp.mtk.so:libmcv_runtime_usdk.mtk.so:libneuron_graph_delegate.mtk.so:libneuronusdk_adapter.mtk.so:libtflite_mtk.mtk.so:libarmnn_ndk.mtk.so:libcmdl_ndk.mtk.so:libnir_neon_driver_ndk.mtk.so:libmvpu_runtime.mtk.so:libmvpu_runtime_pub.mtk.so:libmvpu_engine_pub.mtk.so:libmvpu_pattern_pub.mtk.so:libmvpuop_mtk_cv.mtk.so:libmvpuop_mtk_nn.mtk.so:libteeservice_client.trustonic.so
+1786660504.671 10237 11197 11197 D nativeloader: Load /data/app/~~rrdmfB6pQiMABaZrdb36vw==/com.google.android.gms-CvCSpJ2L7iT6r3GgIHX2rw==/split_CronetDynamite_installtime.apk!/lib/arm64-v8a/libcronet.151.0.7922.29.so using isolated ns clns-8 (caller=/data/app/~~rrdmfB6pQiMABaZrdb36vw==/com.google.android.gms-CvCSpJ2L7iT6r3GgIHX2rw==/split_CronetDynamite_installtime.apk!classes2.dex): ok
+1786660504.671 10237 11197 14305 E SimpleCache: Failed to create cache directory: /storage/emulated/0/Munowatch
+1786660504.675 10237 11197 14306 I cn_HttpFlagsLoader: HTTP flags log line (Impl): Using live production flag values from Google
+1786660504.679 10237 11197 11197 I cn_CronetLibraryLoader: Cronet version: 151.0.7922.29, arch: aarch64
+1786660504.680 10237 11197 11197 D CronetUtil: CronetEngine built using Google-Play-Services-Cronet-Provider
+1786660504.715 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660504.715 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660504.715 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660504.715 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660504.738 10237 11197 11197 W Glide   : Load failed for [https://apposters.b-cdn.net/laba/yo/naki/9695.jpg] with dimensions [300x450]
+1786660504.738 10237 11197 11197 W Glide   : class j5.u: Failed to load resource
+1786660504.738 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660504.738 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660504.738 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660504.738 10237 11197 11197 W Glide   :   Cause (1 of 1): class j5.u: Fetching data failed, class java.io.InputStream, REMOTE
+1786660504.738 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660504.738 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660504.738 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660504.738 10237 11197 11197 W Glide   :     Cause (1 of 1): class j5.u: Fetch failed
+1786660504.738 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660504.738 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660504.738 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660504.738 10237 11197 11197 W Glide   :       Cause (1 of 1): class d2.b: Failed to connect or obtain data, status code: 404
+1786660504.738 10237 11197 11197 I Glide   : Root cause (1 of 1)
+1786660504.738 10237 11197 11197 I Glide   : d2.b: Failed to connect or obtain data, status code: 404
+1786660504.738 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:295)
+1786660504.738 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:26)
+1786660504.738 10237 11197 11197 I Glide   : 	at n5.v.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660504.738 10237 11197 11197 I Glide   : 	at j5.c0.a(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:140)
+1786660504.738 10237 11197 11197 I Glide   : 	at j5.j.o(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:25)
+1786660504.738 10237 11197 11197 I Glide   : 	at j5.j.p(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:51)
+1786660504.738 10237 11197 11197 I Glide   : 	at j5.j.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660504.738 10237 11197 11197 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1100)
+1786660504.738 10237 11197 11197 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+1786660504.738 10237 11197 11197 I Glide   : 	at mb.t.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:1072)
+1786660504.738 10237 11197 11197 I Glide   : 	at java.lang.Thread.run(Thread.java:1572)
+1786660504.738 10237 11197 11197 I Glide   : 	at c9.g.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:44)
+1786660504.738 10237 11197 11197 I Glide   : Caused by: java.io.FileNotFoundException: https://apposters.b-cdn.net/laba/yo/naki/9695.jpg
+1786660504.738 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.HttpURLConnectionImpl.getInputStream(HttpURLConnectionImpl.java:255)
+1786660504.738 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.DelegatingHttpsURLConnection.getInputStream(DelegatingHttpsURLConnection.java:211)
+1786660504.738 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.HttpsURLConnectionImpl.getInputStream(HttpsURLConnectionImpl.java:30)
+1786660504.738 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:98)
+1786660504.738 10237 11197 11197 I Glide   : 	... 11 more
+1786660505.414 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.415 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.416 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.416 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.416 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.416 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.417 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.417 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.417 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.417 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.418 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.418 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.418 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.418 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.429 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.429 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.430 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.438 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.438 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.439 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.448 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.448 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.449 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.459 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.459 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.460 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.471 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.471 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.472 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.476 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.476 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.476 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.486 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.486 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.486 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.495 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.495 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.496 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.505 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.505 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.505 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.513 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.514 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.514 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.523 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.523 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.524 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.532 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.532 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.532 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660505.541 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.541 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660505.541 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660506.061 10237 11197 14318 D libMEOW : meow new tls: 0xb400007afbfb9240
+1786660506.061 10237 11197 14318 D libMEOW : applied 1 plugins for [com.munowatch.pro]:
+1786660506.061 10237 11197 14318 D libMEOW :   plugin 1: [libMEOW_gift.so]: 0xb400007abbd8d820
+1786660506.061 10237 11197 14318 D libMEOW : rebuild call chain: 0xb400007afc009290
+1786660506.061 10237 11197 14318 D libMEOW : meow delete tls: 0xb400007afbfb9240
+1786660506.065 10237 11197 11197 D TranActivityAppturboImpl: attach
+1786660506.065 10237 11197 11197 D TranAppturboServiceImpl: attach
+1786660506.070 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.070 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.070 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.070 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.071 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.071 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.079 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.view.TranSurfaceImpl@dfeac7 from com.transsion.hubcore.view.ITranSurface
+1786660506.099 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660506.099 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660506.100 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660506.115 10237 11197 11197 D ActivityThread: ++ activityComponent:com.munowatch.pro/com.munowatch.lite.MunoPlayer counts:1 ALEAK_CLEAR_SUPPORT:true
+1786660506.117 10237 11197 11197 I ExoPlayerImpl: Init 666849b [AndroidXMedia3/1.3.1] [TECNO-CK7n, TECNO CK7n, TECNO, 33]
+1786660506.148 10237 11197 11197 D EventLogger: playWhenReady [eventTime=0.00, mediaPos=0.00, window=0, true, USER_REQUEST]
+1786660506.150 10237 11197 11197 D EventLogger: surfaceSize [eventTime=0.00, mediaPos=0.00, window=0, 0, 0]
+1786660506.157 10237 11197 11197 D CompatibilityChangeReporter: Compat change id reported: 160794467; UID 10237; state: ENABLED
+1786660506.158 10237 11197 11197 W MediaSessionCompat: Couldn't find a unique registered media button receiver in the given context.
+1786660506.166 10237 11197 11197 D EventLogger: timeline [eventTime=0.02, mediaPos=0.00, window=0, periodCount=1, windowCount=1, reason=PLAYLIST_CHANGED
+1786660506.166 10237 11197 11197 D EventLogger:   period [?]
+1786660506.166 10237 11197 11197 D EventLogger:   window [?, seekable=false, dynamic=true]
+1786660506.166 10237 11197 11197 D EventLogger: ]
+1786660506.168 10237 11197 11197 D EventLogger: mediaItem [eventTime=0.02, mediaPos=0.00, window=0, reason=PLAYLIST_CHANGED]
+1786660506.174 10237 11197 11197 D EventLogger: state [eventTime=0.03, mediaPos=0.00, window=0, BUFFERING]
+1786660506.182 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660506.182 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660506.183 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660506.183 10237 11197 11197 W libc    : Access denied finding property "vendor.transsion.scroll_adjust.support"
+1786660506.188 10237 11197 11197 D VRI[MunoPlayer]: hardware acceleration = true, forceHwAccelerated = false
+1786660506.197 10237 11197 11197 D InputTransport: Create ARC handle: 0xb40000791be22b30
+1786660506.202 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.202 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.203 10237 11197 11197 D TranActivityAppturboImpl: onResumeHork
+1786660506.203 10237 11197 11197 D TranAppturboServiceImpl: onResumeHork
+1786660506.207 10237 11197 11197 D VRI[MunoPlayer]: hardware acceleration = true, forceHwAccelerated = false
+1786660506.213 10237 11197 11197 D InputTransport: Create ARC handle: 0xb40000791be23ee0
+1786660506.225 10237 11197 11197 D BufferQueueConsumer: [](id:2bbd00000001,api:0,p:-1,c:11197) connect: controlledByApp=false
+1786660506.226 10237 11197 11197 I config_debug: updateDecorCaptionStatus: {1.0 620mcc1mnc [en_US] ldltr sw360dp w724dp h336dp 480dpi nrml long widecg land finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 2400, 1080) mAppBounds=Rect(108, 0 - 2280, 1080) mMaxBounds=Rect(0, 0 - 2400, 1080) mDisplayRotation=ROTATION_90 mWindowingMode=fullscreen mDisplayWindowingMode=fullscreen mMultiWindowMode=normal mMultiWindowId=0 mWindowResiable=6 mInLargeScreen=-1 mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_90 mDisplayUniqueId=0} as.5 s.2 fontWeightAdjustment=0} fromMultiWindow: true
+1786660506.232 10237 11197 14077 D BLASTBufferQueue: [VRI[MunoPlayer]#1](f:0,a:1) acquireNextBufferLocked size=830x444 mFrameNumber=1 applyTransaction=true mTimestamp=77234359078679(auto) mPendingTransactions.size=0 graphicBufferId=48090748813321 transform=7
+1786660506.232 10237 11197 14077 W Parcel  : Expecting binder but got null!
+1786660506.234 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.235 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.235 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.242 10237 11197 11197 D BufferQueueConsumer: [](id:2bbd00000002,api:0,p:-1,c:11197) connect: controlledByApp=false
+1786660506.243 10237 11197 11197 I config_debug: updateDecorCaptionStatus: {1.0 620mcc1mnc [en_US] ldltr sw360dp w724dp h336dp 480dpi nrml long widecg land finger -keyb/v/h -nav/h winConfig={ mBounds=Rect(0, 0 - 2400, 1080) mAppBounds=Rect(108, 0 - 2280, 1080) mMaxBounds=Rect(0, 0 - 2400, 1080) mDisplayRotation=ROTATION_90 mWindowingMode=fullscreen mDisplayWindowingMode=fullscreen mMultiWindowMode=normal mMultiWindowId=0 mWindowResiable=6 mInLargeScreen=-1 mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_90 mDisplayUniqueId=0} as.5 s.2 fontWeightAdjustment=0} fromMultiWindow: true
+1786660506.245 10237 11197 11197 D View    : title:com.munowatch.pro/com.munowatch.lite.MunoPlayer
+1786660506.247 10237 11197 11197 D BufferQueueConsumer: [](id:2bbd00000003,api:0,p:-1,c:11197) connect: controlledByApp=false
+1786660506.247 10237 11197 11197 D EventLogger: surfaceSize [eventTime=0.10, mediaPos=0.00, window=0, 2172, 1080]
+1786660506.247 10237 11197 11197 E SurfaceSyncer: Failed to find sync for id=0
+1786660506.252 10237 11197 14077 D BLASTBufferQueue: [VRI[MunoPlayer]#2](f:0,a:1) acquireNextBufferLocked size=2292x1080 mFrameNumber=1 applyTransaction=true mTimestamp=77234379373141(auto) mPendingTransactions.size=0 graphicBufferId=48090748813327 transform=7
+1786660506.253 10237 11197 14077 W Parcel  : Expecting binder but got null!
+1786660506.259 10237 11197 11197 D EventLogger: loading [eventTime=0.11, mediaPos=0.00, window=0, period=0, true]
+1786660506.260 10237 11197 11197 D EventLogger: timeline [eventTime=0.11, mediaPos=0.00, window=0, period=0, periodCount=1, windowCount=1, reason=SOURCE_UPDATE
+1786660506.260 10237 11197 11197 D EventLogger:   period [?]
+1786660506.260 10237 11197 11197 D EventLogger:   window [?, seekable=false, dynamic=false]
+1786660506.260 10237 11197 11197 D EventLogger: ]
+1786660506.262 10237 11197 11197 E EventLogger: internalError [eventTime=0.11, mediaPos=0.00, window=0, period=0, loadError
+1786660506.262 10237 11197 11197 E EventLogger:   x1.a: Failed to create cache directory: /storage/emulated/0/Munowatch
+1786660506.262 10237 11197 11197 E EventLogger:       at x1.s.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:34)
+1786660506.262 10237 11197 11197 E EventLogger:       at x1.s.a(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:12)
+1786660506.262 10237 11197 11197 E EventLogger:       at x1.r.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:10)
+1786660506.262 10237 11197 11197 E EventLogger: ]
+1786660506.292 10237 11197 11197 W Glide   : Load failed for [https://apposters.b-cdn.net/laba/yo/naki/9695.jpg] with dimensions [300x450]
+1786660506.292 10237 11197 11197 W Glide   : class j5.u: Failed to load resource
+1786660506.292 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660506.292 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660506.292 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660506.292 10237 11197 11197 W Glide   :   Cause (1 of 1): class j5.u: Fetching data failed, class java.io.InputStream, REMOTE
+1786660506.292 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660506.292 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660506.292 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660506.292 10237 11197 11197 W Glide   :     Cause (1 of 1): class j5.u: Fetch failed
+1786660506.292 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660506.292 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660506.292 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660506.292 10237 11197 11197 W Glide   :       Cause (1 of 1): class d2.b: Failed to connect or obtain data, status code: 404
+1786660506.292 10237 11197 11197 I Glide   : Root cause (1 of 1)
+1786660506.292 10237 11197 11197 I Glide   : d2.b: Failed to connect or obtain data, status code: 404
+1786660506.292 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:295)
+1786660506.292 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:26)
+1786660506.292 10237 11197 11197 I Glide   : 	at n5.v.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660506.292 10237 11197 11197 I Glide   : 	at j5.c0.a(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:140)
+1786660506.292 10237 11197 11197 I Glide   : 	at j5.j.o(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:25)
+1786660506.292 10237 11197 11197 I Glide   : 	at j5.j.p(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:51)
+1786660506.292 10237 11197 11197 I Glide   : 	at j5.j.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660506.292 10237 11197 11197 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1100)
+1786660506.292 10237 11197 11197 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+1786660506.292 10237 11197 11197 I Glide   : 	at mb.t.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:1072)
+1786660506.292 10237 11197 11197 I Glide   : 	at java.lang.Thread.run(Thread.java:1572)
+1786660506.292 10237 11197 11197 I Glide   : 	at c9.g.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:44)
+1786660506.292 10237 11197 11197 I Glide   : Caused by: java.io.FileNotFoundException: https://apposters.b-cdn.net/laba/yo/naki/9695.jpg
+1786660506.292 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.HttpURLConnectionImpl.getInputStream(HttpURLConnectionImpl.java:255)
+1786660506.292 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.DelegatingHttpsURLConnection.getInputStream(DelegatingHttpsURLConnection.java:211)
+1786660506.292 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.HttpsURLConnectionImpl.getInputStream(HttpsURLConnectionImpl.java:30)
+1786660506.292 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:98)
+1786660506.292 10237 11197 11197 I Glide   : 	... 11 more
+1786660506.310 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.311 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.311 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.323 10237 11197 14077 D OpenGLRenderer: endAllActiveAnimators on 0xb400007a0c0320f0 (RippleDrawable) with handle 0xb40000791be18630
+1786660506.481 10237 11197 11197 D BLASTBufferQueue: [VRI[Dashboard]#0](f:0,a:4) destructor()
+1786660506.481 10237 11197 11197 D BufferQueueConsumer: [VRI[Dashboard]#0(BLAST Consumer)0](id:2bbd00000000,api:0,p:-1,c:11197) disconnect
+1786660506.483 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.483 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.483 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.483 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.517 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.517 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.517 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.544 10237 11197 14077 D BLASTBufferQueue: [VRI[MunoPlayer]#2](f:0,a:3) producer disconnected before: mAbandoned=0
+1786660506.544 10237 11197 14077 D BLASTBufferQueue: - BufferQueue mMaxAcquiredBufferCount=5 mMaxDequeuedBufferCount=2
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   mDequeueBufferCannotBlock=0 mAsyncMode=0
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   mQueueBufferCanDrop=0 mLegacyBufferDrop=1
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   default-size=[2292x1080] default-format=1   transform-hint=04 frame-counter=3
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   mTransformHintInUse=04 mAutoPrerotation=0
+1786660506.544 10237 11197 14077 D BLASTBufferQueue: FIFO(0):
+1786660506.544 10237 11197 14077 D BLASTBufferQueue: (mConsumerName=VRI[MunoPlayer]#2(BLAST Consumer)2, mConnectedApi=1, mConsumerUsageBits=2304, mId=2bbd00000002, producer=[11197:com.munowatch.pro], consumer=[11197:com.munowatch.pro])
+1786660506.544 10237 11197 14077 D BLASTBufferQueue: Slots:
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:  >[00:0xb4000079abddbdf0] state=ACQUIRED 0xb4000079bbda7490 frame=3 [1080x2292:1088,  1]
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   [01:0x0] state=FREE
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   [02:0x0] state=FREE
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   [03:0x0] state=FREE
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   [04:0x0] state=FREE
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   [05:0x0] state=FREE
+1786660506.544 10237 11197 14077 D BLASTBufferQueue:   [06:0x0] state=FREE
+1786660506.552 10237 11197 14077 D BLASTBufferQueue: [VRI[MunoPlayer]#1](f:0,a:5) producer disconnected before: mAbandoned=0
+1786660506.552 10237 11197 14077 D BLASTBufferQueue: - BufferQueue mMaxAcquiredBufferCount=5 mMaxDequeuedBufferCount=2
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   mDequeueBufferCannotBlock=0 mAsyncMode=0
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   mQueueBufferCanDrop=0 mLegacyBufferDrop=1
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   default-size=[830x444] default-format=1   transform-hint=04 frame-counter=15
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   mTransformHintInUse=04 mAutoPrerotation=0
+1786660506.552 10237 11197 14077 D BLASTBufferQueue: FIFO(0):
+1786660506.552 10237 11197 14077 D BLASTBufferQueue: (mConsumerName=VRI[MunoPlayer]#1(BLAST Consumer)1, mConnectedApi=1, mConsumerUsageBits=2304, mId=2bbd00000001, producer=[11197:com.munowatch.pro], consumer=[11197:com.munowatch.pro])
+1786660506.552 10237 11197 14077 D BLASTBufferQueue: Slots:
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:  >[00:0xb4000079abddb3d0] state=ACQUIRED 0xb4000079bbd96c90 frame=15 [ 444x 830: 448,  1]
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   [01:0x0] state=FREE
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   [02:0x0] state=FREE
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   [03:0x0] state=FREE
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   [04:0x0] state=FREE
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   [05:0x0] state=FREE
+1786660506.552 10237 11197 14077 D BLASTBufferQueue:   [06:0x0] state=FREE
+1786660506.735 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.736 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660506.736 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660509.828 10237 11197 14035 W System  : A resource failed to call AbstractCursor.close.
+1786660516.367 10237 11197 11197 D EventLogger: timeline [eventTime=10.22, mediaPos=0.00, window=0, period=0, periodCount=1, windowCount=1, reason=SOURCE_UPDATE
+1786660516.367 10237 11197 11197 D EventLogger:   period [6238.23]
+1786660516.367 10237 11197 11197 D EventLogger:   window [6238.23, seekable=true, dynamic=false]
+1786660516.367 10237 11197 11197 D EventLogger: ]
+1786660516.394 10237 11197 14324 W AudioCapabilities: Unsupported mime audio/x-adpcm-dvi-ima
+1786660516.394 10237 11197 14324 W AudioCapabilities: Unsupported mime audio/x-adpcm-dvi-ima
+1786660516.394 10237 11197 14324 W AudioCapabilities: Unsupported mime audio/x-adpcm-ms
+1786660516.394 10237 11197 14324 W AudioCapabilities: Unsupported mime audio/x-adpcm-ms
+1786660516.394 10237 11197 14324 W AudioCapabilities: Unsupported mime audio/alac
+1786660516.395 10237 11197 14324 W AudioCapabilities: Unsupported mime audio/alac
+1786660516.395 10237 11197 14324 W AudioCapabilities: Unsupported mime audio/ape
+1786660516.395 10237 11197 14324 W AudioCapabilities: Unsupported mime audio/ape
+1786660516.401 10237 11197 14324 W VideoCapabilities: Unsupported mime image/vnd.android.heic
+1786660516.401 10237 11197 14324 W VideoCapabilities: Unsupported mime image/vnd.android.heic
+1786660516.401 10237 11197 14324 W VideoCapabilities: Unsupported mime image/vnd.android.heic
+1786660516.402 10237 11197 14324 W VideoCapabilities: Unsupported mime image/vnd.android.heic
+1786660516.403 10237 11197 14324 W VideoCapabilities: Unrecognized profile/level 32768/256 for video/mp4v-es
+1786660516.403 10237 11197 14324 W VideoCapabilities: Unrecognized profile/level 32768/256 for video/mp4v-es
+1786660516.475 10237 11197 11197 D EventLogger: videoEnabled [eventTime=10.33, mediaPos=0.00, window=0, period=0]
+1786660516.475 10237 11197 14324 I DMCodecAdapterFactory: Creating an asynchronous MediaCodec adapter for track type video
+1786660516.476 10237 11197 11197 D EventLogger: audioEnabled [eventTime=10.33, mediaPos=0.00, window=0, period=0]
+1786660516.477 10237 11197 11197 D EventLogger: tracks [eventTime=10.33, mediaPos=0.00, window=0, period=0
+1786660516.477 10237 11197 11197 D EventLogger:   group [
+1786660516.478 10237 11197 11197 D EventLogger:     [X] Track:0, id=1, mimeType=video/avc, codecs=avc1.4D4029, res=1440x1080, color=NA/NA/NA/8/8, fps=25.000002, supported=YES
+1786660516.478 10237 11197 11197 D EventLogger:   ]
+1786660516.478 10237 11197 11197 D EventLogger:   group [
+1786660516.479 10237 11197 11197 D EventLogger:     [X] Track:0, id=2, mimeType=audio/mp4a-latm, bitrate=64399, codecs=mp4a.40.2, channels=2, sample_rate=44100, language=en, supported=YES
+1786660516.479 10237 11197 11197 D EventLogger:   ]
+1786660516.479 10237 11197 11197 D EventLogger:   Metadata [
+1786660516.479 10237 11197 11197 D EventLogger:     TIT2: description=null: values=[The Last House]
+1786660516.480 10237 11197 14324 D MediaCodec: CreateByComponentName: name c2.mtk.avc.decoder
+1786660516.480 10237 11197 11197 D EventLogger:     TPE1: description=null: values=[VideoProc Converter AI]
+1786660516.480 10237 11197 11197 D EventLogger:     TSSE: description=null: values=[Lavf58.29.100]
+1786660516.480 10237 11197 11197 D EventLogger:     COMM: language=und, description=The Last House
+1786660516.480 10237 11197 11197 D EventLogger:     TCON: description=null: values=[Video]
+1786660516.480 10237 11197 11197 D EventLogger:     Mp4Timestamp: creation time=0, modification time=0, timescale=1000
+1786660516.480 10237 11197 11197 D EventLogger:   ]
+1786660516.480 10237 11197 11197 D EventLogger: ]
+1786660516.484 10237 11197 11197 D EventLogger: downstreamFormat [eventTime=10.34, mediaPos=0.00, window=0, period=0, id=1, mimeType=video/avc, codecs=avc1.4D4029, res=1440x1080, color=NA/NA/NA/8/8, fps=25.000002]
+1786660516.505 10237 11197 14324 D CCodecBufferChannel: mBufferCountDebug=0 mIsUserLoad=1
+1786660516.505 10237 11197 14324 D MediaCodec: [0xb400007a4c447c10] init: CCodec 0xb4000079cbebf550, CCodecBufferChannel 0xb400007a0bf7b650
+1786660516.507 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 1
+1786660516.508 10237 11197 14378 D CCodec  : allocate(c2.mtk.avc.decoder)
+1786660516.514 10237 11197 14378 I Codec2Client: Available Codec2 services: "default" "software"
+1786660516.586 10237 11197 14378 I CCodec  : setting up 'default' as default (vendor) store
+1786660516.698 10237 11197 14378 I CCodec  : Created component [c2.mtk.avc.decoder]
+1786660516.698 10237 11197 14378 D CCodecBufferChannel: [0xb400007a0bf7b650] setComponent: mName c2.mtk.avc.decoder#134, mPipelineWatcher 0xb400007a0bf7bab8
+1786660516.698 10237 11197 14378 D CCodecBufferChannel: PipelineWatcher debug info [c2.mtk.avc.decoder#134] enable=0
+1786660516.699 10237 11197 14378 D CCodecConfig: read media type: video/avc
+1786660516.709 10237 11197 14378 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.max-count.values
+1786660516.710 10237 11197 14378 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+1786660516.710 10237 11197 14378 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+1786660516.711 10237 11197 14378 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+1786660516.711 10237 11197 14378 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.allocator-ids.values
+1786660516.712 10237 11197 14378 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+1786660516.712 10237 11197 14378 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.pool-ids.values
+1786660516.720 10237 11197 14378 D ReflectedParamUpdater: ignored struct field coded.color-format.locations
+1786660516.732 10237 11197 14378 D CCodecConfig: ignoring local param raw.size (0xd2001800) as it is already supported
+1786660516.732 10237 11197 14378 D CCodecConfig: ignoring local param raw.crop (0xd2001801) as it is already supported
+1786660516.732 10237 11197 14378 D CCodecConfig: ignoring local param default.color (0x5200180b) as it is already supported
+1786660516.732 10237 11197 14378 D CCodecConfig: ignoring local param raw.hdr-static-info (0xd200180a) as it is already supported
+1786660516.738 10237 11197 14378 I CCodecConfig: query failed after returning 17 values (BAD_INDEX)
+1786660516.739 10237 11197 14378 D CCodecConfig: c2 config diff is Dict {
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::i32 algo.priority.value = 1
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::float algo.rate.value = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::float coded.frame-rate.value = 30
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 coded.pl.level = 20495
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 coded.pl.profile = 20481
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 coded.vui.color.matrix = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 coded.vui.color.primaries = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 coded.vui.color.range = 2
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 coded.vui.color.transfer = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 default.color.matrix = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 default.color.primaries = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 default.color.range = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 default.color.transfer = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 2097152
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 input.delay.value = 4
+1786660516.739 10237 11197 14378 D CCodecConfig:   string input.media-type.value = "video/avc"
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 output.delay.value = 12
+1786660516.739 10237 11197 14378 D CCodecConfig:   string output.media-type.value = "video/raw"
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 raw.color.matrix = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 raw.color.primaries = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 raw.color.range = 2
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 raw.color.transfer = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 raw.crop.height = 239
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 raw.crop.left = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 raw.crop.top = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::u32 raw.crop.width = 319
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::float raw.hdr-static-info.mastering.blue.x = 0
+1786660516.739 10237 11197 14378 D CCodecConfig:   c2::float raw.hdr-s
+1786660516.740 10237 11197 14378 W ColorUtils: expected specified color aspects (2:0:0:0)
+1786660516.740 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 2
+1786660516.751 10237 11197 14324 D MediaCodec: createbyComponent:pid:-1 11197 tid=14324
+1786660516.753 10237 11197 14377 I MediaCodec: MediaCodec will operate in async mode
+1786660516.753 10237 11197 14324 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] configure
+1786660516.754 10237 11197 14377 D MediaCodec: flushMediametrics
+1786660516.755 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] connectToSurface: surface 0xb400007a7bdeed60, mSurface 0x0
+1786660516.755 10237 11197 14377 D SurfaceUtils: connecting to surface 0xb400007a7bdeed70, reason connectToSurface
+1786660516.755 10237 11197 14377 I MediaCodec: [c2.mtk.avc.decoder] setting surface generation to 11465729
+1786660516.755 10237 11197 14377 D SurfaceUtils: disconnecting from surface 0xb400007a7bdeed70, reason connectToSurface(reconnect)
+1786660516.755 10237 11197 14377 D SurfaceUtils: connecting to surface 0xb400007a7bdeed70, reason connectToSurface(reconnect)
+1786660516.756 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 3
+1786660516.756 10237 11197 14377 D MediaCodec: [c2.mtk.avc.decoder] config set c2 sleep timeout 500 kC2SleepTimeoutMs=500
+1786660516.757 10237 11197 14378 D CCodec  : [c2.mtk.avc.decoder] buffers are bound to CCodec for this session
+1786660516.757 10237 11197 14378 E CCodec  : before change, configure, format : AMessage(what = 0x00000000) = {
+1786660516.757 10237 11197 14378 E CCodec  :   Buffer csd-1 = {
+1786660516.757 10237 11197 14378 E CCodec  :     00000000:  00 00 00 01 68 ee 3c 80                           ....h.<.
+1786660516.757 10237 11197 14378 E CCodec  :   }
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t max-height = 1080
+1786660516.757 10237 11197 14378 E CCodec  :   string log-session-id = "_JXNQoGbh77dTGyP"
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t max-width = 1440
+1786660516.757 10237 11197 14378 E CCodec  :   string mime = "video/avc"
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t width = 1440
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t priority = 0
+1786660516.757 10237 11197 14378 E CCodec  :   float frame-rate = 25.000002
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t rotation-degrees = 0
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t max-input-size = 272965
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t height = 1080
+1786660516.757 10237 11197 14378 E CCodec  :   Buffer csd-0 = {
+1786660516.757 10237 11197 14378 E CCodec  :     00000000:  00 00 00 01 67 4d 40 29  95 a0 16 80 89 f9 7f f0  ....gM@)........
+1786660516.757 10237 11197 14378 E CCodec  :     00000010:  00 40 00 31 00 00 03 03  e8 00 00 c3 50 84        .@.1........P.
+1786660516.757 10237 11197 14378 E CCodec  :   }
+1786660516.757 10237 11197 14378 E CCodec  :   RefBase *native-window = 0xb400007a7bdeed60
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t flags = 0
+1786660516.757 10237 11197 14378 E CCodec  :   int32_t vendor.mtk.vdec.buffer.fetch.timeout.ms.value = 500
+1786660516.757 10237 11197 14378 E CCodec  : } , width 1440 , higth 1080
+1786660516.758 10237 11197 14378 D CCodecConfig: no c2 equivalents for csd-1
+1786660516.758 10237 11197 14378 D CCodecConfig: no c2 equivalents for log-session-id
+1786660516.758 10237 11197 14378 D CCodecConfig: no c2 equivalents for native-window
+1786660516.758 10237 11197 14378 D CCodecConfig: no c2 equivalents for flags
+1786660516.764 10237 11197 14378 D CCodecConfig: c2 config diff is   c2::i32 algo.priority.value = 0
+1786660516.764 10237 11197 14378 D CCodecConfig:   c2::float coded.frame-rate.value = 25
+1786660516.764 10237 11197 14378 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 2094080
+1786660516.764 10237 11197 14378 D CCodecConfig:   c2::u32 raw.max-size.height = 1080
+1786660516.764 10237 11197 14378 D CCodecConfig:   c2::u32 raw.max-size.width = 1440
+1786660516.764 10237 11197 14378 D CCodecConfig:   c2::u32 raw.pixel-format.value = 34
+1786660516.764 10237 11197 14378 D CCodecConfig:   c2::u32 raw.size.height = 1080
+1786660516.764 10237 11197 14378 D CCodecConfig:   c2::u32 raw.size.width = 1440
+1786660516.767 10237 11197 14378 W Codec2Client: query -- param skipped: index = 1107298332.
+1786660516.767 10237 11197 14378 D CCodec  : client requested max input size 272965, which is smaller than what component recommended (2094080); overriding with component recommendation.
+1786660516.767 10237 11197 14378 W CCodec  : This behavior is subject to change. It is recommended that app developers double check whether the requested max input size is in reasonable range.
+1786660516.768 10237 11197 14378 D CCodec  : [video-detector] updateRefreshRateForVideoScene internal api_id=57, video_state=1, current_fps=25, getpid video_session_id=11197
+1786660516.770 10237 11197 14378 D CCodec  : encoding statistics level = 0
+1786660516.770 10237 11197 14378 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+1786660516.770 10237 11197 14378 D CCodec  :   string mime = "video/avc"
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t width = 1440
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t profile = 65536
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t priority = 0
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t frame-rate = 25
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t height = 1080
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t level = 32768
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t max-input-size = 2094080
+1786660516.770 10237 11197 14378 D CCodec  :   Rect crop(0, 0, 318, 238)
+1786660516.770 10237 11197 14378 D CCodec  : }
+1786660516.770 10237 11197 14378 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t android._color-format = 2130708361
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t android._video-scaling = 1
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t sar-width = 1
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t color-standard = 4
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t color-range = 2
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t color-transfer = 3
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t android._dataspace = 259
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t width = 1440
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t rotation-degrees = 0
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t sar-height = 1
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t max-width = 1440
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t max-height = 1080
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t priority = 0
+1786660516.770 10237 11197 14378 D CCodec  :   string mime = "video/raw"
+1786660516.770 10237 11197 14378 D CCodec  :   Rect crop(0, 0, 318, 238)
+1786660516.770 10237 11197 14378 D CCodec  :   Buffer hdr-static-info = {
+1786660516.770 10237 11197 14378 D CCodec  :     00000000:  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  ................
+1786660516.770 10237 11197 14378 D CCodec  :     00000010:  00 00 00 00 00 00 00 00  00                       .........
+1786660516.770 10237 11197 14378 D CCodec  :   }
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t frame-rate = 25
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t height = 1080
+1786660516.770 10237 11197 14378 D CCodec  :   int32_t color-format = 2130708361
+1786660516.770 10237 11197 14378 D CCodec  : }
+1786660516.771 10237 11197 14378 I CCodecConfig: query failed after returning 17 values (BAD_INDEX)
+1786660516.771 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 4
+1786660516.772 10237 11197 14324 D MediaCodec: keep callback message for reclaim
+1786660516.773 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 5
+1786660516.773 10237 11197 14378 D CCodec  : [video-detector] start
+1786660516.812 10237 11197 14378 W Codec2Client: query -- param skipped: index = 1342179345.
+1786660516.812 10237 11197 14378 W Codec2Client: query -- param skipped: index = 2415921170.
+1786660516.812 10237 11197 14378 W Codec2Client: query -- param skipped: index = 1610614798.
+1786660516.813 10237 11197 14378 D C2Store : Using DMABUF Heaps
+1786660516.814 10237 11197 14378 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] Created input block pool with allocatorID 16 => poolID 17 - OK (0)
+1786660516.815 10237 11197 14378 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] Query output surface allocator returned 0 params => BAD_INDEX (6)
+1786660516.816 10237 11197 14378 I CCodecBufferChannel: [c2.mtk.avc.decoder#134] Created output block pool with allocatorID 18 => poolID 1021 - OK
+1786660516.817 10237 11197 14378 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] Configured output block pool ids 1021 => OK
+1786660516.817 10237 11197 14378 D CCodecBufferChannel: [0xb400007a0bf7b650] [c2.mtk.avc.decoder#134] start: output->outputDelay 12, output->numSlots 16
+1786660516.817 10237 11197 14378 D Codec2-OutputBufferQueue: remote graphic buffer migration 0/0
+1786660516.817 10237 11197 14378 D Codec2Client: setOutputSurface -- generation=11465729 consumer usage=0x900
+1786660516.868 10237 11197 14378 D Codec2Client: Surface configure completed
+1786660516.869 10237 11197 14378 I DMABUFHEAPS: Using DMA-BUF heap named: mtk_mm
+1786660516.878 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 6
+1786660516.886 10237 11197 11197 D EventLogger: videoDecoderInitialized [eventTime=10.74, mediaPos=0.00, window=0, period=0, c2.mtk.avc.decoder]
+1786660516.886 10237 11197 14324 I DMCodecAdapterFactory: Creating an asynchronous MediaCodec adapter for track type audio
+1786660516.887 10237 11197 14324 D MediaCodec: CreateByComponentName: name c2.android.aac.decoder
+1786660516.887 10237 11197 11197 D EventLogger: videoInputFormat [eventTime=10.74, mediaPos=0.00, window=0, period=0, id=1, mimeType=video/avc, codecs=avc1.4D4029, res=1440x1080, color=NA/NA/NA/8/8, fps=25.000002]
+1786660516.888 10237 11197 11197 D EventLogger: downstreamFormat [eventTime=10.74, mediaPos=0.00, window=0, period=0, id=2, mimeType=audio/mp4a-latm, bitrate=64399, codecs=mp4a.40.2, channels=2, sample_rate=44100, language=en]
+1786660516.892 10237 11197 14324 D CCodecBufferChannel: mBufferCountDebug=0 mIsUserLoad=1
+1786660516.892 10237 11197 14324 D MediaCodec: [0xb400007a4c518910] init: CCodec 0xb4000079cbebfe10, CCodecBufferChannel 0xb400007a0be20fa0
+1786660516.892 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 1
+1786660516.892 10237 11197 14396 D CCodec  : allocate(c2.android.aac.decoder)
+1786660516.895 10237 11197 14396 I CCodec  : setting up 'default' as default (vendor) store
+1786660516.928 10237 11197 14378 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] flushed work; ignored.
+1786660516.928 10237 11197 14378 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] Discard frames from previous generation.
+1786660516.928 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660516.928 10237 11197 14378 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] flushed work not feedInput.
+1786660516.935 10237 11197 14378 D CCodecConfig: c2 config diff is   c2::u32 raw.color.range = 0
+1786660516.936 10237 11197 14378 D Codec2-OutputBufferQueue: set max dequeue count 19 from update
+1786660516.939 10237 11197 14382 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] Ignoring stale input buffer done callback: last flush index = 0, frameIndex = 0
+1786660517.014 10237 11197 14396 I CCodec  : Created component [c2.android.aac.decoder]
+1786660517.014 10237 11197 14396 D CCodecBufferChannel: [0xb400007a0be20fa0] setComponent: mName c2.android.aac.decoder#367, mPipelineWatcher 0xb400007a0be21408
+1786660517.014 10237 11197 14396 D CCodecBufferChannel: PipelineWatcher debug info [c2.android.aac.decoder#367] enable=0
+1786660517.015 10237 11197 14396 D CCodecConfig: read media type: audio/mp4a-latm
+1786660517.021 10237 11197 14396 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.max-count.values
+1786660517.022 10237 11197 14396 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+1786660517.022 10237 11197 14396 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+1786660517.022 10237 11197 14396 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+1786660517.023 10237 11197 14396 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.allocator-ids.values
+1786660517.023 10237 11197 14396 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+1786660517.023 10237 11197 14396 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.pool-ids.values
+1786660517.030 10237 11197 14396 I CCodecConfig: query failed after returning 20 values (BAD_INDEX)
+1786660517.030 10237 11197 14396 D CCodecConfig: c2 config diff is Dict {
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 coded.aac-packaging.value = 0
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 coded.pl.level = 0
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 coded.pl.profile = 8192
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::i32 coding.drc.album-mode.value = 0
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::float coding.drc.attenuation-factor.value = 1
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::float coding.drc.boost-factor.value = 1
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::i32 coding.drc.compression-mode.value = 3
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::i32 coding.drc.effect-type.value = 3
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::float coding.drc.encoded-level.value = 0.25
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::float coding.drc.reference-level.value = -16
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 8192
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 input.delay.value = 0
+1786660517.030 10237 11197 14396 D CCodecConfig:   string input.media-type.value = "audio/mp4a-latm"
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 output.delay.value = 2
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::float output.drc.output-loudness.value = 0.25
+1786660517.030 10237 11197 14396 D CCodecConfig:   string output.media-type.value = "audio/raw"
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 raw.channel-count.value = 1
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 raw.channel-mask.value = 0
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 raw.max-channel-count.value = 8
+1786660517.030 10237 11197 14396 D CCodecConfig:   c2::u32 raw.sample-rate.value = 44100
+1786660517.030 10237 11197 14396 D CCodecConfig: }
+1786660517.031 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 2
+1786660517.031 10237 11197 14324 D MediaCodec: createbyComponent:pid:-1 11197 tid=14324
+1786660517.032 10237 11197 14396 I MediaCodec: MediaCodec will operate in async mode
+1786660517.033 10237 11197 14324 D MediaCodec: [0xb400007a4c518910] [c2.android.aac.decoder] configure
+1786660517.033 10237 11197 14396 D MediaCodec: flushMediametrics
+1786660517.033 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 3
+1786660517.033 10237 11197 14396 D CCodec  : [c2.android.aac.decoder] buffers are bound to CCodec for this session
+1786660517.033 10237 11197 14396 E CCodec  : before change, configure, format : AMessage(what = 0x00000000) = {
+1786660517.033 10237 11197 14396 E CCodec  :   string log-session-id = "_JXNQoGbh77dTGyP"
+1786660517.033 10237 11197 14396 E CCodec  :   int32_t sample-rate = 44100
+1786660517.033 10237 11197 14396 E CCodec  :   string mime = "audio/mp4a-latm"
+1786660517.033 10237 11197 14396 E CCodec  :   int32_t channel-count = 2
+1786660517.033 10237 11197 14396 E CCodec  :   int32_t priority = 0
+1786660517.033 10237 11197 14396 E CCodec  :   int32_t max-output-channel-count = 99
+1786660517.033 10237 11197 14396 E CCodec  :   int32_t max-input-size = 556
+1786660517.033 10237 11197 14396 E CCodec  :   Buffer csd-0 = {
+1786660517.033 10237 11197 14396 E CCodec  :     00000000:  12 10 56 e5 00                                    ..V..
+1786660517.033 10237 11197 14396 E CCodec  :   }
+1786660517.033 10237 11197 14396 E CCodec  :   int32_t flags = 0
+1786660517.033 10237 11197 14396 E CCodec  : } , width 0 , higth 0
+1786660517.034 10237 11197 14396 D CCodecConfig: no c2 equivalents for log-session-id
+1786660517.034 10237 11197 14396 D CCodecConfig: no c2 equivalents for flags
+1786660517.035 10237 11197 14396 D CCodecConfig: c2 config diff is   c2::u32 raw.channel-count.value = 2
+1786660517.036 10237 11197 14396 W Codec2Client: query -- param skipped: index = 1107298332.
+1786660517.036 10237 11197 14396 D CCodec  : client requested max input size 556, which is smaller than what component recommended (8192); overriding with component recommendation.
+1786660517.036 10237 11197 14396 W CCodec  : This behavior is subject to change. It is recommended that app developers double check whether the requested max input size is in reasonable range.
+1786660517.036 10237 11197 14396 D CCodec  : encoding statistics level = 0
+1786660517.036 10237 11197 14396 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-album-mode = 0
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-boost-level = 127
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-cut-level = 127
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-effect-type = 3
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-encoded-target-level = -1
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-max-output-channel_count = 8
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-target-ref-level = 64
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t bitrate = 64000
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t channel-count = 2
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t channel-mask = 0
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t level = 0
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t max-input-size = 8192
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t max-output-channel-count = 8
+1786660517.036 10237 11197 14396 D CCodec  :   string mime = "audio/mp4a-latm"
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t profile = 2
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t sample-rate = 44100
+1786660517.036 10237 11197 14396 D CCodec  : }
+1786660517.036 10237 11197 14396 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-album-mode = 0
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-boost-level = 127
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-cut-level = 127
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-effect-type = 3
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-drc-output-loudness = -1
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-encoded-target-level = -1
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-max-output-channel_count = 8
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t aac-target-ref-level = 64
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t channel-count = 2
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t channel-mask = 0
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t max-output-channel-count = 8
+1786660517.036 10237 11197 14396 D CCodec  :   string mime = "audio/raw"
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t sample-rate = 44100
+1786660517.036 10237 11197 14396 D CCodec  :   int32_t android._config-pcm-encoding = 2
+1786660517.036 10237 11197 14396 D CCodec  : }
+1786660517.037 10237 11197 14396 I CCodecConfig: query failed after returning 20 values (BAD_INDEX)
+1786660517.037 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 4
+1786660517.038 10237 11197 14324 D MediaCodec: keep callback message for reclaim
+1786660517.038 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 5
+1786660517.038 10237 11197 14396 D CCodec  : [video-detector] start
+1786660517.066 10237 11197 14396 W Codec2Client: query -- param skipped: index = 1342179345.
+1786660517.066 10237 11197 14396 W Codec2Client: query -- param skipped: index = 2415921170.
+1786660517.066 10237 11197 14396 W Codec2Client: query -- param skipped: index = 1610614798.
+1786660517.068 10237 11197 14396 D CCodecBufferChannel: [c2.android.aac.decoder#367] Created input block pool with allocatorID 16 => poolID 18 - OK (0)
+1786660517.074 10237 11197 14396 I CCodecBufferChannel: [c2.android.aac.decoder#367] Created output block pool with allocatorID 16 => poolID 949 - OK
+1786660517.075 10237 11197 14396 D CCodecBufferChannel: [c2.android.aac.decoder#367] Configured output block pool ids 949 => OK
+1786660517.075 10237 11197 14396 D CCodecBufferChannel: [0xb400007a0be20fa0] [c2.android.aac.decoder#367] start: output->outputDelay 2, output->numSlots 6
+1786660517.082 10237 11197 14396 D CCodecBuffers: [c2.android.aac.decoder#367:1D-Output.Impl[N]] converted 0 buffers to array mode of 6
+1786660517.087 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 6
+1786660517.099 10237 11197 11197 D EventLogger: audioDecoderInitialized [eventTime=10.95, mediaPos=0.00, window=0, period=0, c2.android.aac.decoder]
+1786660517.100 10237 11197 11197 D EventLogger: audioInputFormat [eventTime=10.95, mediaPos=0.00, window=0, period=0, id=2, mimeType=audio/mp4a-latm, bitrate=64399, codecs=mp4a.40.2, channels=2, sample_rate=44100, language=en]
+1786660519.808 10237 11197 14379 D CCodecBufferChannel: elapsed: mInputMetEos 0, hasPendingOutputsInClient 0, n 20
+1786660519.808 10237 11197 14379 D PipelineWatcher: [0xb400007a0bf7bab8] elapsed: mFramesInPipeline 0, n 20
+1786660519.808 10237 11197 14379 D CCodecBufferChannel: elapsed: mInputMetEos 0, hasPendingOutputsInClient 0, n 6
+1786660519.809 10237 11197 14379 D PipelineWatcher: [0xb400007a0be21408] elapsed: mFramesInPipeline 0, n 6
+1786660521.815 10237 11197 14381 D BufferPoolAccessor2.0: bufferpool2 0xb4000079dbddd2a8 : 8(16752640 size) total buffers - 8(16752640 size) used buffers - 2/10 (recycle/alloc) - 2/2 (fetch/transfer)
+1786660521.815 10237 11197 14381 D BufferPoolAccessor2.0: evictor expired: 1, evicted: 1
+1786660521.928 10237 11197 11197 D TranClassInfo: instance successfully. com.transsion.hubcore.magellan.Implement.TranMagellanComponentImpl@672b94b from com.transsion.hubcore.magellan.ITranMagellanComponent
+1786660521.928 10237 11197 11197 D TranFlingManagerImpl: getYVelocity origin-value = 4724.156 ksmooth-value = 4724.156 strengthVelocity = 4724.156 final velocity = 4724.156
+1786660521.928 10237 11197 11197 I ScrollIdentify: on fling
+1786660522.815 10237 11197 14381 D BufferPoolAccessor2.0: bufferpool2 0xb4000079dbde94e8 : 5(40960 size) total buffers - 4(32768 size) used buffers - 1/6 (recycle/alloc) - 1/2 (fetch/transfer)
+1786660522.815 10237 11197 14381 D BufferPoolAccessor2.0: evictor expired: 1, evicted: 1
+1786660535.895 10237 11197 11197 D View    : [Warning] assignParent to null: this = DecorView@110b00e[MunoPlayer]
+1786660535.915 10237 11197 14039 D BLASTBufferQueue: [VRI[MunoPlayer]#1](f:0,a:4) destructor()
+1786660535.915 10237 11197 14039 D BufferQueueConsumer: [VRI[MunoPlayer]#1(BLAST Consumer)1](id:2bbd00000001,api:0,p:-1,c:11197) disconnect
+1786660535.929 10237 11197 11197 W InputEventReceiver: Attempted to finish an input event but the input event receiver has already been disposed.
+1786660535.929 10237 11197 11197 D InputTransport: Destroy ARC handle: 0xb40000791be22b30
+1786660535.954 10237 11197 11197 W OnBackInvokedCallback: OnBackInvokedCallback is not enabled for the application.
+1786660535.954 10237 11197 11197 W OnBackInvokedCallback: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+1786660535.959 10237 11197 11197 D TranActivityAppturboImpl: onResumeHork
+1786660535.959 10237 11197 11197 D TranAppturboServiceImpl: onResumeHork
+1786660535.974 10237 11197 11197 D BufferQueueConsumer: [](id:2bbd00000004,api:0,p:-1,c:11197) connect: controlledByApp=false
+1786660535.975 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660535.975 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660535.975 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660535.975 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660535.990 10237 11197 14077 D BLASTBufferQueue: [VRI[Dashboard]#4](f:0,a:1) acquireNextBufferLocked size=1080x2400 mFrameNumber=1 applyTransaction=true mTimestamp=77264117362297(auto) mPendingTransactions.size=0 graphicBufferId=48090748813363 transform=0
+1786660536.026 10237 11197 14408 D libMEOW : meow new tls: 0xb400007afbf391c0
+1786660536.026 10237 11197 14408 D libMEOW : applied 1 plugins for [com.munowatch.pro]:
+1786660536.026 10237 11197 14408 D libMEOW :   plugin 1: [libMEOW_gift.so]: 0xb400007abbd8d820
+1786660536.026 10237 11197 14408 D libMEOW : rebuild call chain: 0xb400007afc0592e0
+1786660536.036 10237 11197 14408 D BufferQueueConsumer: [](id:2bbd00000005,api:0,p:-1,c:11197) connect: controlledByApp=true
+1786660536.038 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] connectToSurface: surface 0xb400007a7bdfdbd0, mSurface 0xb400007a7bdeed60
+1786660536.038 10237 11197 14377 D SurfaceUtils: connecting to surface 0xb400007a7bdfdbe0, reason connectToSurface
+1786660536.038 10237 11197 14377 I MediaCodec: [c2.mtk.avc.decoder] setting surface generation to 11465730
+1786660536.038 10237 11197 14377 D SurfaceUtils: disconnecting from surface 0xb400007a7bdfdbe0, reason connectToSurface(reconnect)
+1786660536.038 10237 11197 14377 D SurfaceUtils: connecting to surface 0xb400007a7bdfdbe0, reason connectToSurface(reconnect)
+1786660536.040 10237 11197 14377 D Codec2-OutputBufferQueue: remote graphic buffer migration 0/0
+1786660536.044 10237 11197 14377 D Codec2Client: setOutputSurface -- generation=11465730 consumer usage=0x900
+1786660536.056 10237 11197 14377 D Codec2Client: Surface configure completed
+1786660536.056 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] disconnectFromSurface: mSurface 0xb400007a7bdeed60
+1786660536.056 10237 11197 14377 D SurfaceUtils: disconnecting from surface 0xb400007a7bdeed70, reason disconnectFromSurface
+1786660536.057 10237 11197 11197 D EventLogger: surfaceSize [eventTime=29.91, mediaPos=0.00, window=0, period=0, 0, 0]
+1786660536.057 10237 11197 11197 D BLASTBufferQueue: [SurfaceView[com.munowatch.pro/com.munowatch.lite.MunoPlayer]#3](f:0,a:0) destructor()
+1786660536.057 10237 11197 11197 D BufferQueueConsumer: [SurfaceView[com.munowatch.pro/com.munowatch.lite.MunoPlayer]#3(BLAST Consumer)3](id:2bbd00000003,api:0,p:-1,c:11197) disconnect
+1786660536.070 10237 11197 11197 D BLASTBufferQueue: [VRI[MunoPlayer]#2](f:0,a:3) destructor()
+1786660536.070 10237 11197 11197 D BufferQueueConsumer: [VRI[MunoPlayer]#2(BLAST Consumer)2](id:2bbd00000002,api:0,p:-1,c:11197) disconnect
+1786660536.071 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660536.071 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660536.071 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660536.073 10237 11197 11197 I ExoPlayerImpl: Release 666849b [AndroidXMedia3/1.3.1] [TECNO-CK7n, TECNO CK7n, TECNO, 33] [media3.common, media3.database, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.datasource.cronet, media3.datasource, media3.extractor]
+1786660536.076 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 7
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14378 D PipelineWatcher: onWorkDone: frameIndex not found (18446744073709551615); ignored
+1786660536.090 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 8
+1786660536.090 10237 11197 14324 D MediaCodec: keep callback message for reclaim
+1786660536.090 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 6
+1786660536.090 10237 11197 14377 I CCodecConfig: query failed after returning 17 values (BAD_INDEX)
+1786660536.090 10237 11197 14377 D CCodecConfig: c2 config diff is   c2::u32 coded.vui.color.range = 0
+1786660536.090 10237 11197 14377 D CCodecConfig:   c2::u32 raw.crop.height = 1080
+1786660536.090 10237 11197 14377 D CCodecConfig:   c2::u32 raw.crop.width = 1440
+1786660536.090 10237 11197 14377 D CCodecConfig:   c2::u32 raw.pixel-format.value = 2130706433
+1786660536.091 10237 11197 14377 W Codec2Client: query -- param skipped: index = 1342179345.
+1786660536.091 10237 11197 14377 W Codec2Client: query -- param skipped: index = 2415921170.
+1786660536.091 10237 11197 14377 W Codec2Client: query -- param skipped: index = 1610614798.
+1786660536.092 10237 11197 14377 D BufferPoolAccessor2.0: bufferpool2 0xb4000079dbddd2a8 : 8(16752640 size) total buffers - 1(2094080 size) used buffers - 3/11 (recycle/alloc) - 2/2 (fetch/transfer)
+1786660536.095 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 7
+1786660536.096 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 8
+1786660536.096 10237 11197 14324 D MediaCodec: keep callback message for reclaim
+1786660536.096 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 6
+1786660536.097 10237 11197 14396 I CCodecConfig: query failed after returning 20 values (BAD_INDEX)
+1786660536.097 10237 11197 14396 W Codec2Client: query -- param skipped: index = 1342179345.
+1786660536.097 10237 11197 14396 W Codec2Client: query -- param skipped: index = 2415921170.
+1786660536.097 10237 11197 14396 W Codec2Client: query -- param skipped: index = 1610614798.
+1786660536.098 10237 11197 14396 D BufferPoolAccessor2.0: bufferpool2 0xb4000079dbde94e8 : 4(32768 size) total buffers - 1(8192 size) used buffers - 2/7 (recycle/alloc) - 1/2 (fetch/transfer)
+1786660536.101 10237 11197 14324 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] releaseAsync
+1786660536.102 10237 11197 14377 D BufferQueueConsumer: [](id:2bbd00000006,api:0,p:-1,c:11197) connect: controlledByApp=false
+1786660536.102 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] connectToSurface: surface 0xb400007a7be50c40, mSurface 0xb400007a7bdfdbd0
+1786660536.102 10237 11197 14377 D SurfaceUtils: connecting to surface 0xb400007a7be50c50, reason connectToSurface
+1786660536.102 10237 11197 14377 I MediaCodec: [c2.mtk.avc.decoder] setting surface generation to 11465731
+1786660536.102 10237 11197 14377 D SurfaceUtils: disconnecting from surface 0xb400007a7be50c50, reason connectToSurface(reconnect)
+1786660536.102 10237 11197 14377 D SurfaceUtils: connecting to surface 0xb400007a7be50c50, reason connectToSurface(reconnect)
+1786660536.104 10237 11197 14377 D Codec2-OutputBufferQueue: remote graphic buffer migration 0/0
+1786660536.105 10237 11197 14377 D Codec2Client: setOutputSurface -- generation=11465731 consumer usage=0x900
+1786660536.111 10237 11197 14377 D Codec2Client: Surface configure completed
+1786660536.111 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] disconnectFromSurface: mSurface 0xb400007a7bdfdbd0
+1786660536.111 10237 11197 14377 D SurfaceUtils: disconnecting from surface 0xb400007a7bdfdbe0, reason disconnectFromSurface
+1786660536.112 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 10
+1786660536.112 10237 11197 14377 D CCodec  : [video-detector] updateRefreshRateForVideoScene internal api_id=57, video_state=3, current_fps=25, getpid video_session_id=11197
+1786660536.113 10237 11197 14377 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] MediaCodec discarded an unknown buffer
+1786660536.113 10237 11197 14377 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] MediaCodec discarded an unknown buffer
+1786660536.113 10237 11197 14377 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] MediaCodec discarded an unknown buffer
+1786660536.113 10237 11197 14377 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] MediaCodec discarded an unknown buffer
+1786660536.113 10237 11197 14377 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] MediaCodec discarded an unknown buffer
+1786660536.113 10237 11197 14377 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] MediaCodec discarded an unknown buffer
+1786660536.113 10237 11197 14377 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] MediaCodec discarded an unknown buffer
+1786660536.113 10237 11197 14377 D CCodecBufferChannel: [c2.mtk.avc.decoder#134] MediaCodec discarded an unknown buffer
+1786660536.114 10237 11197 14408 D BufferQueueConsumer: [SurfaceTexture-1-11197-0](id:2bbd00000005,api:0,p:-1,c:11197) disconnect
+1786660536.116 10237 11197 14324 D MediaCodec: [0xb400007a4c518910] [c2.android.aac.decoder] releaseAsync
+1786660536.116 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 10
+1786660536.116 10237 11197 14408 D libMEOW : meow delete tls: 0xb400007afbf391c0
+1786660536.117 10237 11197 14396 D CCodecBufferChannel: [c2.android.aac.decoder#367] MediaCodec discarded an unknown buffer
+1786660536.117 10237 11197 14396 D CCodecBufferChannel: [c2.android.aac.decoder#367] MediaCodec discarded an unknown buffer
+1786660536.117 10237 11197 14396 D CCodecBufferChannel: [c2.android.aac.decoder#367] MediaCodec discarded an unknown buffer
+1786660536.117 10237 11197 14396 D CCodecBufferChannel: [c2.android.aac.decoder#367] MediaCodec discarded an unknown buffer
+1786660536.119 10237 11197 14396 I hw-BpHwBinder: onLastStrongRef automatically unlinking death recipients
+1786660536.120 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] [c2.android.aac.decoder] kWhatReleaseCompleted
+1786660536.120 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] setState: 0
+1786660536.121 10237 11197 11197 D ActivityThread: mToDestroying.remove:ActivityRecord{75199a0 token=android.os.BinderProxy@9a5451b {com.munowatch.pro/com.munowatch.lite.MunoPlayer}}
+1786660536.121 10237 11197 14396 D MediaCodec: flushMediametrics
+1786660536.121 10237 11197 14396 D MediaCodec: [0xb400007a4c518910] ~MediaCodec
+1786660536.123 10237 11197 14396 D MediaCodec: flushMediametrics
+1786660536.125 10237 11197 11197 D View    : [Warning] assignParent to null: this = DecorView@b87a196[MunoPlayer]
+1786660536.132 10237 11197 11197 D InputTransport: Destroy ARC handle: 0xb40000791be23ee0
+1786660536.143 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] kWhatReleaseCompleted
+1786660536.143 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] setState: 0
+1786660536.143 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] [c2.mtk.avc.decoder] disconnectFromSurface: mSurface 0xb400007a7be50c40
+1786660536.143 10237 11197 14377 D SurfaceUtils: disconnecting from surface 0xb400007a7be50c50, reason disconnectFromSurface
+1786660536.143 10237 11197 14414 I hw-BpHwBinder: onLastStrongRef automatically unlinking death recipients
+1786660536.144 10237 11197 14377 D MediaCodec: flushMediametrics
+1786660536.145 10237 11197 14377 D MediaCodec: [0xb400007a4c447c10] ~MediaCodec
+1786660536.145 10237 11197 14377 D MediaCodec: flushMediametrics
+1786660536.158 10237 11197 11197 D EventLogger: videoDisabled [eventTime=30.01, mediaPos=0.00, window=0, period=0]
+1786660536.159 10237 11197 11197 D EventLogger: audioDisabled [eventTime=30.01, mediaPos=0.00, window=0, period=0]
+1786660536.159 10237 11197 11197 D EventLogger: videoDecoderReleased [eventTime=30.01, mediaPos=0.00, window=0, period=0, c2.mtk.avc.decoder]
+1786660536.160 10237 11197 11197 D EventLogger: audioDecoderReleased [eventTime=30.01, mediaPos=0.00, window=0, period=0, c2.android.aac.decoder]
+1786660536.161 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660536.161 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660536.161 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660536.161 10237 11197 11197 D os.SingleLiceFactory: using com.android.internal.IInternalViewLice$DefaultImpl@a9531d3 instead of com.transsion.activityembedding.ActivityEmbeddingLiceFactory  from com.android.internal.IInternalViewLice
+1786660536.190 10237 11197 14077 D BLASTBufferQueue: [VRI[Dashboard]#4](f:0,a:2) producer disconnected before: mAbandoned=0
+1786660536.190 10237 11197 14077 D BLASTBufferQueue: - BufferQueue mMaxAcquiredBufferCount=5 mMaxDequeuedBufferCount=2
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   mDequeueBufferCannotBlock=0 mAsyncMode=0
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   mQueueBufferCanDrop=0 mLegacyBufferDrop=1
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   default-size=[1080x2400] default-format=2   transform-hint=00 frame-counter=2
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   mTransformHintInUse=00 mAutoPrerotation=0
+1786660536.190 10237 11197 14077 D BLASTBufferQueue: FIFO(0):
+1786660536.190 10237 11197 14077 D BLASTBufferQueue: (mConsumerName=VRI[Dashboard]#4(BLAST Consumer)4, mConnectedApi=1, mConsumerUsageBits=2304, mId=2bbd00000004, producer=[11197:com.munowatch.pro], consumer=[11197:com.munowatch.pro])
+1786660536.190 10237 11197 14077 D BLASTBufferQueue: Slots:
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:  >[00:0xb4000079abdc0070] state=ACQUIRED 0xb4000079bbd94350 frame=2 [1080x2400:1088,  1]
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   [01:0x0] state=FREE
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   [02:0x0] state=FREE
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   [03:0x0] state=FREE
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   [04:0x0] state=FREE
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   [05:0x0] state=FREE
+1786660536.190 10237 11197 14077 D BLASTBufferQueue:   [06:0x0] state=FREE
+1786660536.991 10237 11197 11197 W Glide   : Load failed for [https://apposters.b-cdn.net/laba/yo/naki/9695.jpg] with dimensions [300x450]
+1786660536.991 10237 11197 11197 W Glide   : class j5.u: Failed to load resource
+1786660536.991 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660536.991 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660536.991 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660536.991 10237 11197 11197 W Glide   :   Cause (1 of 1): class j5.u: Fetching data failed, class java.io.InputStream, REMOTE
+1786660536.991 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660536.991 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660536.991 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660536.991 10237 11197 11197 W Glide   :     Cause (1 of 1): class j5.u: Fetch failed
+1786660536.991 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660536.991 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660536.991 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660536.991 10237 11197 11197 W Glide   :       Cause (1 of 1): class d2.b: Failed to connect or obtain data, status code: 404
+1786660536.991 10237 11197 11197 I Glide   : Root cause (1 of 1)
+1786660536.991 10237 11197 11197 I Glide   : d2.b: Failed to connect or obtain data, status code: 404
+1786660536.991 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:295)
+1786660536.991 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:26)
+1786660536.991 10237 11197 11197 I Glide   : 	at n5.v.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660536.991 10237 11197 11197 I Glide   : 	at j5.c0.a(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:140)
+1786660536.991 10237 11197 11197 I Glide   : 	at j5.j.o(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:25)
+1786660536.991 10237 11197 11197 I Glide   : 	at j5.j.p(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:51)
+1786660536.991 10237 11197 11197 I Glide   : 	at j5.j.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660536.991 10237 11197 11197 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1100)
+1786660536.991 10237 11197 11197 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+1786660536.991 10237 11197 11197 I Glide   : 	at mb.t.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:1072)
+1786660536.991 10237 11197 11197 I Glide   : 	at java.lang.Thread.run(Thread.java:1572)
+1786660536.991 10237 11197 11197 I Glide   : 	at c9.g.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:44)
+1786660536.991 10237 11197 11197 I Glide   : Caused by: java.io.FileNotFoundException: https://apposters.b-cdn.net/laba/yo/naki/9695.jpg
+1786660536.991 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.HttpURLConnectionImpl.getInputStream(HttpURLConnectionImpl.java:255)
+1786660536.991 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.DelegatingHttpsURLConnection.getInputStream(DelegatingHttpsURLConnection.java:211)
+1786660536.991 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.HttpsURLConnectionImpl.getInputStream(HttpsURLConnectionImpl.java:30)
+1786660536.991 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:98)
+1786660536.991 10237 11197 11197 I Glide   : 	... 11 more
+1786660536.991 10237 11197 11197 W Glide   : Load failed for [https://apposters.b-cdn.net/laba/yo/naki/9695.jpg] with dimensions [300x450]
+1786660536.991 10237 11197 11197 W Glide   : class j5.u: Failed to load resource
+1786660536.991 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660536.991 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660536.991 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660536.991 10237 11197 11197 W Glide   :   Cause (1 of 1): class j5.u: Fetching data failed, class java.io.InputStream, REMOTE
+1786660536.991 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660536.991 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660536.991 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660536.991 10237 11197 11197 W Glide   :     Cause (1 of 1): class j5.u: Fetch failed
+1786660536.991 10237 11197 11197 W Glide   : There was 1 root cause:
+1786660536.991 10237 11197 11197 W Glide   : d2.b(Failed to connect or obtain data, status code: 404)
+1786660536.991 10237 11197 11197 W Glide   :  call GlideException#logRootCauses(String) for more detail
+1786660536.991 10237 11197 11197 W Glide   :       Cause (1 of 1): class d2.b: Failed to connect or obtain data, status code: 404
+1786660536.992 10237 11197 11197 I Glide   : Root cause (1 of 1)
+1786660536.992 10237 11197 11197 I Glide   : d2.b: Failed to connect or obtain data, status code: 404
+1786660536.992 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:295)
+1786660536.992 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:26)
+1786660536.992 10237 11197 11197 I Glide   : 	at n5.v.e(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660536.992 10237 11197 11197 I Glide   : 	at j5.c0.a(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:140)
+1786660536.992 10237 11197 11197 I Glide   : 	at j5.j.o(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:25)
+1786660536.992 10237 11197 11197 I Glide   : 	at j5.j.p(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:51)
+1786660536.992 10237 11197 11197 I Glide   : 	at j5.j.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:24)
+1786660536.992 10237 11197 11197 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1100)
+1786660536.992 10237 11197 11197 I Glide   : 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+1786660536.992 10237 11197 11197 I Glide   : 	at mb.t.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:1072)
+1786660536.992 10237 11197 11197 I Glide   : 	at java.lang.Thread.run(Thread.java:1572)
+1786660536.992 10237 11197 11197 I Glide   : 	at c9.g.run(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:44)
+1786660536.992 10237 11197 11197 I Glide   : Caused by: java.io.FileNotFoundException: https://apposters.b-cdn.net/laba/yo/naki/9695.jpg
+1786660536.992 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.HttpURLConnectionImpl.getInputStream(HttpURLConnectionImpl.java:255)
+1786660536.992 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.DelegatingHttpsURLConnection.getInputStream(DelegatingHttpsURLConnection.java:211)
+1786660536.992 10237 11197 11197 I Glide   : 	at com.android.okhttp.internal.huc.HttpsURLConnectionImpl.getInputStream(HttpsURLConnectionImpl.java:30)
+1786660536.992 10237 11197 11197 I Glide   : 	at com.bumptech.glide.load.data.l.f(r8-map-id-a492bdc34bc44007746da0ac72c7db75211e3a2885ec9ecdb2176fa501087e5d:98)
+1786660536.992 10237 11197 11197 I Glide   : 	... 11 more
+1786660537.282 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660537.332 10237 11197 11197 D TranFlingManagerImpl: onOverScrollerFinish()
+1786660537.486 10237 11197 11197 D TranFlingManagerImpl: getYVelocity origin-value = 1624.2965 ksmooth-value = 1624.2965 strengthVelocity = 1624.2965 final velocity = 1624.2965
+1786660537.486 10237 11197 11197 D TranFlingManagerImpl: getYVelocity origin-value = 1624.0891 ksmooth-value = 1624.0891 strengthVelocity = 1624.0891 final velocity = 1624.0891
+1786660537.486 10237 11197 11197 I ScrollIdentify: on fling
+1786660538.086 10237 11197 11197 D BLASTBufferQueue: [VRI[Dashboard]#4](f:0,a:4) destructor()
+1786660538.086 10237 11197 11197 D BufferQueueConsumer: [VRI[Dashboard]#4(BLAST Consumer)4](id:2bbd00000004,api:0,p:-1,c:11197) disconnect
+1786660538.101 10237 11197 11197 I AppVisibilityProxy: onAppEnteredBackground
+1786660538.135 10237 11197 11197 W GlobalMediaRouter: Ignoring invalid provider descriptor: null
