@@ -14,8 +14,14 @@ The linker cannot match the two and leaves `ph_strings_register` as an unresolve
 At dlopen time this causes: `cannot locate symbol "ph_strings_register"`.
 
 ## How to apply
-In `NativeStringGen.java`, the generated function header must be:
+In `NativeStringGen.java`, ALL generated JNI function headers must use `extern "C"`:
 ```cpp
+extern "C" JNIEXPORT void JNICALL Java_<ClassName>_phStrInject(JNIEnv* env, jclass clz) {
 extern "C" void ph_strings_register(JNIEnv* env) {
 ```
-Not just `void ph_strings_register(JNIEnv* env)`.
+Not just `JNIEXPORT void JNICALL ...` — JNIEXPORT only sets visibility, it does NOT disable C++ mangling.
+
+## VMP vs DEX2C difference
+VMP mode: RegisterNatives via NativeUtil.classesInit0() — function pointer, mangling irrelevant.
+DEX2C mode: ART static Java_* symbol lookup — requires exact unmangled symbol name.
+Missing extern "C" on phStrInject causes UnsatisfiedLinkError in DEX2C mode only.
