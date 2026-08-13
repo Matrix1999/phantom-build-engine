@@ -292,11 +292,11 @@ public class Tier1DexPatcher {
                     if ((f.getAccessFlags() & DexConstants.ACC_STATIC) != 0
                             && "Ljava/lang/String;".equals(f.getType().toString())
                             && f.getInitialValue() != null) {
-                        // Strip the encoded initial value (annotations preserved via hiddenApiFlags overload).
+                        // Strip the encoded initial value; preserve everything else.
                         newFields.add(FieldDef.of(
                                 f.getName(), f.getType(),
                                 f.getAccessFlags(), f.getHiddenApiFlags(),
-                                null));
+                                null, f.getAnnotations()));
                         Log.d(TAG, "  string field stripped: " + f.getName() + " in " + clsType);
                     } else {
                         newFields.add(f);
