@@ -219,6 +219,25 @@ public class ApkProtector {
             patchJniInitForStrings(cSourceDir);
         }
 
+        // ── 5.5d. Obfuscate inline NewStringUTF literals in transpiled C++ ───
+        // DEX2C transpiles const-string opcodes from method bodies into plain C
+        // string literals (env->NewStringUTF("rx_prefs")), which land in .rodata
+        // as readable plaintext even when ph_strings.cpp encrypts field initializers.
+        // This step replaces every such literal with an XOR-decrypt call so nothing
+        // plaintext reaches the compiler.  Works in both DEX2C and VMP mode.
+        // OLLVM SOBF, when enabled later, adds a second encryption layer on top.
+        try {
+            int obfCount = DexStringObfuscator.obfuscate(cSourceDir);
+            if (obfCount > 0) {
+                report(59, "Obfuscated " + obfCount
+                        + " inline string literal(s) in transpiled C++ → no plaintext in .rodata");
+            }
+        } catch (Exception obfEx) {
+            // Non-fatal — log and continue; build still succeeds without this step
+            report(59, "String literal obfuscation warning (non-fatal): " + obfEx.getMessage());
+            android.util.Log.w("DexStringObf", "obfuscate() failed", obfEx);
+        }
+
         // ── 5.5d. Export stripped DEX ZIP for user inspection ────────────────
         String modeTag = useVmp ? "vmp" : "dex2c";
         File strippedDexZip = exportStrippedDexZip(dexDir, modeTag);
