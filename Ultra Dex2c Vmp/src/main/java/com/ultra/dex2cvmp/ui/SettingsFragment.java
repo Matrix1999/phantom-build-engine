@@ -53,6 +53,16 @@ public class SettingsFragment extends Fragment {
     public static final String KEY_DEX_PACKER = "dex_packer_enabled";
 
     /**
+     * When true (default), ApkProtector scans target classes for static String field
+     * initializers, strips them from the DEX, and bakes XOR-encrypted values into the
+     * native .so via ph_strings.cpp + phStrInject(). Inline NewStringUTF literals from
+     * transpiled method bodies are also replaced with decrypt calls (ph_str_obf.cpp).
+     * When false, field initializers are left as-is in the DEX — no ph_strings.cpp is
+     * generated and no Tier1DexPatcher field stripping occurs.
+     */
+    public static final String KEY_STRING_ENCRYPT = "string_encrypt_enabled";
+
+    /**
      * Persisted in "dex2c_mega_prefs" (same file as ProtectViewModel) so the
      * value flows directly into DexPacker at protection time without any extra reads.
      */
@@ -67,6 +77,7 @@ public class SettingsFragment extends Fragment {
     private SwitchCompat swSigCheck;
     private SwitchCompat swDexPacker;
     private SwitchCompat swBlockRooted;
+    private SwitchCompat swStringEncrypt;
     private TextView tvCacheSize;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -88,10 +99,11 @@ public class SettingsFragment extends Fragment {
         cbArmeabi      = view.findViewById(R.id.cb_armeabi_v7a);
         cbX86_64       = view.findViewById(R.id.cb_x86_64);
         cbX86          = view.findViewById(R.id.cb_x86);
-        swManifestDex  = view.findViewById(R.id.sw_manifest_dex_check);
-        swSigCheck     = view.findViewById(R.id.sw_sig_check);
-        swDexPacker    = view.findViewById(R.id.sw_dex_packer);
-        swBlockRooted  = view.findViewById(R.id.sw_block_rooted);
+        swManifestDex    = view.findViewById(R.id.sw_manifest_dex_check);
+        swSigCheck       = view.findViewById(R.id.sw_sig_check);
+        swDexPacker      = view.findViewById(R.id.sw_dex_packer);
+        swBlockRooted    = view.findViewById(R.id.sw_block_rooted);
+        swStringEncrypt  = view.findViewById(R.id.sw_string_encrypt);
         tvCacheSize    = view.findViewById(R.id.tv_cache_size);
 
         loadSettings();
@@ -193,6 +205,7 @@ public class SettingsFragment extends Fragment {
         swManifestDex.setChecked(p.getBoolean(KEY_MANIFEST_DEX_CHECK, true));
         swSigCheck.setChecked(p.getBoolean(KEY_SIG_CHECK, true));
         swDexPacker.setChecked(p.getBoolean(KEY_DEX_PACKER, false));
+        swStringEncrypt.setChecked(p.getBoolean(KEY_STRING_ENCRYPT, true));
         // Block Rooted lives in dex2c_mega_prefs so ProtectViewModel reads the same value.
         swBlockRooted.setChecked(megaPrefs().getBoolean(KEY_BLOCK_ROOTED, true));
         // Auto-save immediately on toggle — DexPacker reads fresh from SharedPreferences
@@ -223,6 +236,7 @@ public class SettingsFragment extends Fragment {
                 .putBoolean(KEY_MANIFEST_DEX_CHECK, swManifestDex.isChecked())
                 .putBoolean(KEY_SIG_CHECK,   swSigCheck.isChecked())
                 .putBoolean(KEY_DEX_PACKER,  swDexPacker.isChecked())
+                .putBoolean(KEY_STRING_ENCRYPT, swStringEncrypt.isChecked())
                 .apply();
 
         // Block Rooted saved to dex2c_mega_prefs — DexPacker reads it fresh at pack time.

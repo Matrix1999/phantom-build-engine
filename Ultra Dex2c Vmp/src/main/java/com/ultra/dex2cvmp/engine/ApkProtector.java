@@ -183,21 +183,33 @@ public class ApkProtector {
             if (arrow > 0) targetTypes.add(k.substring(0, arrow));
         }
 
-        // ── 5.5a. Pre-scan: read static String field values BEFORE patchAll ──
-        // patchAll modifies dexFiles in-place; we must read them now while they
-        // still contain the original static_values entries.
-        report(55, "Scanning static String fields in target classes…");
-        Map<String, List<NativeStringGen.StringEntry>> strTable =
-                scanStaticStrings(dexFiles, targetTypes);
-        Set<String> classesWithStrings = strTable.keySet();
-        if (!classesWithStrings.isEmpty()) {
-            int strTotal = 0;
-            for (List<NativeStringGen.StringEntry> v : strTable.values()) strTotal += v.size();
-            report(56, "Found " + strTotal + " String field(s) in "
-                    + classesWithStrings.size() + " class(es) — will strip + encrypt");
+        // ── 5.5a–d. Static String field encryption (toggled by Settings) ────────
+        // When OFF: field initializers stay in the DEX as-is, no ph_strings.cpp,
+        // no field stripping, no inline-literal obfuscation. Behaviour is identical
+        // to a version of the engine that never had string encryption.
+        Map<String, List<NativeStringGen.StringEntry>> strTable = new java.util.HashMap<>();
+        Set<String> classesWithStrings = new java.util.HashSet<>();
+
+        if (stringEncryptEnabled) {
+            // ── 5.5a. Pre-scan: read static String field values BEFORE patchAll ──
+            // patchAll modifies dexFiles in-place; we must read them now while they
+            // still contain the original static_values entries.
+            report(55, "Scanning static String fields in target classes…");
+            strTable = scanStaticStrings(dexFiles, targetTypes);
+            classesWithStrings = strTable.keySet();
+            if (!classesWithStrings.isEmpty()) {
+                int strTotal = 0;
+                for (List<NativeStringGen.StringEntry> v : strTable.values()) strTotal += v.size();
+                report(56, "Found " + strTotal + " String field(s) in "
+                        + classesWithStrings.size() + " class(es) — will strip + encrypt");
+            }
+        } else {
+            report(55, "String field encryption OFF — field initializers kept as-is in DEX");
         }
 
         // ── 5.5b. Strip DEX bytecode (methods → ACC_NATIVE, String values → null) ──
+        // classesWithStrings is empty when encryption is OFF, so patchAll skips
+        // all field stripping but still converts method bodies to ACC_NATIVE stubs.
         report(57, "Patching " + compiledKeys.size() + " method(s) → ACC_NATIVE stubs…");
         int stripped = Tier1DexPatcher.patchAll(dexDir, compiledKeys, libName,
                 classesWithStrings, msg -> report(58, msg));
@@ -209,33 +221,28 @@ public class ApkProtector {
             report(59, "Verification passed — all stubs confirmed ACC_NATIVE");
         }
 
-        // ── 5.5c. Generate ph_strings.cpp into cSourceDir (compiled in step 6) ──
-        if (!strTable.isEmpty()) {
-            NativeStringGen.generate(strTable, cSourceDir);
-            report(59, "ph_strings.cpp generated — string injection baked into .so");
-            // Patch jni_init.cpp to call ph_strings_register(env) from JNI_OnLoad.
-            // This guarantees native registration even when ART's static Java_* lookup
-            // fails (custom ClassLoader context or LLD --gc-sections dead-stripping).
-            patchJniInitForStrings(cSourceDir);
-        }
-
-        // ── 5.5d. Obfuscate inline NewStringUTF literals in transpiled C++ ───
-        // DEX2C transpiles const-string opcodes from method bodies into plain C
-        // string literals (env->NewStringUTF("rx_prefs")), which land in .rodata
-        // as readable plaintext even when ph_strings.cpp encrypts field initializers.
-        // This step replaces every such literal with an XOR-decrypt call so nothing
-        // plaintext reaches the compiler.  Works in both DEX2C and VMP mode.
-        // OLLVM SOBF, when enabled later, adds a second encryption layer on top.
-        try {
-            int obfCount = DexStringObfuscator.obfuscate(cSourceDir);
-            if (obfCount > 0) {
-                report(59, "Obfuscated " + obfCount
-                        + " inline string literal(s) in transpiled C++ → no plaintext in .rodata");
+        if (stringEncryptEnabled) {
+            // ── 5.5c. Generate ph_strings.cpp into cSourceDir (compiled in step 6) ──
+            if (!strTable.isEmpty()) {
+                NativeStringGen.generate(strTable, cSourceDir);
+                report(59, "ph_strings.cpp generated — string injection baked into .so");
+                // Patch jni_init.cpp to call ph_strings_register(env) from JNI_OnLoad.
+                patchJniInitForStrings(cSourceDir);
             }
-        } catch (Exception obfEx) {
-            // Non-fatal — log and continue; build still succeeds without this step
-            report(59, "String literal obfuscation warning (non-fatal): " + obfEx.getMessage());
-            android.util.Log.w("DexStringObf", "obfuscate() failed", obfEx);
+
+            // ── 5.5d. Obfuscate inline NewStringUTF literals in transpiled C++ ───
+            // Replaces env->NewStringUTF("literal") with XOR-decrypt calls so no
+            // plaintext string reaches the compiler or lands in .rodata.
+            try {
+                int obfCount = DexStringObfuscator.obfuscate(cSourceDir);
+                if (obfCount > 0) {
+                    report(59, "Obfuscated " + obfCount
+                            + " inline string literal(s) in transpiled C++ → no plaintext in .rodata");
+                }
+            } catch (Exception obfEx) {
+                report(59, "String literal obfuscation warning (non-fatal): " + obfEx.getMessage());
+                android.util.Log.w("DexStringObf", "obfuscate() failed", obfEx);
+            }
         }
 
         // ── 5.5d. Export stripped DEX ZIP for user inspection ────────────────
@@ -335,9 +342,10 @@ public class ApkProtector {
         // Read all prefs once — used in stamps and in the final DEX packer step.
         SharedPreferences prefs = context.getSharedPreferences(
                 SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE);
-        boolean dexPackerEnabled  = prefs.getBoolean(SettingsFragment.KEY_DEX_PACKER,         false);
-        boolean manifestDexEnabled = prefs.getBoolean(SettingsFragment.KEY_MANIFEST_DEX_CHECK, true);
-        boolean sigCheckEnabled    = prefs.getBoolean(SettingsFragment.KEY_SIG_CHECK,          true);
+        boolean dexPackerEnabled     = prefs.getBoolean(SettingsFragment.KEY_DEX_PACKER,         false);
+        boolean manifestDexEnabled  = prefs.getBoolean(SettingsFragment.KEY_MANIFEST_DEX_CHECK, true);
+        boolean sigCheckEnabled     = prefs.getBoolean(SettingsFragment.KEY_SIG_CHECK,          true);
+        boolean stringEncryptEnabled = prefs.getBoolean(SettingsFragment.KEY_STRING_ENCRYPT,    true);
 
         // ── 8b. Manifest-hash + dex-count integrity stamps ────────────────────
         //
