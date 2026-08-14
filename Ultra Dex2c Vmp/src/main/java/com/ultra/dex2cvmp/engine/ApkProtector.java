@@ -187,6 +187,9 @@ public class ApkProtector {
         // When OFF: field initializers stay in the DEX as-is, no ph_strings.cpp,
         // no field stripping, no inline-literal obfuscation. Behaviour is identical
         // to a version of the engine that never had string encryption.
+        boolean stringEncryptEnabled = context.getSharedPreferences(
+                SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(SettingsFragment.KEY_STRING_ENCRYPT, true);
         Map<String, List<NativeStringGen.StringEntry>> strTable = new java.util.HashMap<>();
         Set<String> classesWithStrings = new java.util.HashSet<>();
 
@@ -342,10 +345,9 @@ public class ApkProtector {
         // Read all prefs once — used in stamps and in the final DEX packer step.
         SharedPreferences prefs = context.getSharedPreferences(
                 SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE);
-        boolean dexPackerEnabled     = prefs.getBoolean(SettingsFragment.KEY_DEX_PACKER,         false);
+        boolean dexPackerEnabled    = prefs.getBoolean(SettingsFragment.KEY_DEX_PACKER,         false);
         boolean manifestDexEnabled  = prefs.getBoolean(SettingsFragment.KEY_MANIFEST_DEX_CHECK, true);
         boolean sigCheckEnabled     = prefs.getBoolean(SettingsFragment.KEY_SIG_CHECK,          true);
-        boolean stringEncryptEnabled = prefs.getBoolean(SettingsFragment.KEY_STRING_ENCRYPT,    true);
 
         // ── 8b. Manifest-hash + dex-count integrity stamps ────────────────────
         //
