@@ -92,6 +92,18 @@ public class NativeStringGen {
         sb.append("    _fn(env, clz, fid, s);\n");
         sb.append("}\n\n");
 
+        // ── Vtable-indirect NewStringUTF ──────────────────────────────────────
+        // Same technique: resolve NewStringUTF through the JNINativeInterface
+        // vtable at runtime so Frida's named-export hook on "NewStringUTF"
+        // does NOT fire. The call appears as a plain indirect branch in the .so.
+        sb.append("static jstring _ph_new_str(JNIEnv* env, const char* s) {\n");
+        sb.append("    typedef jstring (*_fn_t)(JNIEnv*, const char*);\n");
+        sb.append("    const size_t _off = offsetof(JNINativeInterface, NewStringUTF);\n");
+        sb.append("    void* const* _vtbl = *(void* const**)env;\n");
+        sb.append("    volatile _fn_t _fn = (_fn_t)_vtbl[_off / sizeof(void*)];\n");
+        sb.append("    return _fn(env, s);\n");
+        sb.append("}\n\n");
+
         // ── Per-class encrypted data + injection functions ───────────────────
         for (Map.Entry<String, List<StringEntry>> ce : table.entrySet()) {
             String classDesc = ce.getKey();       // "Lcom/example/Foo;"
@@ -174,7 +186,7 @@ public class NativeStringGen {
                 // Decrypt value
                 sb.append("        _phd(").append(valArr).append(',')
                   .append(valPlain.length).append(",_b);\n");
-                sb.append("        _s = env->NewStringUTF(_b);\n");
+                sb.append("        _s = _ph_new_str(env, _b);\n");
                 sb.append("        memset(_b, 0, ").append(valPlain.length + 1).append(");\n");
                 sb.append("        if (_s) { _ph_set(env, clz, _f, _s);\n");
                 sb.append("                  env->DeleteLocalRef(_s); }\n");

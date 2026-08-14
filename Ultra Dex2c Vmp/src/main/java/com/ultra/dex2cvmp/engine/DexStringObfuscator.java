@@ -195,6 +195,17 @@ public class DexStringObfuscator {
         cpp.append("    o[n] = '\\0';\n");
         cpp.append("}\n\n");
 
+        // Vtable-indirect NewStringUTF — bypasses Frida named-export hook.
+        // Resolves the function through JNINativeInterface vtable at runtime
+        // so Interceptor.attach(findExportByName(null,"NewStringUTF")) never fires.
+        cpp.append("static jstring _pso_new_str(JNIEnv* env, const char* s) {\n");
+        cpp.append("    typedef jstring (*_fn_t)(JNIEnv*, const char*);\n");
+        cpp.append("    const size_t _off = offsetof(JNINativeInterface, NewStringUTF);\n");
+        cpp.append("    void* const* _vtbl = *(void* const**)env;\n");
+        cpp.append("    volatile _fn_t _fn = (_fn_t)_vtbl[_off / sizeof(void*)];\n");
+        cpp.append("    return _fn(env, s);\n");
+        cpp.append("}\n\n");
+
         // Per-string encrypted array + extern-C decrypt function
         for (Map.Entry<String, Integer> e : strings.entrySet()) {
             String lit = e.getKey();
@@ -219,12 +230,12 @@ public class DexStringObfuscator {
             // Decrypt function — extern "C" so C translation units can call it
             cpp.append("extern \"C\" jstring phDecStr_").append(idx).append("(JNIEnv* env) {\n");
             if (plain.length == 0) {
-                cpp.append("    return env->NewStringUTF(\"\");\n");
+                cpp.append("    return _pso_new_str(env, \"\");\n");
             } else {
                 cpp.append("    char _b[").append(plain.length + 1).append("];\n");
                 cpp.append("    _psod(_pso_s").append(idx).append(", ")
                    .append(plain.length).append(", _b);\n");
-                cpp.append("    jstring _r = env->NewStringUTF(_b);\n");
+                cpp.append("    jstring _r = _pso_new_str(env, _b);\n");
                 cpp.append("    memset(_b, 0, ").append(plain.length + 1).append(");\n");
                 cpp.append("    return _r;\n");
             }
