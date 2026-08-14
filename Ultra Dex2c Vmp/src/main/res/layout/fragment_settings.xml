@@ -513,7 +513,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Strips static String field values from DEX and re-injects them at runtime via XOR-encrypted native code"
+                            android:text="Encrypts static String fields in protected classes"
                             android:textColor="@color/text_secondary"
                             android:textSize="12sp"
                             android:lineSpacingExtra="2dp"
@@ -535,7 +535,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="⚠ When OFF, field initializers stay in the DEX as plaintext — no native encryption is applied."
+                    android:text="⚠ When OFF, String fields in target classes are not encrypted."
                     android:textColor="@color/text_muted"
                     android:textSize="11sp"
                     android:lineSpacingExtra="2dp" />
