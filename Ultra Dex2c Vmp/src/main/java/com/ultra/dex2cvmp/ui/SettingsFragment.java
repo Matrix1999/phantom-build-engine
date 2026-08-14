@@ -212,6 +212,9 @@ public class SettingsFragment extends Fragment {
         // at pack time so no ViewModel sync needed.
         swBlockRooted.setOnCheckedChangeListener((btn, checked) ->
                 megaPrefs().edit().putBoolean(KEY_BLOCK_ROOTED, checked).apply());
+        // String encryption — auto-save on toggle, no need to tap Save Settings.
+        swStringEncrypt.setOnCheckedChangeListener((btn, checked) ->
+                prefs().edit().putBoolean(KEY_STRING_ENCRYPT, checked).apply());
     }
 
     private void saveSettings() {
