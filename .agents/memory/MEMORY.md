@@ -1,3 +1,0 @@
-- [ph_strings extern-C linkage](ph-strings-linkage.md) — ph_strings_register must be extern "C" in both definition and declaration or C++ mangling breaks dlopen.
-- [FieldDef.of() signature](fielddef-signature.md) — vova7878/DexFile v1.6.0 FieldDef.of() takes (name, type, accessFlags, hiddenApiFlags, EncodedValue, Iterable<Annotation>) — initialValue before annotations.
-- [Cloud build dispatch](cloud-build-dispatch.md) — phantom-build-engine repo (Matrix1999), workflow IDs: build.yml=328899541, build-libphantom=328870953, build-libcipher=329294877, build-ndk=329635593.
