@@ -25,9 +25,9 @@ import javax.crypto.spec.SecretKeySpec;
  * Runtime DEX decryption + libphantom bootstrap for the stub loader.
  *
  * Key design:
- *  • All shard decryption, DEX loading, and anti-dump wipes happen entirely
- *    inside libphantom.so via nativeLoadShards() — plaintext DEX bytes never
- *    cross the JNI boundary to Java.
+ *  • All shard decryption and DEX loading happen inside libphantom.so via
+ *    nativeLoadShards() — plaintext DEX bytes never cross the JNI boundary as
+ *    a Java byte[].
  *  • libphantom.so is stored as a nonce-bound, HMAC-authenticated blob in
  *    assets/phantom/. loadPhantomLib(Context) reconstructs the distributed
  *    root, verifies the envelope, writes it to code_cache/, and calls
@@ -63,10 +63,12 @@ public class DexCrypto {
      *  4. Calls new InMemoryDexClassLoader(ByteBuffer[], parent) via JNI —
      *     ART parses all DEX files synchronously inside that constructor.
      *  5. Keeps only the read-only, MADV_DONTDUMP backing required by lazy ART.
-     *  6. Optionally hardens ART's anonymous mappings on validated runtimes.
+     *  6. Does not wipe ART-owned DEX mappings because ART may lazily resolve
+     *     classes from them after construction.
      *  7. Returns only the ClassLoader — no plaintext byte[] crosses JNI.
      *
-     * Hooking the return of this function yields only a ClassLoader reference.
+     * Hooking the return yields only a ClassLoader reference, but a rooted
+     * native/ART instrumenter can still inspect live ART mappings.
      *
      * @param salt          16-byte raw salt (with block-rooted flag in bit 7 of byte 0)
      * @param pkgNameUtf8   Package name encoded as UTF-8 bytes

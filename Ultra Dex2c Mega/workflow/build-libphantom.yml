@@ -356,6 +356,20 @@ jobs:
             fi
           done
 
+      - name: Reject stale plaintext DEX loader paths
+        run: |
+          set -e
+          SRC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
+          if grep -Eq \
+            'PH_USE_LEGACY_JAVA_DEX_BUFFERS|PHANTOM_ENABLE_LEGACY_DECRYPT_SHARD|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex|NewByteArray|SetByteArrayRegion|ByteBuffer\.wrap|PH_ENABLE_ART_DEX_WIPE' \
+            "$SRC"; then
+            echo "Stale plaintext Java-array or incomplete ART-wipe path found" >&2
+            exit 1
+          fi
+          grep -q 'NewDirectByteBuffer' "$SRC"
+          grep -q 'InMemoryDexClassLoader' "$SRC"
+          echo "✅ direct native DEX path only; stale Java-array paths absent"
+
       - name: Encrypt blobs
         run: |
           python3 "Ultra Dex2c Mega/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob

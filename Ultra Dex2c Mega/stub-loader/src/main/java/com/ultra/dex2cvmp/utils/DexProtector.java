@@ -22,9 +22,9 @@ import java.util.Arrays;
  *     authenticated nonce-bound blob inside assets/phantom/. loadPhantomLib()
  *     decrypts and System.load()s it before any key material is needed.
  *
- *  2. Plaintext DEX never crosses JNI — nativeLoadShards() decrypts all
- *     shards, loads InMemoryDexClassLoader, and wipes plaintext entirely in
- *     native.  Java only receives a ClassLoader reference.
+ *  2. Plaintext DEX never crosses JNI as a Java byte[] — nativeLoadShards()
+ *     decrypts shards into read-only native direct mappings. Java receives
+ *     only a ClassLoader reference.
  *
  *  3. InMemoryDexClassLoader (API 27+) — decrypted DEX bytes stay in
  *     ByteBuffers, never on disk.  PathClassLoader is re-parented to delegate
