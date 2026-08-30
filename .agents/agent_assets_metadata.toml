@@ -126,3 +126,17 @@ mtime_ms = 1788079826522
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/53ba0c21-7bbc-4f0c-b3ea-9e14dc164a78/b89de10d-7bda-4e87-b7b2-6775390dad37"
 storage_version_token = "1788079831284702"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "ep3SNJd3etm7EEZhx8YBy"
+uri = "file://Universal-Dumper-Safe-Audit.zip"
+type = "unspecified"
+title = "Universal Dumper Safe Audit — updated"
+description = "Includes dump_dex_mem.py directly at the bundle root, plus the original bundle, read-only privilege audit, and Phantom hardening verifier."
+logical_id = "25e3a3b6-c169-46ff-823c-ca569fd9ecc1"
+content_hash = "sha256:f6deab0a0469bfb1d38367a158a234368644adb5caf3ba6b0f18315edb8c8e69"
+size = 4700991
+mtime_ms = 1788089105455
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/25e3a3b6-c169-46ff-823c-ca569fd9ecc1/023f10a0-9a66-407d-8a85-14b46a88b37d"
+storage_version_token = "1788089110062284"
+content_type = "application/octet-stream"
