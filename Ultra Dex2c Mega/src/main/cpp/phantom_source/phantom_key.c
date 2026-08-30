@@ -2931,6 +2931,51 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             goto cleanup;
         }
         PH_LOGI("nativeLoadShards: class-loader constructed");
+
+        /*
+         * Remove the DEX discovery markers from ART's anonymous readable
+         * mappings after the loader has parsed the shards. The external
+         * proc-mem scanner identifies DEX images by the magic at offset zero
+         * and the endian tag at offset 40; permissions and dump advice do not
+         * block a privileged reader.
+         */
+        {
+            PH_AES(_maps2, PROC_MAPS);
+            int mfd = vm_openat(AT_FDCWD, _maps2, O_RDONLY | O_CLOEXEC, 0);
+            PH_ZERO(_maps2, SP_BUF_SZ);
+            if (mfd >= 0) {
+                char ml[MAX_LINE];
+                while (vm_read_one_line(mfd, ml, MAX_LINE) > 0) {
+                    unsigned long ms = 0, me = 0;
+                    char mp[5] = {0};
+                    unsigned long moff = 0;
+                    unsigned int mmaj = 0, mmn = 0;
+                    unsigned long mino = 0;
+                    char mpth[256] = {0};
+                    int mn = sscanf(ml, "%lx-%lx %4s %lx %x:%x %lu %255s",
+                                    &ms, &me, mp, &moff,
+                                    &mmaj, &mmn, &mino, mpth);
+                    if (mn < 7 || me <= ms || (me - ms) < 112) continue;
+                    if (mp[0] != 'r' || mino != 0) continue;
+                    if (mn >= 8 && mpth[0] == '[') {
+                        if (my_strncmp(mpth, "[stack", 6) == 0 ||
+                            my_strncmp(mpth, "[heap",  5) == 0 ||
+                            my_strncmp(mpth, "[vvar",  5) == 0 ||
+                            my_strncmp(mpth, "[vdso",  5) == 0) continue;
+                    }
+                    uint8_t *ptr = (uint8_t *)ms;
+                    if (ptr[0] != 0x64 || ptr[1] != 0x65 ||
+                        ptr[2] != 0x78 || ptr[3] != 0x0A) continue;
+                    bool ro = (mp[1] != 'w');
+                    if (ro && vm_mprotect(ptr, 4096, PROT_READ | PROT_WRITE) != 0) continue;
+                    my_memset(ptr, 0, 8);
+                    if ((me - ms) > 44) my_memset(ptr + 40, 0, 4);
+                    if (ro) vm_mprotect(ptr, 4096, PROT_READ);
+                }
+                vm_close(mfd);
+            }
+        }
+
         if (!ph_load_advance(PH_LOAD_CLASSLOADER, PH_LOAD_COMPLETE)) {
             if (result_cl) (*env)->DeleteLocalRef(env, result_cl);
             result_cl = NULL;
