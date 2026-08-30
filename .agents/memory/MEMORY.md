@@ -1,0 +1,1 @@
+- [Phantom loader architecture](phantom-loader-architecture.md) — two-stage native envelope/decryption pipeline and the Java/JNI contracts that must stay aligned.
