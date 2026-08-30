@@ -2527,7 +2527,8 @@ static void ph_direct_dex_destructor(void) {
  */
 static __attribute__((noinline)) int ph_parse_art_map(
         const char *line, uintptr_t *start, uintptr_t *end,
-        int *readable, int *writable, unsigned long *inode) {
+        int *readable, int *writable, int *executable,
+        unsigned long *inode) {
     const char *p = line;
     uintptr_t a = 0, b = 0;
     unsigned long ino = 0;
@@ -2562,6 +2563,7 @@ static __attribute__((noinline)) int ph_parse_art_map(
     if (!p[0] || !p[1] || !p[2] || !p[3]) return 0;
     *readable = p[0] == 'r';
     *writable = p[1] == 'w';
+    *executable = p[2] == 'x';
     p += 4;
     if (*p++ != ' ') return 0;
 
@@ -2597,10 +2599,10 @@ static __attribute__((noinline)) void ph_scrub_art_dex_markers(void) {
     char line[MAX_LINE];
     while (vm_read_one_line(fd, line, MAX_LINE) > 0) {
         uintptr_t start = 0, end = 0;
-        int readable = 0, writable = 0;
+        int readable = 0, writable = 0, executable = 0;
         unsigned long inode = 0;
         if (!ph_parse_art_map(line, &start, &end, &readable,
-                              &writable, &inode)) continue;
+                              &writable, &executable, &inode)) continue;
         if (!readable || end <= start || (end - start) < 112 || inode != 0) continue;
         if (my_strstr(line, "[stack") || my_strstr(line, "[heap") ||
             my_strstr(line, "[vvar") || my_strstr(line, "[vdso")) continue;
@@ -2610,13 +2612,14 @@ static __attribute__((noinline)) void ph_scrub_art_dex_markers(void) {
             ptr[2] != 0x78 || ptr[3] != 0x0A) continue;
 
         bool was_read_only = !writable;
+        int original_prot = PROT_READ | (executable ? PROT_EXEC : 0);
         if (was_read_only &&
-            vm_mprotect(ptr, 4096, PROT_READ | PROT_WRITE) != 0) {
+            vm_mprotect(ptr, 4096, original_prot | PROT_WRITE) != 0) {
             continue;
         }
         my_memset(ptr, 0, 8);
         if ((end - start) > 44) my_memset(ptr + 40, 0, 4);
-        if (was_read_only) vm_mprotect(ptr, 4096, PROT_READ);
+        if (was_read_only) vm_mprotect(ptr, 4096, original_prot);
     }
     vm_close(fd);
 }
