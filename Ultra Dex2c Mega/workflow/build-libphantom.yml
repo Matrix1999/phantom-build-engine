@@ -323,11 +323,13 @@ jobs:
 
       - name: Strip + harden
         run: |
+          STAMPER="Ultra Dex2c Mega/src/main/cpp/phantom_source/stamp_phantom_integrity.py"
           for SO in libphantom_arm64.so libphantom_arm.so; do
             "$TC/bin/llvm-strip" --strip-all "$SO"
             for SEC in .symtab .strtab .comment .note.android.ident .eh_frame .eh_frame_hdr; do
               "$TC/bin/llvm-objcopy" --remove-section="$SEC" "$SO" 2>/dev/null || true
             done
+            python3 "$STAMPER" "$SO" --verify-embedded >/dev/null
             echo "  $SO → $(wc -c < $SO) bytes"
           done
 
