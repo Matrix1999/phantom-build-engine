@@ -145,46 +145,6 @@ jobs:
             -fpass-plugin="$AMICE_PLUGIN"
           )
 
-          # Enable PAC/BTI only when the checked-out NDK accepts it.
-          # ARM32 intentionally receives no architecture-specific branch flags.
-          ARM64_BRANCH_FLAGS=()
-          if printf 'int ph_probe(void) { return 0; }\n' | \
-             "$CLANG" --target=aarch64-linux-android26 --sysroot="$SYSROOT" \
-             -fPIC -mbranch-protection=standard -x c -c -o /tmp/ph-branch.o -; then
-            ARM64_BRANCH_FLAGS=(-mbranch-protection=standard)
-            echo "PAC/BTI compiler support: enabled for arm64"
-          else
-            echo "PAC/BTI compiler support: unavailable; building arm64 without it"
-          fi
-
-          # CFI requires LTO and matching compiler-rt/linker support. Probe a
-          # complete shared object first; unsupported toolchains stay compatible.
-          CFI_ARM64_FLAGS=()
-          if printf 'int ph_probe(void) { return 0; }\n' | \
-             "$CLANG" --target=aarch64-linux-android26 --sysroot="$SYSROOT" \
-             -fPIC -flto=thin -fsanitize=cfi -fvisibility=hidden \
-             -x c -c -o /tmp/ph-cfi.o - && \
-             "$NDK_LINK_ARM64" -shared -flto=thin -fsanitize=cfi \
-             /tmp/ph-cfi.o -o /tmp/ph-cfi.so; then
-            CFI_ARM64_FLAGS=(-flto=thin -fsanitize=cfi)
-            echo "CFI toolchain support: enabled for arm64"
-          else
-            echo "CFI toolchain support: unavailable for arm64"
-          fi
-
-          CFI_ARM32_FLAGS=()
-          if printf 'int ph_probe(void) { return 0; }\n' | \
-             "$CLANG" --target=armv7a-linux-androideabi21 --sysroot="$SYSROOT" \
-             -fPIC -flto=thin -fsanitize=cfi -fvisibility=hidden \
-             -x c -c -o /tmp/ph-cfi-arm32.o - && \
-             "$NDK_LINK_ARM32" -shared -flto=thin -fsanitize=cfi \
-             /tmp/ph-cfi-arm32.o -o /tmp/ph-cfi-arm32.so; then
-            CFI_ARM32_FLAGS=(-flto=thin -fsanitize=cfi)
-            echo "CFI toolchain support: enabled for arm32"
-          else
-            echo "CFI toolchain support: unavailable for arm32"
-          fi
-
           LDFLAGS=(
             -shared -fPIC -Wl,--gc-sections -Wl,--build-id=none
             -Wl,--version-script=phantom.map
@@ -193,19 +153,16 @@ jobs:
 
           build_arm64() {
             env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
-              "${COMMON_FLAGS[@]}" "${ARM64_BRANCH_FLAGS[@]}" "${CFI_ARM64_FLAGS[@]}" \
-              -c "$SRC" -o phantom_arm64.o 2>&1
-            "$NDK_LINK_ARM64" "${LDFLAGS[@]}" "${ARM64_BRANCH_FLAGS[@]}" \
-              "${CFI_ARM64_FLAGS[@]}" -Wl,-soname,libphantom.so \
+              "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o 2>&1
+            "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
               phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
               -o libphantom_arm64.so
           }
 
           build_arm32() {
             env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
-              "${COMMON_FLAGS[@]}" "${CFI_ARM32_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
-            "$NDK_LINK_ARM32" "${LDFLAGS[@]}" "${CFI_ARM32_FLAGS[@]}" \
-              -Wl,-soname,libphantom.so \
+              "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
+            "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
               phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
               -o libphantom_arm.so
           }
@@ -390,11 +347,6 @@ jobs:
             done
             echo "  RELRO + NOW + non-executable stack + stripped symbols: OK"
           done
-
-          echo "Optional arm64 branch-protection note:"
-          readelf -n libphantom_arm64.so 2>/dev/null | \
-            grep -E "BTI|PAC|AArch64 feature" || \
-            echo "  no PAC/BTI note (toolchain capability probe may have disabled it)"
 
       - name: Reject static payload-key patterns
         run: |
