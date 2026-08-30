@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "QGF3jFLyf1j0muUfgFEtO"
+uri = "file://Ultra%20Dex2c%20Mega/build/outputs/apk/release/Ultra_Dex2C_Mega_release.apk"
+type = "unspecified"
+title = "Ultra Dex2C Mega — PHX4 repaired release APK"
+description = "Signed release APK rebuilt through the GitHub cloud builder. Its packaged ARM64 and ARM Phantom blobs were inspected and both contain the PHX4 envelope required by the bootstrap loader."
+logical_id = "0d9f58a7-8e28-47d6-a5aa-bfd752d84759"
+content_hash = "sha256:87fd4154716ef29a75c52a96620dcb983b4240d0e2bbcbe3f0ca529b154ef1f2"
+size = 27969642
+mtime_ms = 1788065773796
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/0d9f58a7-8e28-47d6-a5aa-bfd752d84759/587b3083-ce7d-40de-a67a-25faf5bff170"
+storage_version_token = "1788065786545161"
+content_type = "application/octet-stream"
