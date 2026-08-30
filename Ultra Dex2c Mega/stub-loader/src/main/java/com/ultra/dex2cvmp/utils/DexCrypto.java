@@ -62,9 +62,9 @@ public class DexCrypto {
      *  3. Makes each mapping read-only and exposes only a direct ByteBuffer to ART.
      *  4. Calls new InMemoryDexClassLoader(ByteBuffer[], parent) via JNI —
      *     ART parses all DEX files synchronously inside that constructor.
-     *  5. Keeps only the read-only, MADV_DONTDUMP backing required by lazy ART.
-     *  6. Does not wipe ART-owned DEX mappings because ART may lazily resolve
-     *     classes from them after construction.
+     *  5. Keeps the read-only, MADV_DONTDUMP backing required by lazy ART.
+     *  6. After construction, native code clears the DEX discovery markers from
+     *     ART's anonymous readable mappings while retaining the live backing.
      *  7. Returns only the ClassLoader — no plaintext byte[] crosses JNI.
      *
      * Hooking the return yields only a ClassLoader reference, but a rooted
