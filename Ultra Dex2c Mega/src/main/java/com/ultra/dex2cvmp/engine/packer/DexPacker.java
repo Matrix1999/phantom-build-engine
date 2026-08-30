@@ -51,7 +51,7 @@ public class DexPacker {
     public static final String SALT_ASSET = "ph_salt";
 
     /** Version for the universal XChaCha20-Poly1305-wrapped shard bundle. */
-    public static final int BUNDLE_VERSION = 5;
+    public static final int BUNDLE_VERSION = 6;
 
     /** Asset names for the OLLVM-compiled native KDF library, one per ABI.
      *  A single blob per ABI handles both root-blocking ON and OFF at runtime.

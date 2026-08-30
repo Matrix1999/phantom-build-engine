@@ -144,10 +144,38 @@ jobs:
             -D__ANDROID__ -DANDROID
             -fpass-plugin="$AMICE_PLUGIN"
           )
+
+          # Enable PAC/BTI only when the checked-out NDK accepts it.
+          # ARM32 intentionally receives no architecture-specific branch flags.
+          ARM64_BRANCH_FLAGS=()
+          if printf 'int ph_probe(void) { return 0; }\n' | \
+             "$CLANG" --target=aarch64-linux-android26 --sysroot="$SYSROOT" \
+             -fPIC -mbranch-protection=standard -x c -c -o /tmp/ph-branch.o -; then
+            ARM64_BRANCH_FLAGS=(-mbranch-protection=standard)
+            echo "PAC/BTI compiler support: enabled for arm64"
+          else
+            echo "PAC/BTI compiler support: unavailable; building arm64 without it"
+          fi
+
+          # CFI requires LTO and matching compiler-rt/linker support. Probe a
+          # complete shared object first; unsupported toolchains stay compatible.
+          CFI_FLAGS=()
+          if printf 'int ph_probe(void) { return 0; }\n' | \
+             "$CLANG" --target=aarch64-linux-android26 --sysroot="$SYSROOT" \
+             -fPIC -flto=thin -fsanitize=cfi -fvisibility=hidden \
+             -x c -c -o /tmp/ph-cfi.o - && \
+             "$NDK_LINK_ARM64" -shared -flto=thin -fsanitize=cfi \
+             /tmp/ph-cfi.o -o /tmp/ph-cfi.so; then
+            CFI_FLAGS=(-flto=thin -fsanitize=cfi)
+            echo "CFI toolchain support: enabled"
+          else
+            echo "CFI toolchain support: unavailable with this NDK/Amice build"
+          fi
+
           LDFLAGS=(
             -shared -fPIC -Wl,--gc-sections -Wl,--build-id=none
             -Wl,--version-script=phantom.map
-            -Wl,-z,relro -Wl,-z,now -Wl,--strip-all
+            -Wl,-z,relro -Wl,-z,now -Wl,-z,separate-code -Wl,--strip-all
           )
 
           build_arm64() {
