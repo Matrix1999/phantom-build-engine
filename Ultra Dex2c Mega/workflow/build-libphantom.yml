@@ -343,6 +343,46 @@ jobs:
             echo "  $SO → $(wc -c < $SO) bytes"
           done
 
+      - name: Verify ELF hardening
+        run: |
+          set -e
+          for SO in libphantom_arm64.so libphantom_arm.so; do
+            echo "Checking $SO"
+            PROGRAM_HEADERS=$(readelf -lW "$SO")
+            DYNAMIC=$(readelf -dW "$SO")
+            SECTIONS=$(readelf -SW "$SO")
+
+            echo "$PROGRAM_HEADERS" | grep -q "GNU_RELRO" \
+              || { echo "Missing GNU_RELRO in $SO" >&2; exit 1; }
+            echo "$DYNAMIC" | grep -Eq "BIND_NOW|NOW" \
+              || { echo "Missing BIND_NOW in $SO" >&2; exit 1; }
+            STACK_LINE=$(echo "$PROGRAM_HEADERS" | grep "GNU_STACK" || true)
+            if echo "$STACK_LINE" | grep -q "RWE"; then
+              echo "Executable GNU_STACK in $SO" >&2
+              exit 1
+            fi
+
+            for SEC in .symtab .strtab .comment .eh_frame .eh_frame_hdr; do
+              if echo "$SECTIONS" | grep -Eq "[[:space:]]${SEC}[[:space:]]"; then
+                echo "Unstripped section $SEC remains in $SO" >&2
+                exit 1
+              fi
+            done
+
+            for SYMBOL in pthread_create prctl dlopen dlsym system; do
+              if readelf -Ws "$SO" 2>/dev/null | grep -Eq "[[:space:]]${SYMBOL}(@|$)"; then
+                echo "Forbidden dynamic symbol $SYMBOL remains in $SO" >&2
+                exit 1
+              fi
+            done
+            echo "  RELRO + NOW + non-executable stack + stripped symbols: OK"
+          done
+
+          echo "Optional arm64 branch-protection note:"
+          readelf -n libphantom_arm64.so 2>/dev/null | \
+            grep -E "BTI|PAC|AArch64 feature" || \
+            echo "  no PAC/BTI note (toolchain capability probe may have disabled it)"
+
       - name: Reject static payload-key patterns
         run: |
           python3 - <<'PY'
