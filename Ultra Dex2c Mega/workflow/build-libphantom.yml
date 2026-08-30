@@ -2,6 +2,12 @@ name: Build libphantom.so + encrypt blobs (amice-vmp)
 
 on:
   workflow_dispatch:
+    inputs:
+      debug_logs:
+        description: Build temporary Phantom blobs with UltraPhantom logcat tracing
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-phantom:
@@ -126,12 +132,19 @@ jobs:
 
           COMMON_FLAGS=(
             --sysroot="$SYSROOT" -fPIC -O2 -g0 -std=c11
+            -Wformat=2 -Werror=format -Werror=implicit-function-declaration
             -fno-unwind-tables -fno-asynchronous-unwind-tables
             -fvisibility=hidden -ffunction-sections -fdata-sections
             -fstack-protector-strong -D_FORTIFY_SOURCE=2
             -D__ANDROID__ -DANDROID
             -fpass-plugin="$AMICE_PLUGIN"
           )
+          if [ "${{ inputs.debug_logs }}" = "true" ]; then
+            COMMON_FLAGS+=( -DPHANTOM_DEBUG_LOG=1 )
+            echo "⚠️ Phantom debug logcat tracing ENABLED"
+          else
+            echo "Phantom debug logcat tracing disabled"
+          fi
 
           LDFLAGS=(
             -shared -fPIC -Wl,--gc-sections -Wl,--build-id=none

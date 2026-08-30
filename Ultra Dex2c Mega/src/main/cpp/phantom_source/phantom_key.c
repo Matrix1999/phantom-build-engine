@@ -16,8 +16,8 @@
 // Anti-Frida / Anti-Debugger layers:
 //
 // LAYER 1  nativeLoadShards()
-// Decrypts, loads, and wipes DEX buffers inside one JNI call so no plaintext
-// DEX byte[] is returned to Java code.
+// Decrypts and loads DEX buffers inside one JNI call so no plaintext DEX byte[]
+// is returned to Java code. Successful native mappings remain live for ART.
 //
 // LAYER 2  detect_frida_loop()  [5 s cadence, background thread]
 // Frida/ptrace heuristics PLUS eBPF uprobe detection, JDWP thread scan,
@@ -69,7 +69,49 @@
 #include "phantom_chacha20poly1305.h"
 #include "phantom_pstrings.inc"
 
-#define PH_NUKE(reason, ...) nuke_app()
+/*
+ * Runtime diagnostics are disabled for normal/release builds. Enable with
+ * -DPHANTOM_DEBUG_LOG=1 for a temporary diagnostic blob. Logs contain stage
+ * names, indexes, sizes, and return codes only; never keys, salts, or DEX
+ * contents. Keep this disabled for production APKs.
+ */
+#if defined(PHANTOM_DEBUG_LOG) && PHANTOM_DEBUG_LOG
+#include <android/log.h>
+#include <stdarg.h>
+#define PH_LOG_TAG "UltraPhantom"
+/*
+ * Keep Android's variadic logger outside Amice VM lifting. VMP-marked callers
+ * make a normal helper call, while the helper itself remains ordinary native
+ * code so debug builds do not depend on variadic-call virtualization.
+ */
+#if defined(__clang__)
+#define PH_DEBUG_NOVMP __attribute__((optnone))
+#else
+#define PH_DEBUG_NOVMP
+#endif
+#if defined(__clang__) || defined(__GNUC__)
+#define PH_DEBUG_PRINTF __attribute__((format(printf, 2, 3)))
+#else
+#define PH_DEBUG_PRINTF
+#endif
+static PH_DEBUG_NOVMP PH_DEBUG_PRINTF __attribute__((noinline)) void ph_debug_log(
+        int priority, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    __android_log_vprint(priority, PH_LOG_TAG, format, args);
+    va_end(args);
+}
+#define PH_LOGI(...) ph_debug_log(ANDROID_LOG_INFO, __VA_ARGS__)
+#define PH_LOGE(...) ph_debug_log(ANDROID_LOG_ERROR, __VA_ARGS__)
+#define PH_NUKE(...) do {                                             \
+    PH_LOGE("nuke_app: " __VA_ARGS__);                               \
+    nuke_app();                                                       \
+} while (0)
+#else
+#define PH_LOGI(...) ((void)0)
+#define PH_LOGE(...) ((void)0)
+#define PH_NUKE(...) nuke_app()
+#endif
 
 // ?
 // Anti-dump / Anti-Frida -- constants & types
@@ -797,10 +839,16 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
             my_path_cat3(filePath, MAX_LENGTH, _pfd2s, de->d_name, NULL);
 
             struct stat filestat;
-            vm_fstatat(AT_FDCWD, filePath, &filestat, AT_SYMLINK_NOFOLLOW);
-            if ((filestat.st_mode & S_IFMT) == S_IFLNK) {
+            my_memset(&filestat, 0, sizeof(filestat));
+            int stat_rc = vm_fstatat(
+                    AT_FDCWD, filePath, &filestat, AT_SYMLINK_NOFOLLOW);
+            if (stat_rc == 0 && (filestat.st_mode & S_IFMT) == S_IFLNK) {
                 char buf[MAX_LENGTH] = "";
-                vm_readlinkat(AT_FDCWD, filePath, buf, MAX_LENGTH);
+                long link_len = vm_readlinkat(
+                        AT_FDCWD, filePath, buf, MAX_LENGTH - 1u);
+                if (link_len < 0) continue;
+                if (link_len >= MAX_LENGTH) link_len = MAX_LENGTH - 1;
+                buf[link_len] = '\0';
                 PH_AES(_linj, LINJECTOR);
                 int _linj_found = my_strstr(buf, _linj) != NULL;
                 PH_ZERO(_linj, SP_BUF_SZ);
@@ -1264,24 +1312,34 @@ static __attribute__((noinline)) void detect_riru_zygisk(void) {
  */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_general_dumper_before_decrypt(void) {
+    PH_LOGI("pre-decrypt gate: begin");
     /*
      * Re-apply the process-memory seal on every decrypt boundary. If it
      * succeeds but a subsequent read reports the process dumpable, a runtime
      * component has interfered with the protection state.
      */
     int seal_rc = vm_prctl(PR_SET_DUMPABLE, 0);
+    PH_LOGI("pre-decrypt gate: dumpable seal rc=%d", seal_rc);
     if (seal_rc == 0 && vm_prctl(PR_GET_DUMPABLE, 0) != 0) {
         PH_NUKE("process became dumpable");
         nuke_app();
     }
     /* All functions below use independent high-confidence observations. */
+    PH_LOGI("pre-decrypt gate: ptrace check");
     detect_ptrace();          /* TracerPid */
+    PH_LOGI("pre-decrypt gate: thread check");
     detect_frida_threads();   /* per-thread tracer, JDWP, gum-js-loop */
+    PH_LOGI("pre-decrypt gate: named-pipe check");
     detect_frida_namedpipe(); /* named-pipe and fd artifacts */
+    PH_LOGI("pre-decrypt gate: websocket check");
     detect_frida_websocket(); /* active Frida server protocol */
+    PH_LOGI("pre-decrypt gate: ebpf check");
     detect_ebpf_uprobe();     /* active kernel uprobe instrumentation */
+    PH_LOGI("pre-decrypt gate: framework check");
     detect_riru_zygisk();     /* maps, linker, and known hook framework paths */
+    PH_LOGI("pre-decrypt gate: linker/map check");
     detect_linker_maps_consistency(); /* linker PT_LOAD vs procfs permissions */
+    PH_LOGI("pre-decrypt gate: pass");
 }
 
 // ?
@@ -1303,6 +1361,7 @@ static __attribute__((noinline)) void detect_general_dumper_before_decrypt(void)
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_root(void) {
+    PH_LOGI("root gate: begin");
 
     // ── A. su binary existence — stack-per-use decrypt ───────────────────────
     #define _CHK_SU(name) do { char _su[SP_BUF_SZ]; ph_reveal_ns(PH_IDX_##name, SP_##name, SP_##name##_LEN, _su); int _fd = vm_openat(AT_FDCWD, _su, O_RDONLY|O_CLOEXEC, 0); PH_ZERO(_su, SP_BUF_SZ); if (_fd >= 0) { vm_close(_fd); PH_NUKE("su binary"); nuke_app(); } } while(0)
@@ -1343,6 +1402,7 @@ static __attribute__((noinline)) void detect_root(void) {
             vm_close(fd);
         }
     }
+    PH_LOGI("root gate: pass");
 }
 
 // ?
@@ -1567,8 +1627,11 @@ static __attribute__((noinline)) void vm_spawn_watcher(void) {
 
 __attribute__((constructor))
 void detect_frida_init(void) {
+    PH_LOGI("constructor: begin");
     vm_prctl(PR_SET_DUMPABLE, 0);
+    PH_LOGI("constructor: dumpable sealed");
     vm_spawn_watcher();
+    PH_LOGI("constructor: watcher started");
 }
 
 // ?
@@ -2143,6 +2206,7 @@ static void ph_direct_dex_destructor(void) {
  */
 static __attribute__((noinline)) void detect_java_xposed_bridge(
         JNIEnv *env, jobject parent_cl) {
+    PH_LOGI("class-loader probe: begin");
     if (!env || !parent_cl) {
         PH_NUKE("missing class loader for hook probe");
         nuke_app();
@@ -2219,6 +2283,7 @@ static __attribute__((noinline)) void detect_java_xposed_bridge(
         }
     }
     /* ClassNotFoundException is the expected clean-device result. */
+    PH_LOGI("class-loader probe: pass");
 }
 
 // ?
@@ -2240,11 +2305,16 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         jobject      j_parent_cl)
 {
     (void)clazz;
+    PH_LOGI("nativeLoadShards: enter");
     if (!ph_load_begin()) {
+        PH_LOGE("nativeLoadShards: rejected re-entry/state=%d", g_ph_load_state);
         return NULL;
     }
+    PH_LOGI("nativeLoadShards: load state entered");
     detect_general_dumper_before_decrypt();
+    PH_LOGI("nativeLoadShards: pre-decrypt gate passed");
     detect_java_xposed_bridge(env, j_parent_cl);
+    PH_LOGI("nativeLoadShards: class-loader probe passed");
 
     jobject  result_cl    = NULL;
     uint8_t  salt[16]     = {0};
@@ -2262,17 +2332,21 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
 
     /* ── 1. Salt ──────────────────────────────────────────────────────────── */
     if (!j_salt) {
+        PH_LOGE("nativeLoadShards: missing salt");
         goto cleanup;
     }
     {
         jint salt_len = (*env)->GetArrayLength(env, j_salt);
         if (salt_len != 16) {
+            PH_LOGE("nativeLoadShards: invalid salt length=%d", salt_len);
             goto cleanup;
         }
+        PH_LOGI("nativeLoadShards: salt length validated");
     }
     (*env)->GetByteArrayRegion(env, j_salt, 0, 16, (jbyte *)salt);
     if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionClear(env);
+        PH_LOGE("nativeLoadShards: salt read failed");
         goto cleanup;
     }
     {
@@ -2280,92 +2354,118 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         salt[0] &= 0x7F;
         g_block_rooted = blk;
         if (blk) {
+            PH_LOGI("nativeLoadShards: rooted-device blocking enabled");
             check_rooted();
         }
     }
+    PH_LOGI("nativeLoadShards: salt policy processed");
 
     /* ── 2. Package name hash ─────────────────────────────────────────────── */
     if (j_pkg_name_utf8) {
         jint pl = (*env)->GetArrayLength(env, j_pkg_name_utf8);
         if (pl > 0 && pl <= 512) {
+            PH_LOGI("nativeLoadShards: package name length=%d", pl);
             uint8_t pb[512];
             (*env)->GetByteArrayRegion(env, j_pkg_name_utf8, 0, pl, (jbyte *)pb);
             if ((*env)->ExceptionCheck(env)) {
                 (*env)->ExceptionClear(env);
                 ph_secure_zero(pb, sizeof(pb));
+                PH_LOGE("nativeLoadShards: package name read failed");
                 goto cleanup;
             }
             detect_blackdex_before_decrypt(pb, (size_t)pl);
             sha256(pb, (size_t)pl, pkg_hash);
             memset(pb, 0, sizeof(pb));
         } else {
+            PH_LOGE("nativeLoadShards: invalid package name length=%d", pl);
             goto cleanup;
         }
     } else {
+        PH_LOGE("nativeLoadShards: missing package name");
         goto cleanup;
     }
     arx_kdf(salt, pkg_hash, key);
+    PH_LOGI("nativeLoadShards: key derivation complete");
     if (!ph_load_advance(PH_LOAD_ENVIRONMENT, PH_LOAD_KEY_READY)) {
+        PH_LOGE("nativeLoadShards: invalid state after key derivation");
         goto cleanup;
     }
+    PH_LOGI("nativeLoadShards: key-ready state entered");
 
     /* ── 3. Validate shard array ──────────────────────────────────────────── */
     if (!j_enc_shards) {
+        PH_LOGE("nativeLoadShards: missing shard array");
         goto cleanup;
     }
     {
         jint sc = (*env)->GetArrayLength(env, j_enc_shards);
         if (sc <= 0 || sc > 64) {
+            PH_LOGE("nativeLoadShards: invalid shard count=%d", sc);
             goto cleanup;
         }
+        PH_LOGI("nativeLoadShards: shard count=%d", sc);
         if (!ph_load_advance(PH_LOAD_KEY_READY, PH_LOAD_SHARDS_LOADING)) {
+            PH_LOGE("nativeLoadShards: invalid state before shards");
             goto cleanup;
         }
+        PH_LOGI("nativeLoadShards: shard-loading state entered");
 
         /* ── 4. Resolve JNI classes and methods ───────────────────────────── */
         jclass bb_cl = (*env)->FindClass(env, "java/nio/ByteBuffer");
         if (!bb_cl) {
             if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: ByteBuffer class lookup failed");
             goto cleanup;
         }
         if ((*env)->ExceptionCheck(env)) {
             (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: ByteBuffer lookup raised exception");
             goto cleanup;
         }
+        PH_LOGI("nativeLoadShards: ByteBuffer class resolved");
 
         jclass imdcl = (*env)->FindClass(env, "dalvik/system/InMemoryDexClassLoader");
         if (!imdcl) {
             if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: InMemoryDexClassLoader lookup failed");
             goto cleanup;
         }
         if ((*env)->ExceptionCheck(env)) {
             (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: InMemoryDexClassLoader lookup raised exception");
             goto cleanup;
         }
+        PH_LOGI("nativeLoadShards: InMemoryDexClassLoader resolved");
 
         jmethodID ctor = (*env)->GetMethodID(env, imdcl, "<init>",
                              "([Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
         if (!ctor) {
             if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: class-loader constructor lookup failed");
             goto cleanup;
         }
         if ((*env)->ExceptionCheck(env)) {
             (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: constructor lookup raised exception");
             goto cleanup;
         }
 
         jobjectArray bufs = (*env)->NewObjectArray(env, sc, bb_cl, NULL);
         if (!bufs) {
             if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: ByteBuffer array allocation failed");
             goto cleanup;
         }
         if ((*env)->ExceptionCheck(env)) {
             (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: ByteBuffer array allocation raised exception");
             goto cleanup;
         }
+        PH_LOGI("nativeLoadShards: JNI loader objects ready");
 
         /* ── 5. Decrypt each shard — plaintext stays inside this JNI call ── */
         for (i = 0; i < sc; i++) {
+            PH_LOGI("nativeLoadShards: shard %d begin", i);
             /*
              * Re-check between shards. The entry-point gate protects the
              * initial key derivation; this closes the gap where a dumper
@@ -2380,16 +2480,20 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             jbyteArray j_enc = (jbyteArray)(*env)->GetObjectArrayElement(env, j_enc_shards, i);
             if (!j_enc || (*env)->ExceptionCheck(env)) {
                 if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                PH_LOGE("nativeLoadShards: shard %d lookup failed", i);
                 goto cleanup;
             }
             jint enc_len = (*env)->GetArrayLength(env, j_enc);
             if (enc_len < 40) {
+                PH_LOGE("nativeLoadShards: shard %d invalid encrypted length=%d", i, enc_len);
                 (*env)->DeleteLocalRef(env, j_enc);
                 goto cleanup;
             }
+            PH_LOGI("nativeLoadShards: shard %d encrypted length=%d", i, enc_len);
 
             enc_buf = (uint8_t *)malloc((size_t)enc_len);
             if (!enc_buf) {
+                PH_LOGE("nativeLoadShards: shard %d encrypted allocation failed", i);
                 (*env)->DeleteLocalRef(env, j_enc);
                 goto cleanup;
             }
@@ -2397,6 +2501,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             (*env)->DeleteLocalRef(env, j_enc);
             if ((*env)->ExceptionCheck(env)) {
                 (*env)->ExceptionClear(env);
+                PH_LOGE("nativeLoadShards: shard %d encrypted read failed", i);
                 ph_secure_zero(enc_buf, (size_t)enc_len);
                 free(enc_buf);
                 goto cleanup;
@@ -2409,12 +2514,14 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
              */
             aead_len = (size_t)enc_len - 24u - 16u;
             if (aead_len == 0) {
+                PH_LOGE("nativeLoadShards: shard %d empty authenticated payload", i);
                 ph_secure_zero(enc_buf, (size_t)enc_len);
                 free(enc_buf);
                 goto cleanup;
             }
             aead_buf = (uint8_t *)malloc(aead_len);
             if (!aead_buf) {
+                PH_LOGE("nativeLoadShards: shard %d authenticated allocation failed", i);
                 ph_secure_zero(enc_buf, (size_t)enc_len);
                 free(enc_buf);
                 goto cleanup;
@@ -2427,6 +2534,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
                     enc_buf + 24 + aead_len,
                     aead_buf);
             if (!stage_ok) {
+                PH_LOGE("nativeLoadShards: shard %d authenticated decrypt failed", i);
                 ph_secure_zero(enc_buf, (size_t)enc_len);
                 free(enc_buf);
                 ph_secure_zero(aead_buf, aead_len);
@@ -2435,14 +2543,17 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             }
             ph_secure_zero(enc_buf, (size_t)enc_len);
             free(enc_buf);
+            PH_LOGI("nativeLoadShards: shard %d authenticated decrypt passed", i);
 
             /* Outer inflate */
             inter_buf = inflate_alloc(aead_buf, aead_len, &inter_len);
             ph_secure_zero(aead_buf, aead_len);
             free(aead_buf);
             if (!inter_buf) {
+                PH_LOGE("nativeLoadShards: shard %d outer inflate failed", i);
                 goto cleanup;
             }
+            PH_LOGI("nativeLoadShards: shard %d outer inflate length=%zu", i, inter_len);
 
             /* ARX XOR */
             { arx_ctx_t arx; arx_ctx_init(&arx, key); arx_xor(&arx, inter_buf, inter_len);
@@ -2452,13 +2563,16 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             plain_buf = inflate_alloc(inter_buf, inter_len, &plain_len);
             ph_secure_zero(inter_buf, inter_len); free(inter_buf);
             if (!plain_buf) {
+                PH_LOGE("nativeLoadShards: shard %d inner inflate failed", i);
                 goto cleanup;
             }
 
             if (plain_len > (size_t)INT32_MAX) {
+                PH_LOGE("nativeLoadShards: shard %d plaintext too large=%zu", i, plain_len);
                 ph_secure_zero(plain_buf, plain_len); free(plain_buf);
                 goto cleanup;
             }
+            PH_LOGI("nativeLoadShards: shard %d plaintext length=%zu", i, plain_len);
 
             /*
              * Plaintext moves from the temporary inflate
@@ -2466,11 +2580,15 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
              */
             size_t map_len = (plain_len + 4095u) & ~(size_t)4095u;
             if (!ph_stage_policy_vm(plain_len, map_len)) {
+                PH_LOGE("nativeLoadShards: shard %d stage policy rejected data=%zu map=%zu",
+                        i, plain_len, map_len);
                 ph_secure_zero(plain_buf, plain_len); free(plain_buf);
                 goto cleanup;
             }
             void *dex_map = vm_mmap_private_rw(map_len);
             if (dex_map == MAP_FAILED) {
+                PH_LOGE("nativeLoadShards: shard %d native mapping failed length=%zu",
+                        i, map_len);
                 ph_secure_zero(plain_buf, plain_len); free(plain_buf);
                 goto cleanup;
             }
@@ -2482,14 +2600,17 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             vm_madvise(dex_map, map_len, MADV_DONTFORK);
 #endif
             if (vm_mprotect(dex_map, map_len, PROT_READ) != 0) {
+                PH_LOGE("nativeLoadShards: shard %d read-only transition failed", i);
                 ph_wipe_unmap_direct(dex_map, map_len);
                 goto cleanup;
             }
+            PH_LOGI("nativeLoadShards: shard %d native mapping ready length=%zu", i, map_len);
 
             jobject bb = (*env)->NewDirectByteBuffer(
                     env, dex_map, (jlong)plain_len);
             if (!bb || (*env)->ExceptionCheck(env)) {
                 if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                PH_LOGE("nativeLoadShards: shard %d direct buffer creation failed", i);
                 ph_wipe_unmap_direct(dex_map, map_len);
                 goto cleanup;
             }
@@ -2501,14 +2622,18 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             if ((*env)->ExceptionCheck(env)) {
                 (*env)->ExceptionClear(env);
                 (*env)->DeleteLocalRef(env, bb);
+                PH_LOGE("nativeLoadShards: shard %d buffer array insertion failed", i);
                 goto cleanup;
             }
             (*env)->DeleteLocalRef(env, bb);
+            PH_LOGI("nativeLoadShards: shard %d ready", i);
         }
 
         if (!ph_load_advance(PH_LOAD_SHARDS_LOADING, PH_LOAD_CLASSLOADER)) {
+            PH_LOGE("nativeLoadShards: invalid state before class-loader construction");
             goto cleanup;
         }
+        PH_LOGI("nativeLoadShards: constructing InMemoryDexClassLoader");
 
         /* ── 6. new InMemoryDexClassLoader(bufs, parent)
                   ART parses + mmaps every DEX synchronously inside this call.
@@ -2516,14 +2641,18 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         result_cl = (*env)->NewObject(env, imdcl, ctor, bufs, j_parent_cl);
         if ((*env)->ExceptionCheck(env)) {
             (*env)->ExceptionClear(env);
+            PH_LOGE("nativeLoadShards: InMemoryDexClassLoader constructor raised exception");
             result_cl = NULL;
         }
         if (!result_cl) {
+            PH_LOGE("nativeLoadShards: class-loader construction failed");
             goto cleanup;
         }
+        PH_LOGI("nativeLoadShards: class-loader constructed");
         if (!ph_load_advance(PH_LOAD_CLASSLOADER, PH_LOAD_COMPLETE)) {
             if (result_cl) (*env)->DeleteLocalRef(env, result_cl);
             result_cl = NULL;
+            PH_LOGE("nativeLoadShards: invalid state after class-loader construction");
             goto cleanup;
         }
 
@@ -2536,6 +2665,8 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             n_pending_maps > PH_MAX_DIRECT_DEX_MAPS) {
             (*env)->DeleteLocalRef(env, result_cl);
             result_cl = NULL;
+            PH_LOGE("nativeLoadShards: mapping commit validation failed pending=%d shards=%d",
+                    n_pending_maps, sc);
             goto cleanup;
         }
         for (i = 0; i < n_pending_maps; ++i) {
@@ -2545,6 +2676,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             pending_maps[i].data_len = 0;
         }
         g_direct_dex_count = (unsigned int)n_pending_maps;
+        PH_LOGI("nativeLoadShards: committed %d live native mappings", n_pending_maps);
     }
 
 cleanup:
@@ -2563,7 +2695,10 @@ cleanup:
     ph_secure_zero(pkg_hash, sizeof(pkg_hash));
     ph_secure_zero(key,      sizeof(key));
     if (!result_cl) {
+        PH_LOGE("nativeLoadShards: failed; cleanup complete");
         ph_load_fail();
+    } else {
+        PH_LOGI("nativeLoadShards: success; cleanup complete");
     }
     return result_cl;
 }
@@ -2580,16 +2715,28 @@ cleanup:
  * crashed with ClassCastException because values are ProviderClientRecord.)
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void ph_patch_providers_native(JNIEnv *env, jobject activityThread, jobject realApp) {
+    PH_LOGI("provider patch: begin");
     /* ActivityThread.mProviderMap — ArrayMap<String, ProviderClientRecord> */
     jclass atCls2 = (*env)->FindClass(env, "android/app/ActivityThread");
-    if (!atCls2) { (*env)->ExceptionClear(env); return; }
+    if (!atCls2) {
+        (*env)->ExceptionClear(env);
+        PH_LOGE("provider patch: ActivityThread lookup failed");
+        return;
+    }
     jfieldID mProvMapFid = (*env)->GetFieldID(env, atCls2,
             "mProviderMap", "Landroid/util/ArrayMap;");
     (*env)->DeleteLocalRef(env, atCls2);
-    if (!mProvMapFid) { (*env)->ExceptionClear(env); return; }
+    if (!mProvMapFid) {
+        (*env)->ExceptionClear(env);
+        PH_LOGE("provider patch: mProviderMap lookup failed");
+        return;
+    }
 
     jobject provMap = (*env)->GetObjectField(env, activityThread, mProvMapFid);
-    if (!provMap) return;
+    if (!provMap) {
+        PH_LOGI("provider patch: no providers");
+        return;
+    }
 
     /* ArrayMap.values() → Collection */
     jclass amCls = (*env)->FindClass(env, "android/util/ArrayMap");
@@ -2635,6 +2782,7 @@ static void ph_patch_providers_native(JNIEnv *env, jobject activityThread, jobje
     if (!mLocalProvFid || !mCtxFid) { (*env)->DeleteLocalRef(env, arr); return; }
 
     jsize len = (*env)->GetArrayLength(env, arr);
+    PH_LOGI("provider patch: records=%d", len);
     for (jsize i = 0; i < len; i++) {
         jobject pcr = (*env)->GetObjectArrayElement(env, arr, i);
         if (!pcr) continue;
@@ -2646,6 +2794,7 @@ static void ph_patch_providers_native(JNIEnv *env, jobject activityThread, jobje
         (*env)->DeleteLocalRef(env, pcr);
     }
     (*env)->DeleteLocalRef(env, arr);
+    PH_LOGI("provider patch: complete");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2673,11 +2822,13 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
 
     (void)klass;
     jobject result = NULL;
+    PH_LOGI("nativeSwapApplication: enter");
 
     /* ── ActivityThread ──────────────────────────────────────────────────── */
     jclass atCls = (*env)->FindClass(env, "android/app/ActivityThread");
     if (!atCls) {
         (*env)->ExceptionClear(env);
+        PH_LOGE("nativeSwapApplication: ActivityThread lookup failed");
         return NULL;
     }
 
@@ -2686,13 +2837,18 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
     if (!curThreadMid) {
         (*env)->ExceptionClear(env);
         (*env)->DeleteLocalRef(env, atCls);
+        PH_LOGE("nativeSwapApplication: currentActivityThread lookup failed");
         return NULL;
     }
 
     jobject thread = (*env)->CallStaticObjectMethod(env, atCls, curThreadMid);
     if (!thread || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env); (*env)->DeleteLocalRef(env, atCls); return NULL;
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, atCls);
+        PH_LOGE("nativeSwapApplication: currentActivityThread call failed");
+        return NULL;
     }
+    PH_LOGI("nativeSwapApplication: ActivityThread resolved");
 
     /* ── AppBindData → LoadedApk ─────────────────────────────────────────── */
     jclass abdCls = (*env)->FindClass(env, "android/app/ActivityThread$AppBindData");
@@ -2701,6 +2857,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
     if (!abdCls || !mBoundFid) {
         (*env)->ExceptionClear(env);
         if (abdCls) (*env)->DeleteLocalRef(env, abdCls); /* avoid local ref leak */
+        PH_LOGE("nativeSwapApplication: AppBindData lookup failed");
         goto done;
     }
     jobject mBoundApp = (*env)->GetObjectField(env, thread, mBoundFid);
@@ -2710,8 +2867,10 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
     jobject loadedApk = (*env)->GetObjectField(env, mBoundApp, infoFid);
     if (!mBoundApp || !loadedApk) {
         (*env)->DeleteLocalRef(env, abdCls);
+        PH_LOGE("nativeSwapApplication: LoadedApk lookup failed");
         goto done;
     }
+    PH_LOGI("nativeSwapApplication: LoadedApk resolved");
 
     jfieldID bindAppInfoFid = (*env)->GetFieldID(env, abdCls, "appInfo",
             "Landroid/content/pm/ApplicationInfo;");
@@ -2722,7 +2881,11 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
 
     /* ── LoadedApk fields ────────────────────────────────────────────────── */
     jclass laCls = (*env)->FindClass(env, "android/app/LoadedApk");
-    if (!laCls) { (*env)->ExceptionClear(env); goto done; }
+    if (!laCls) {
+        (*env)->ExceptionClear(env);
+        PH_LOGE("nativeSwapApplication: LoadedApk class lookup failed");
+        goto done;
+    }
 
     jfieldID mAppInfoFid = (*env)->GetFieldID(env, laCls, "mApplicationInfo",
             "Landroid/content/pm/ApplicationInfo;");
@@ -2767,6 +2930,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
     /* ── Create real Application via Instrumentation.newApplication() ──────── */
     jobject realApp = NULL;
     jclass instrCls = (*env)->FindClass(env, "android/app/Instrumentation");
+    PH_LOGI("nativeSwapApplication: creating real Application");
     if (instrCls) {
         jmethodID newAppMid = (*env)->GetMethodID(env, instrCls, "newApplication",
                 "(Ljava/lang/ClassLoader;Ljava/lang/String;Landroid/content/Context;)"
@@ -2776,6 +2940,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
                     classLoader, realAppClass, baseContext);
             if ((*env)->ExceptionCheck(env)) {
                 (*env)->ExceptionClear(env);
+                PH_LOGE("nativeSwapApplication: Instrumentation.newApplication failed");
                 realApp = NULL;
             }
         } else { (*env)->ExceptionClear(env); }
@@ -2784,6 +2949,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
 
     /* Fallback: LoadedApk.makeApplication(false, null) */
     if (!realApp) {
+        PH_LOGI("nativeSwapApplication: trying LoadedApk.makeApplication fallback");
         if (mAppFid) (*env)->SetObjectField(env, loadedApk, mAppFid, NULL);
         jmethodID makeAppMid = (*env)->GetMethodID(env, laCls, "makeApplication",
                 "(ZLandroid/app/Instrumentation;)Landroid/app/Application;");
@@ -2791,10 +2957,12 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
             realApp = (*env)->CallObjectMethod(env, loadedApk, makeAppMid, JNI_FALSE, NULL);
             if ((*env)->ExceptionCheck(env)) {
                 (*env)->ExceptionClear(env);
+                PH_LOGE("nativeSwapApplication: makeApplication fallback failed");
                 realApp = NULL;
             }
         } else { (*env)->ExceptionClear(env); }
         if (realApp) {
+            PH_LOGI("nativeSwapApplication: fallback created real Application");
             if (mInitFid) (*env)->SetObjectField(env, thread, mInitFid, realApp);
             ph_patch_providers_native(env, thread, realApp);
             result = (*env)->NewGlobalRef(env, realApp);
@@ -2802,6 +2970,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication(
         (*env)->DeleteLocalRef(env, laCls);
         goto done;
     }
+    PH_LOGI("nativeSwapApplication: real Application created");
 
 
     /* ── Update mAllApplications ─────────────────────────────────────────── */
@@ -2834,9 +3003,11 @@ done:
     (*env)->DeleteLocalRef(env, thread);
     /* Return local ref — caller (Java) owns this reference */
     if (result) {
+        PH_LOGI("nativeSwapApplication: success");
         jobject local = (*env)->NewLocalRef(env, result);
         (*env)->DeleteGlobalRef(env, result);
         return local;
     }
+    PH_LOGE("nativeSwapApplication: failed");
     return NULL;
 }
