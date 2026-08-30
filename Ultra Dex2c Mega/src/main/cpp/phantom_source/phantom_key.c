@@ -45,7 +45,6 @@
 // ?
 
 #include <jni.h>
-#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,48 +70,13 @@
 #include "phantom_integrity.inc"
 
 /*
- * Runtime diagnostics are disabled for normal/release builds. Enable with
- * -DPHANTOM_DEBUG_LOG=1 for a temporary diagnostic blob. Logs contain stage
- * names, indexes, sizes, and return codes only; never keys, salts, or DEX
- * contents. Keep this disabled for production APKs.
+ * Phantom is intentionally silent. Keep the call sites as compile-time
+ * no-ops so detection and fail-closed control flow remain unchanged while no
+ * log backend, format string, or diagnostic payload reaches the binary.
  */
-#if defined(PHANTOM_DEBUG_LOG) && PHANTOM_DEBUG_LOG
-#include <android/log.h>
-#include <stdarg.h>
-#define PH_LOG_TAG "UltraPhantom"
-/*
- * Keep Android's variadic logger outside Amice VM lifting. VMP-marked callers
- * make a normal helper call, while the helper itself remains ordinary native
- * code so debug builds do not depend on variadic-call virtualization.
- */
-#if defined(__clang__)
-#define PH_DEBUG_NOVMP __attribute__((optnone))
-#else
-#define PH_DEBUG_NOVMP
-#endif
-#if defined(__clang__) || defined(__GNUC__)
-#define PH_DEBUG_PRINTF __attribute__((format(printf, 2, 3)))
-#else
-#define PH_DEBUG_PRINTF
-#endif
-static PH_DEBUG_NOVMP PH_DEBUG_PRINTF __attribute__((noinline)) void ph_debug_log(
-        int priority, const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    __android_log_vprint(priority, PH_LOG_TAG, format, args);
-    va_end(args);
-}
-#define PH_LOGI(...) ph_debug_log(ANDROID_LOG_INFO, __VA_ARGS__)
-#define PH_LOGE(...) ph_debug_log(ANDROID_LOG_ERROR, __VA_ARGS__)
-#define PH_NUKE(...) do {                                             \
-    PH_LOGE("nuke_app: " __VA_ARGS__);                               \
-    nuke_app();                                                       \
-} while (0)
-#else
 #define PH_LOGI(...) ((void)0)
 #define PH_LOGE(...) ((void)0)
 #define PH_NUKE(...) nuke_app()
-#endif
 
 // ?
 // Anti-dump / Anti-Frida -- constants & types
