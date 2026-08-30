@@ -244,15 +244,13 @@ jobs:
               ph_load_advance \
               ph_load_fail \
               check_rooted \
-            cr_selinux_open_primary \
-            cr_selinux_open_fallback \
-            cr_selinux_is_permissive \
-              cr_selinux \
+            ph_reveal_ns \
               detect_proc_dump_artifacts \
             ph_self_hash_range \
             ph_self_finalize_digest \
-            ph_self_compare_digest \
-              detect_phantom_self_integrity \
+            ph_self_compare_word \
+            ph_self_compare_reduce \
+            ph_self_enforcement_policy \
               nuke_app \
               sha256_block \
               vm_dl_iterate_phdr \

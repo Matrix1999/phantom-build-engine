@@ -864,7 +864,6 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
 }
 
 /* Defined after the SHA-256 implementation. */
-__attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_phantom_self_integrity(void);
 
 /*
@@ -1621,36 +1620,18 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
    small, pure vm_* calls only, and explicitly annotated +vm_virtualize. */
 
 __attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) int cr_selinux_open_primary(void) {
+static __attribute__((noinline)) void cr_selinux(void) {
     PH_AES(_s1, PATH_SELINUX1);
     int fd = vm_openat(AT_FDCWD, _s1, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_s1, SP_BUF_SZ);
-    return fd;
-}
-
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) int cr_selinux_open_fallback(void) {
-    PH_AES(_s2, PATH_SELINUX2);
-    int fd = vm_openat(AT_FDCWD, _s2, O_RDONLY | O_CLOEXEC, 0);
-    PH_ZERO(_s2, SP_BUF_SZ);
-    return fd;
-}
-
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) int cr_selinux_is_permissive(int fd) {
-    char b = '\0';
-    ssize_t count = vm_read(fd, &b, 1);
-    vm_close(fd);
-    return count == 1 && b == '0';
-}
-
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) void cr_selinux(void) {
-    int fd = cr_selinux_open_primary();
-    if (fd < 0) fd = cr_selinux_open_fallback();
-    if (fd >= 0 && cr_selinux_is_permissive(fd)) {
-        PH_NUKE("SELinux permissive");
+    if (fd < 0) {
+        PH_AES(_s2, PATH_SELINUX2);
+        fd = vm_openat(AT_FDCWD, _s2, O_RDONLY | O_CLOEXEC, 0);
+        PH_ZERO(_s2, SP_BUF_SZ);
     }
+    if (fd < 0) return;
+    char b[4] = {0}; vm_read(fd, b, 3); vm_close(fd);
+    if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
 }
 
 __attribute__((annotate("+vm_virtualize")))
@@ -2002,15 +1983,37 @@ static __attribute__((noinline)) void ph_self_finalize_digest(
 }
 
 __attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) uint32_t ph_self_compare_word(
+        uint32_t actual, uint32_t expected) {
+    return actual ^ expected;
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int ph_self_compare_reduce(
+        uint32_t diff, uint32_t expected_or) {
+    return expected_or != 0 && diff == 0;
+}
+
 static __attribute__((noinline)) int ph_self_compare_digest(
         const uint8_t *actual) {
-    unsigned int diff = 0;
-    int expected_nonzero = 0;
-    for (unsigned int i = 0; i < 32; ++i) {
-        diff |= (unsigned int)(actual[i] ^ PHANTOM_EXPECTED_EXEC_SHA256[i]);
-        expected_nonzero |= PHANTOM_EXPECTED_EXEC_SHA256[i] != 0;
+    uint32_t diff = 0;
+    uint32_t expected_or = 0;
+    for (unsigned int i = 0; i < 8; ++i) {
+        unsigned int offset = i * 4u;
+        uint32_t actual_word =
+                ((uint32_t)actual[offset]) |
+                ((uint32_t)actual[offset + 1u] << 8) |
+                ((uint32_t)actual[offset + 2u] << 16) |
+                ((uint32_t)actual[offset + 3u] << 24);
+        uint32_t expected_word =
+                ((uint32_t)PHANTOM_EXPECTED_EXEC_SHA256[offset]) |
+                ((uint32_t)PHANTOM_EXPECTED_EXEC_SHA256[offset + 1u] << 8) |
+                ((uint32_t)PHANTOM_EXPECTED_EXEC_SHA256[offset + 2u] << 16) |
+                ((uint32_t)PHANTOM_EXPECTED_EXEC_SHA256[offset + 3u] << 24);
+        diff |= ph_self_compare_word(actual_word, expected_word);
+        expected_or |= expected_word;
     }
-    return expected_nonzero && diff == 0;
+    return ph_self_compare_reduce(diff, expected_or);
 }
 
 static __attribute__((noinline)) int ph_self_integrity_compute(void) {
@@ -2042,8 +2045,12 @@ static __attribute__((noinline)) int ph_self_integrity_compute(void) {
 }
 
 __attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int ph_self_enforcement_policy(int clean) {
+    return clean == 0;
+}
+
 static __attribute__((noinline)) void detect_phantom_self_integrity(void) {
-    if (!ph_self_integrity_compute()) {
+    if (ph_self_enforcement_policy(ph_self_integrity_compute())) {
         PH_NUKE("Phantom executable integrity mismatch");
     }
 }
