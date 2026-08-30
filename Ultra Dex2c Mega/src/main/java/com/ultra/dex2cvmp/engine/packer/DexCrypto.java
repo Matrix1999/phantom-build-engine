@@ -6,6 +6,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.*;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.zip.DeflaterInputStream;
@@ -310,6 +311,34 @@ public class DexCrypto {
         exfr(keyBytes, is, os);
         os.close();
         is.close();
+    }
+
+    /**
+     * Derive an independent compatibility-layer key for one shard.
+     * The native Phantom loader mirrors this exact digest.
+     */
+    public static byte[] deriveShardKey(byte[] baseKey, int shardIndex)
+            throws GeneralSecurityException {
+        if (baseKey == null || baseKey.length != 16) {
+            throw new IllegalArgumentException("base key must be 16 bytes");
+        }
+        if (shardIndex < 0) {
+            throw new IllegalArgumentException("negative shard index");
+        }
+
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        digest.update(baseKey);
+        digest.update(new byte[] {
+                0x50, 0x48, 0x53, 0x48, 0x41, 0x52, 0x44, 0x31
+        }); // "PHSHARD1"
+        digest.update((byte)(shardIndex >>> 24));
+        digest.update((byte)(shardIndex >>> 16));
+        digest.update((byte)(shardIndex >>> 8));
+        digest.update((byte)shardIndex);
+        byte[] expanded = digest.digest();
+        byte[] shardKey = Arrays.copyOf(expanded, 16);
+        Arrays.fill(expanded, (byte) 0);
+        return shardKey;
     }
 
     // ── internal cipher ───────────────────────────────────────────────────────

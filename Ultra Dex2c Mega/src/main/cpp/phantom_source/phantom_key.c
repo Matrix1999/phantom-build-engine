@@ -2297,6 +2297,32 @@ static void arx_kdf(const uint8_t salt[16], const uint8_t pkg_hash[32], uint8_t 
     put_le32(out,  8, s2); put_le32(out, 12, s3);
 }
 
+/*
+ * Per-shard compatibility-layer key. The packer mirrors:
+ * SHA256(base_key || "PHSHARD1" || shard_index_be)[0:16].
+ * The universal authenticated payload key remains unchanged and separate.
+ */
+static __attribute__((noinline)) void derive_shard_key(
+        const uint8_t base_key[16], int shard_index, uint8_t out[16]) {
+    uint8_t material[28];
+    uint8_t digest[32];
+    my_memset(material, 0, sizeof(material));
+    my_memset(digest, 0, sizeof(digest));
+    for (int i = 0; i < 16; ++i) material[i] = base_key[i];
+    material[16] = 0x50; material[17] = 0x48;
+    material[18] = 0x53; material[19] = 0x48;
+    material[20] = 0x41; material[21] = 0x52;
+    material[22] = 0x44; material[23] = 0x31;
+    material[24] = (uint8_t)((uint32_t)shard_index >> 24);
+    material[25] = (uint8_t)((uint32_t)shard_index >> 16);
+    material[26] = (uint8_t)((uint32_t)shard_index >> 8);
+    material[27] = (uint8_t)shard_index;
+    sha256(material, sizeof(material), digest);
+    for (int i = 0; i < 16; ++i) out[i] = digest[i];
+    ph_secure_zero(digest, sizeof(digest));
+    ph_secure_zero(material, sizeof(material));
+}
+
 // ?
 // ARX stream cipher -- port of Java DexCrypto.{exfr,FxIjsF,nDnv}
 // ?
@@ -2897,8 +2923,12 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             }
             PH_LOGI("nativeLoadShards: shard %d outer inflate length=%zu", i, inter_len);
 
-            /* ARX XOR */
-            { arx_ctx_t arx; arx_ctx_init(&arx, key); arx_xor(&arx, inter_buf, inter_len);
+            /* ARX XOR with a shard-specific compatibility key. */
+            { uint8_t shard_key[16];
+              derive_shard_key(key, i, shard_key);
+              arx_ctx_t arx; arx_ctx_init(&arx, shard_key);
+              arx_xor(&arx, inter_buf, inter_len);
+              ph_secure_zero(shard_key, sizeof(shard_key));
               memset(&arx, 0, sizeof(arx)); }
 
             /* Inner inflate */
