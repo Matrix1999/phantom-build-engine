@@ -140,3 +140,17 @@ mtime_ms = 1788089105455
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/25e3a3b6-c169-46ff-823c-ca569fd9ecc1/023f10a0-9a66-407d-8a85-14b46a88b37d"
 storage_version_token = "1788089110062284"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "NMiw2TB0I7EOvnoUOvRC8"
+uri = "file://Universal-Dumper-Fresh-Edited.zip"
+type = "unspecified"
+title = "Universal Dumper — real source script replaced"
+description = "Fresh bundle with AppDumper/app/src/main/assets/dump_dex_mem.py replaced by the attached script, plus an edited MatrixDumper_Source_v7 archive."
+logical_id = "5604353c-68db-445c-a057-952ad170895a"
+content_hash = "sha256:e903c0bc766bebc143ae2cd16e169e78b1ab1bcd517723e84493e64a50fab24d"
+size = 5065414
+mtime_ms = 1788089214765
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/5604353c-68db-445c-a057-952ad170895a/f766adcc-f6bd-4ac5-97fb-d6475127e56f"
+storage_version_token = "1788089218747349"
+content_type = "application/octet-stream"

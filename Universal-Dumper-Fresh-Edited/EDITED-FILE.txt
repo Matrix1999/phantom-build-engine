@@ -1,0 +1,11 @@
+The real dumper script used by the Android source is:
+
+unpacked_source/AppDumper/app/src/main/assets/dump_dex_mem.py
+
+It was replaced with the attached dump_dex_mem_1788088783369.py byte-for-byte.
+The replacement source archive is:
+
+Dumper-Hooks/MatrixDumper_Source_v7_edited.zip
+
+The prebuilt MatrixDumper_v10_unsigned.apk was not modified; rebuild it from
+MatrixDumper_Source_v7_edited.zip to embed the changed asset.

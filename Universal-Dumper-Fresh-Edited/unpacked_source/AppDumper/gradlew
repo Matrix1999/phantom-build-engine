@@ -1,0 +1,5 @@
+#!/bin/sh
+APP_HOME="$(cd "$(dirname "$0")" && pwd)"
+JAVA_HOME="${JAVA_HOME:-$(dirname $(dirname $(readlink -f $(which java))))}"
+DEFAULT_JVM_OPTS="-Dfile.encoding=UTF-8 -Duser.home=$HOME"
+exec "$JAVA_HOME/bin/java" $DEFAULT_JVM_OPTS -jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "$@"
