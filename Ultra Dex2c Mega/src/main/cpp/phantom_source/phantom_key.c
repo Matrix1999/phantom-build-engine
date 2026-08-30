@@ -497,6 +497,22 @@ static __attribute__((noinline)) int vm_mprotect(void *a, size_t l, int prot)
     { return my_mprotect(a, l, prot); }
 #endif
 
+/*
+ * mmap/munmap/madvise bridges deliberately stay native.  AMICE virtualized
+ * callers see one bounded call_native operation instead of trying to lower
+ * libc or an architecture-specific six-argument syscall.
+ */
+static __attribute__((noinline)) void *vm_mmap_private_rw(size_t len) {
+    return mmap(NULL, len, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+}
+static __attribute__((noinline)) int vm_munmap(void *addr, size_t len) {
+    return munmap(addr, len);
+}
+static __attribute__((noinline)) int vm_madvise(void *addr, size_t len, int advice) {
+    return madvise(addr, len, advice);
+}
+
 
 // ?
 // Kill switch
@@ -905,6 +921,170 @@ static __attribute__((noinline)) int hook_phdr_cb(struct dl_phdr_info *info, siz
 }
 
 /*
+ * Linker/maps consistency gate.
+ *
+ * Name scans catch known frameworks. This independent structural check catches
+ * a different class of concealment: an executable PT_LOAD segment present in
+ * the dynamic linker's list but hidden or permission-rewritten in procfs.
+ * Only executable linker segments are compared, so ART oat/JIT mappings that
+ * are not ELF objects do not create false positives.
+ */
+#define PH_MAX_EXEC_SEGMENTS 192
+typedef struct {
+    uintptr_t start;
+    uintptr_t end;
+    uint8_t   need_read;
+    uint8_t   seen;
+} ph_exec_segment_t;
+
+typedef struct {
+    ph_exec_segment_t seg[PH_MAX_EXEC_SEGMENTS];
+    unsigned int count;
+    int invalid;
+} ph_linker_map_ctx_t;
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int ph_collect_exec_segments_cb(
+        struct dl_phdr_info *info, size_t size, void *data) {
+    (void)size;
+    ph_linker_map_ctx_t *ctx = (ph_linker_map_ctx_t *)data;
+    if (!ctx || !info || !info->dlpi_phdr || info->dlpi_phnum == 0 ||
+        info->dlpi_phnum > 256) {
+        if (ctx) ctx->invalid = 1;
+        return 1;
+    }
+
+    uintptr_t base = (uintptr_t)info->dlpi_addr;
+    int saw_header = 0;
+    for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
+        const ElfW(Phdr) *ph = &info->dlpi_phdr[i];
+        if (ph->p_type != PT_LOAD || ph->p_memsz == 0) continue;
+        if ((ph->p_flags & PF_W) && (ph->p_flags & PF_X)) {
+            ctx->invalid = 1;
+            return 1;
+        }
+
+        uintptr_t raw_start = base + (uintptr_t)ph->p_vaddr;
+        uintptr_t raw_end = raw_start + (uintptr_t)ph->p_memsz;
+        if (raw_end <= raw_start) {
+            ctx->invalid = 1;
+            return 1;
+        }
+
+        if (ph->p_offset == 0 && (ph->p_flags & PF_R)) {
+            const uint8_t *eh = (const uint8_t *)raw_start;
+            if (eh[EI_MAG0] != ELFMAG0 || eh[EI_MAG1] != ELFMAG1 ||
+                eh[EI_MAG2] != ELFMAG2 || eh[EI_MAG3] != ELFMAG3) {
+                ctx->invalid = 1;
+                return 1;
+            }
+            saw_header = 1;
+        }
+
+        if (!(ph->p_flags & PF_X)) continue;
+        if (ctx->count >= PH_MAX_EXEC_SEGMENTS) {
+            ctx->invalid = 1;
+            return 1;
+        }
+
+        uintptr_t page_mask = (uintptr_t)4095;
+        ph_exec_segment_t *out = &ctx->seg[ctx->count++];
+        out->start = raw_start & ~page_mask;
+        out->end = (raw_end + page_mask) & ~page_mask;
+        out->need_read = (ph->p_flags & PF_R) ? 1u : 0u;
+        out->seen = 0;
+    }
+    if (!saw_header && info->dlpi_name && info->dlpi_name[0] != '\0') {
+        ctx->invalid = 1;
+        return 1;
+    }
+    return 0;
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int ph_parse_maps_range(
+        const char *line, uintptr_t *start, uintptr_t *end,
+        int *readable, int *writable, int *executable) {
+    uintptr_t a = 0, b = 0;
+    int digits = 0;
+    const char *p = line;
+    if (!p) return 0;
+    while (*p) {
+        int v;
+        if (*p >= '0' && *p <= '9') v = *p - '0';
+        else if (*p >= 'a' && *p <= 'f') v = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F') v = *p - 'A' + 10;
+        else break;
+        if (a > (UINTPTR_MAX >> 4)) return 0;
+        a = (a << 4) | (uintptr_t)v;
+        ++digits; ++p;
+    }
+    if (!digits || *p++ != '-') return 0;
+    digits = 0;
+    while (*p) {
+        int v;
+        if (*p >= '0' && *p <= '9') v = *p - '0';
+        else if (*p >= 'a' && *p <= 'f') v = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F') v = *p - 'A' + 10;
+        else break;
+        if (b > (UINTPTR_MAX >> 4)) return 0;
+        b = (b << 4) | (uintptr_t)v;
+        ++digits; ++p;
+    }
+    if (!digits || b <= a || *p++ != ' ') return 0;
+    if (!p[0] || !p[1] || !p[2]) return 0;
+    *start = a; *end = b;
+    *readable = p[0] == 'r';
+    *writable = p[1] == 'w';
+    *executable = p[2] == 'x';
+    return 1;
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_linker_maps_consistency(void) {
+    ph_linker_map_ctx_t ctx;
+    my_memset(&ctx, 0, sizeof(ctx));
+    vm_dl_iterate_phdr(ph_collect_exec_segments_cb, &ctx);
+    if (ctx.invalid || ctx.count == 0) {
+        PH_NUKE("invalid linker ELF metadata");
+        nuke_app();
+    }
+
+    PH_AES(_maps, PROC_MAPS);
+    int fd = vm_openat(AT_FDCWD, _maps, O_RDONLY | O_CLOEXEC, 0);
+    PH_ZERO(_maps, SP_BUF_SZ);
+    if (fd < 0) {
+        PH_NUKE("cannot verify executable maps");
+        nuke_app();
+    }
+
+    char line[MAX_LINE];
+    while (vm_read_one_line(fd, line, MAX_LINE) > 0) {
+        uintptr_t ms = 0, me = 0;
+        int mr = 0, mw = 0, mx = 0;
+        if (!ph_parse_maps_range(line, &ms, &me, &mr, &mw, &mx)) continue;
+        if (!mx) continue;
+        for (unsigned int i = 0; i < ctx.count; ++i) {
+            ph_exec_segment_t *seg = &ctx.seg[i];
+            if (ms <= seg->start && me >= seg->end &&
+                (!seg->need_read || mr) && !mw) {
+                seg->seen = 1;
+            }
+        }
+    }
+    vm_close(fd);
+
+    for (unsigned int i = 0; i < ctx.count; ++i) {
+        if (!ctx.seg[i].seen) {
+            ph_secure_zero(&ctx, sizeof(ctx));
+            PH_NUKE("linker executable hidden from maps");
+            nuke_app();
+        }
+    }
+    ph_secure_zero(&ctx, sizeof(ctx));
+}
+
+/*
  * BlackDex is not a privileged external memory reader in its normal mode. It
  * hosts the protected APK inside its own process, loads libblackdex.so there,
  * then hooks ART/DexFile while Phantom would otherwise create plaintext DEX.
@@ -1102,6 +1282,7 @@ static __attribute__((noinline)) void detect_general_dumper_before_decrypt(void)
     detect_frida_websocket(); /* active Frida server protocol */
     detect_ebpf_uprobe();     /* active kernel uprobe instrumentation */
     detect_riru_zygisk();     /* maps, linker, and known hook framework paths */
+    detect_linker_maps_consistency(); /* linker PT_LOAD vs procfs permissions */
 }
 
 // ?
@@ -2039,6 +2220,146 @@ static uint8_t *inflate_alloc(const uint8_t *in, size_t in_len, size_t *out_len)
     return buf;
 }
 
+/*
+ * Direct DEX backing store.
+ *
+ * ART may lazily resolve classes from InMemoryDexClassLoader after its
+ * constructor returns, so successful direct mappings must remain valid for the
+ * class-loader lifetime. They are read-only and MADV_DONTDUMP; failed loads and
+ * library teardown securely wipe and unmap them.
+ */
+#define PH_MAX_DIRECT_DEX_MAPS 64
+typedef struct {
+    void  *base;
+    size_t map_len;
+    size_t data_len;
+} ph_direct_dex_map_t;
+
+static ph_direct_dex_map_t g_direct_dex_maps[PH_MAX_DIRECT_DEX_MAPS];
+static volatile unsigned int g_direct_dex_count = 0;
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int ph_stage_policy_vm(size_t data_len, size_t map_len) {
+    if (data_len < 112 || data_len > MAX_SZ) return 0;
+    if (map_len < data_len || (map_len & 4095u) != 0) return 0;
+    if (map_len - data_len >= 4096u) return 0;
+    return 1;
+}
+
+static __attribute__((noinline)) void ph_wipe_unmap_direct(
+        void *base, size_t map_len) {
+    if (!base || base == MAP_FAILED || map_len == 0) return;
+    if (vm_mprotect(base, map_len, PROT_READ | PROT_WRITE) == 0) {
+        ph_secure_zero(base, map_len);
+        vm_madvise(base, map_len, MADV_DONTNEED);
+    }
+    vm_munmap(base, map_len);
+}
+
+static __attribute__((noinline)) void ph_release_direct_dex_maps(void) {
+    unsigned int count = g_direct_dex_count;
+    if (count > PH_MAX_DIRECT_DEX_MAPS) count = PH_MAX_DIRECT_DEX_MAPS;
+    for (unsigned int i = 0; i < count; ++i) {
+        ph_wipe_unmap_direct(g_direct_dex_maps[i].base,
+                             g_direct_dex_maps[i].map_len);
+        g_direct_dex_maps[i].base = NULL;
+        g_direct_dex_maps[i].map_len = 0;
+        g_direct_dex_maps[i].data_len = 0;
+    }
+    g_direct_dex_count = 0;
+}
+
+__attribute__((destructor))
+static void ph_direct_dex_destructor(void) {
+    ph_release_direct_dex_maps();
+}
+
+/*
+ * Probe through the actual parent class loader rather than FindClass(), whose
+ * result depends on the native caller's loader context. A normal
+ * ClassNotFoundException is expected and cleared; a returned Class proves the
+ * Xposed bridge is present in this process.
+ */
+static __attribute__((noinline)) void detect_java_xposed_bridge(
+        JNIEnv *env, jobject parent_cl) {
+    if (!env || !parent_cl) {
+        PH_NUKE("missing class loader for hook probe");
+        nuke_app();
+    }
+    jclass loader_cls = (*env)->GetObjectClass(env, parent_cl);
+    if (!loader_cls || (*env)->ExceptionCheck(env)) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        PH_NUKE("cannot inspect application class loader");
+        nuke_app();
+    }
+    jmethodID load_class = (*env)->GetMethodID(
+            env, loader_cls, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+    if (!load_class || (*env)->ExceptionCheck(env)) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, loader_cls);
+        PH_NUKE("cannot resolve class loader probe");
+        nuke_app();
+    }
+
+    char name[48];
+    name[0]='d'; name[1]='e'; name[2]='.'; name[3]='r'; name[4]='o';
+    name[5]='b'; name[6]='v'; name[7]='.'; name[8]='a'; name[9]='n';
+    name[10]='d'; name[11]='r'; name[12]='o'; name[13]='i'; name[14]='d';
+    name[15]='.'; name[16]='x'; name[17]='p'; name[18]='o'; name[19]='s';
+    name[20]='e'; name[21]='d'; name[22]='.'; name[23]='X'; name[24]='p';
+    name[25]='o'; name[26]='s'; name[27]='e'; name[28]='d'; name[29]='B';
+    name[30]='r'; name[31]='i'; name[32]='d'; name[33]='g'; name[34]='e';
+    name[35]='\0';
+
+    jstring target = (*env)->NewStringUTF(env, name);
+    PH_ZERO(name, sizeof(name));
+    if (!target || (*env)->ExceptionCheck(env)) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, loader_cls);
+        PH_NUKE("cannot create hook probe");
+        nuke_app();
+    }
+
+    jobject found = (*env)->CallObjectMethod(env, parent_cl, load_class, target);
+    jthrowable thrown = NULL;
+    if ((*env)->ExceptionCheck(env)) {
+        thrown = (*env)->ExceptionOccurred(env);
+        (*env)->ExceptionClear(env);
+    }
+    (*env)->DeleteLocalRef(env, target);
+    (*env)->DeleteLocalRef(env, loader_cls);
+    if (found) {
+        (*env)->DeleteLocalRef(env, found);
+        if (thrown) (*env)->DeleteLocalRef(env, thrown);
+        PH_NUKE("Xposed bridge class present");
+        nuke_app();
+    }
+    if (thrown) {
+        char cnfe_name[33];
+        cnfe_name[0]='j'; cnfe_name[1]='a'; cnfe_name[2]='v'; cnfe_name[3]='a';
+        cnfe_name[4]='/'; cnfe_name[5]='l'; cnfe_name[6]='a'; cnfe_name[7]='n';
+        cnfe_name[8]='g'; cnfe_name[9]='/'; cnfe_name[10]='C'; cnfe_name[11]='l';
+        cnfe_name[12]='a'; cnfe_name[13]='s'; cnfe_name[14]='s';
+        cnfe_name[15]='N'; cnfe_name[16]='o'; cnfe_name[17]='t';
+        cnfe_name[18]='F'; cnfe_name[19]='o'; cnfe_name[20]='u';
+        cnfe_name[21]='n'; cnfe_name[22]='d'; cnfe_name[23]='E';
+        cnfe_name[24]='x'; cnfe_name[25]='c'; cnfe_name[26]='e';
+        cnfe_name[27]='p'; cnfe_name[28]='t'; cnfe_name[29]='i';
+        cnfe_name[30]='o'; cnfe_name[31]='n'; cnfe_name[32]='\0';
+        jclass cnfe = (*env)->FindClass(env, cnfe_name);
+        PH_ZERO(cnfe_name, sizeof(cnfe_name));
+        int expected_absence = cnfe && (*env)->IsInstanceOf(env, thrown, cnfe);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        if (cnfe) (*env)->DeleteLocalRef(env, cnfe);
+        (*env)->DeleteLocalRef(env, thrown);
+        if (!expected_absence) {
+            PH_NUKE("class loader hook probe failed");
+            nuke_app();
+        }
+    }
+    /* ClassNotFoundException is the expected clean-device result. */
+}
+
 // ?
 // nativeLoadShards -- JNI entry-point  [REPLACES nativeDecryptShard for API 27+]
 //
@@ -2087,17 +2408,26 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         return NULL;
     }
     detect_general_dumper_before_decrypt();
+    detect_java_xposed_bridge(env, j_parent_cl);
 
     jobject  result_cl    = NULL;
     uint8_t  salt[16]     = {0};
     uint8_t  pkg_hash[32] = {0};
     uint8_t  key[16]      = {0};
 
-    /* Track every plaintext jbyteArray so we can zero them all before return */
+    /* Legacy Java-array path remains source-compatible but is disabled in
+       production unless PH_USE_LEGACY_JAVA_DEX_BUFFERS is explicitly set. */
     jbyteArray plain_arrays[64];
     int        n_plains = 0;
+    ph_direct_dex_map_t pending_maps[PH_MAX_DIRECT_DEX_MAPS];
+    int        n_pending_maps = 0;
     int        i;
-    for (i = 0; i < 64; i++) plain_arrays[i] = NULL;
+    for (i = 0; i < 64; i++) {
+        plain_arrays[i] = NULL;
+        pending_maps[i].base = NULL;
+        pending_maps[i].map_len = 0;
+        pending_maps[i].data_len = 0;
+    }
 
     /* ── 1. Salt ──────────────────────────────────────────────────────────── */
     if (!j_salt) {
@@ -2182,16 +2512,14 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             goto cleanup;
         }
 
+#if defined(PH_USE_LEGACY_JAVA_DEX_BUFFERS)
         jmethodID wrap = (*env)->GetStaticMethodID(env, bb_cl, "wrap",
                              "([B)Ljava/nio/ByteBuffer;");
-        if (!wrap) {
+        if (!wrap || (*env)->ExceptionCheck(env)) {
             if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
             goto cleanup;
         }
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-            goto cleanup;
-        }
+#endif
 
         jmethodID ctor = (*env)->GetMethodID(env, imdcl, "<init>",
                              "([Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
@@ -2305,7 +2633,13 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
                 goto cleanup;
             }
 
-            /* Plaintext → jbyteArray (stays inside this JNI call, never returned) */
+            if (plain_len > (size_t)INT32_MAX) {
+                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+                goto cleanup;
+            }
+
+#if defined(PH_USE_LEGACY_JAVA_DEX_BUFFERS)
+            /* Explicit compatibility build: preserve the former Java-array path. */
             jbyteArray j_dex = (*env)->NewByteArray(env, (jsize)plain_len);
             if (!j_dex || (*env)->ExceptionCheck(env)) {
                 if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
@@ -2335,6 +2669,52 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
                 goto cleanup;
             }
             (*env)->DeleteLocalRef(env, bb);
+#else
+            /*
+             * Production path: plaintext moves from the temporary inflate
+             * allocation into a private native mapping, not a Java byte[].
+             */
+            size_t map_len = (plain_len + 4095u) & ~(size_t)4095u;
+            if (!ph_stage_policy_vm(plain_len, map_len)) {
+                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+                goto cleanup;
+            }
+            void *dex_map = vm_mmap_private_rw(map_len);
+            if (dex_map == MAP_FAILED) {
+                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+                goto cleanup;
+            }
+            memcpy(dex_map, plain_buf, plain_len);
+            ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+            plain_buf = NULL;
+            vm_madvise(dex_map, map_len, MADV_DONTDUMP);
+#ifdef MADV_DONTFORK
+            vm_madvise(dex_map, map_len, MADV_DONTFORK);
+#endif
+            if (vm_mprotect(dex_map, map_len, PROT_READ) != 0) {
+                ph_wipe_unmap_direct(dex_map, map_len);
+                goto cleanup;
+            }
+
+            jobject bb = (*env)->NewDirectByteBuffer(
+                    env, dex_map, (jlong)plain_len);
+            if (!bb || (*env)->ExceptionCheck(env)) {
+                if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                ph_wipe_unmap_direct(dex_map, map_len);
+                goto cleanup;
+            }
+            pending_maps[n_pending_maps].base = dex_map;
+            pending_maps[n_pending_maps].map_len = map_len;
+            pending_maps[n_pending_maps].data_len = plain_len;
+            ++n_pending_maps;
+            (*env)->SetObjectArrayElement(env, bufs, i, bb);
+            if ((*env)->ExceptionCheck(env)) {
+                (*env)->ExceptionClear(env);
+                (*env)->DeleteLocalRef(env, bb);
+                goto cleanup;
+            }
+            (*env)->DeleteLocalRef(env, bb);
+#endif
         }
 
         if (!ph_load_advance(PH_LOAD_SHARDS_LOADING, PH_LOAD_CLASSLOADER)) {
@@ -2357,6 +2737,27 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             result_cl = NULL;
             goto cleanup;
         }
+
+#if !defined(PH_USE_LEGACY_JAVA_DEX_BUFFERS)
+        /*
+         * Commit successful backing mappings only after ART accepted every
+         * shard. The one-shot loader state prevents concurrent commits.
+         */
+        if (g_direct_dex_count != 0 ||
+            n_pending_maps != sc ||
+            n_pending_maps > PH_MAX_DIRECT_DEX_MAPS) {
+            (*env)->DeleteLocalRef(env, result_cl);
+            result_cl = NULL;
+            goto cleanup;
+        }
+        for (i = 0; i < n_pending_maps; ++i) {
+            g_direct_dex_maps[i] = pending_maps[i];
+            pending_maps[i].base = NULL;
+            pending_maps[i].map_len = 0;
+            pending_maps[i].data_len = 0;
+        }
+        g_direct_dex_count = (unsigned int)n_pending_maps;
+#endif
     }
 
     /*
@@ -2428,6 +2829,14 @@ cleanup:
             }
         }
     }
+    for (i = 0; i < n_pending_maps; ++i) {
+        if (pending_maps[i].base) {
+            ph_wipe_unmap_direct(pending_maps[i].base,
+                                 pending_maps[i].map_len);
+            pending_maps[i].base = NULL;
+        }
+    }
+    ph_secure_zero(pending_maps, sizeof(pending_maps));
     ph_secure_zero(salt,     sizeof(salt));
     ph_secure_zero(pkg_hash, sizeof(pkg_hash));
     ph_secure_zero(key,      sizeof(key));

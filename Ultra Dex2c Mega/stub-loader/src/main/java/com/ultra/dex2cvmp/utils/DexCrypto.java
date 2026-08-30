@@ -57,16 +57,14 @@ public class DexCrypto {
      * plaintext DEX data from being returned across the JNI boundary.
      *
      * nativeLoadShards() closes that gap:
-     *  1. Decrypts every shard to a native malloc buffer (key never leaves C stack).
-     *  2. Copies each plaintext into a jbyteArray that exists only inside this
-     *     JNI call — it is never returned to Java code.
-     *  3. Wraps each jbyteArray in ByteBuffer.wrap() via JNI.
+     *  1. Decrypts every shard inside native code (key never leaves C stack).
+     *  2. Moves plaintext into private page-aligned native mappings.
+     *  3. Makes each mapping read-only and exposes only a direct ByteBuffer to ART.
      *  4. Calls new InMemoryDexClassLoader(ByteBuffer[], parent) via JNI —
      *     ART parses all DEX files synchronously inside that constructor.
-     *  5. Zeroes every plaintext jbyteArray (Layer-2a wipe).
-     *  6. Scans /proc/self/maps and zeroes ART's internal anonymous mmap
-     *     copies via mprotect + direct write (Layer-2b wipe).
-     *  7. Returns only the ClassLoader — no DEX bytes cross the JNI boundary.
+     *  5. Keeps only the read-only, MADV_DONTDUMP backing required by lazy ART.
+     *  6. Optionally hardens ART's anonymous mappings on validated runtimes.
+     *  7. Returns only the ClassLoader — no plaintext byte[] crosses JNI.
      *
      * Hooking the return of this function yields only a ClassLoader reference.
      *

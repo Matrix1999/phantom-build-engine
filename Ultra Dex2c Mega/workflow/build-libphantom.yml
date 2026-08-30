@@ -28,7 +28,7 @@ jobs:
       - name: Test XChaCha20-Poly1305 implementation
         run: |
           cc -std=c11 -O2 -Wall -Wextra \
-            "Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_chacha20poly1305_test.c" \
+            "Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_chacha20poly1305_test.c" \
             -o /tmp/phantom_xchacha_test
           /tmp/phantom_xchacha_test
 
@@ -110,7 +110,7 @@ jobs:
         timeout-minutes: 30
         run: |
           set -e
-          SRC="Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_key.c"
+          SRC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
 
           AMICE_PASSES=(
             AMICE_VM_VIRTUALIZE=true
@@ -158,7 +158,7 @@ jobs:
       - name: VMP section audit (arm64 + arm32)
         run: |
           set -e
-          PATTERN="detect_ptrace|detect_frida|detect_ebpf|detect_riru|detect_root|check_rooted|nuke_app|hook_phdr|parse_proc_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_init|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
+          PATTERN="detect_ptrace|detect_frida|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
             if [ "$OBJ" = "phantom_arm64.o" ]; then
               ABI="arm64"
@@ -206,7 +206,11 @@ jobs:
               sha256_block \
               vm_dl_iterate_phdr \
               vm_read_one_line \
-              vm_spawn_watcher; do
+              vm_spawn_watcher \
+              ph_collect_exec_segments_cb \
+              ph_parse_maps_range \
+              detect_linker_maps_consistency \
+              ph_stage_policy_vm; do
               if grep -q "amice\.vm.*${target}" "$SECTION_FILE"; then
                 echo "✅ ${target}"
               else
@@ -287,7 +291,7 @@ jobs:
           from pathlib import Path
 
           native = Path(
-              "Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_key.c"
+              "Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
           ).read_text()
 
           if "uint32_t material[8];" in native or "ctx->material" in native:
@@ -354,8 +358,8 @@ jobs:
 
       - name: Encrypt blobs
         run: |
-          python3 "Ultra Dex2C VMP/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
-          python3 "Ultra Dex2C VMP/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm.so  libphantom_arm.blob
+          python3 "Ultra Dex2c Mega/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
+          python3 "Ultra Dex2c Mega/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm.so  libphantom_arm.blob
           ls -lh libphantom_arm64.blob libphantom_arm.blob
 
       - name: Install generated Phantom blobs into project assets
@@ -363,7 +367,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          ASSET_DIR="Ultra Dex2C VMP/src/main/assets/phantom"
+          ASSET_DIR="Ultra Dex2c Mega/src/main/assets/phantom"
           mkdir -p "$ASSET_DIR"
           cp libphantom_arm64.blob "$ASSET_DIR/libphantom_arm64.blob"
           cp libphantom_arm.blob "$ASSET_DIR/libphantom_arm.blob"

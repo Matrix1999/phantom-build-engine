@@ -173,9 +173,8 @@ public class DexProtector {
 
         // ── Single native call does everything ────────────────────────────
         // nativeLoadShards() decrypts all shards, constructs
-        // InMemoryDexClassLoader via JNI, zeroes every plaintext byte[]
-        // (Layer-2a), and wipes ART's internal mmap copies (Layer-2b) —
-        // all inside one JNI call.
+        // InMemoryDexClassLoader via read-only native direct buffers, and keeps
+        // plaintext out of Java byte[] objects — all inside one JNI call.
         //
          // WHY: The old per-shard Java decryption pattern exposed the full
          // plaintext DEX at the Java level between decryption and loading.
