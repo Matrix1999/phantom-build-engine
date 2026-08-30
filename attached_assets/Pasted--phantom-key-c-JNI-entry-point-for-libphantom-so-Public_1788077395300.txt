@@ -19,14 +19,14 @@
 // Decrypts and loads DEX buffers inside one JNI call so no plaintext DEX byte[]
 // is returned to Java code. Successful native mappings remain live for ART.
 //
-// LAYER 2  detect_frida_loop()  [1 s cadence, background thread]
-// Frida/ptrace heuristics, TracerPid scans, self-observable proc-fd dump
-// artifacts, eBPF probe detection, JDWP thread scan, and framework checks.
+// LAYER 2  detect_frida_loop()  [5 s cadence, background thread]
+// Frida/ptrace heuristics PLUS eBPF uprobe detection, JDWP thread scan,
+// Riru/Zygisk/Xposed detection, root detection, and disk-vs-mem ELF compare.
 //
-// LAYER 3  BLOCK_ROOTED_DEVICES (optional, salt-controlled policy)
-// When enabled by the protected bundle, the runtime checks SELinux, su,
-// Magisk/KernelSU paths, capabilities, mounts, and build properties.
-// This is still not a defense against a modified/privileged kernel.
+// LAYER 3  BLOCK_ROOTED_DEVICES (optional, compile-time opt-in via UI toggle)
+// If compiled with -DBLOCK_ROOTED_DEVICES, the constructor reads the SELinux
+// enforce node.  Rooted phones (Magisk/KernelSU) set setenforce 0 → SELinux
+// permissive → immediate nuke.  Non-rooted phones always read '1' → pass.
 //
 // detect_frida_init() fires via __attribute__((constructor)) the instant
 // System.load(libphantom.so) is called -- before nativeLoadShards is reached.
@@ -68,7 +68,6 @@
 #include "phantom_cipher.h"
 #include "phantom_chacha20poly1305.h"
 #include "phantom_pstrings.inc"
-#include "phantom_integrity.inc"
 
 /*
  * Runtime diagnostics are disabled for normal/release builds. Enable with
@@ -863,79 +862,6 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
     vm_close(dfd);
 }
 
-/* Defined after the SHA-256 implementation. */
-static __attribute__((noinline)) void detect_phantom_self_integrity(void);
-
-/*
- * Self-observable procfs dump artifacts.
- *
- * A normal external reader of /proc/<pid>/mem does not create a file
- * descriptor in the target process, so this is intentionally additive to
- * detect_ptrace() and the per-thread TracerPid scan rather than a replacement
- * for them.  It catches injected/in-process dump helpers that leave handles
- * to memory or kernel-process interfaces open in our fd table.
- *
- * The paths are high-confidence indicators for this process: Phantom itself
- * never opens per-process proc memory, pagemap, kcore, or kmem descriptors.
- * Do not fail closed on
- * ordinary maps/status descriptors because Android runtimes legitimately use
- * those files.
- */
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) void detect_proc_dump_artifacts(void) {
-    PH_AES(_pfd, PROC_FD);
-    int dfd = vm_openat(AT_FDCWD, _pfd, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
-    PH_ZERO(_pfd, SP_BUF_SZ);
-    if (dfd < 0) return;
-
-    PH_AES(_mem, PROC_MEM_SUFFIX);
-    PH_AES(_page, PROC_PAGEMAP_SUFFIX);
-    PH_AES(_kcore, PROC_KCORE_SUFFIX);
-    PH_AES(_kmem, PROC_KMEM_SUFFIX);
-
-    char dirbuf[2048];
-    ssize_t nread;
-    while ((nread = vm_getdents64(dfd, dirbuf, sizeof(dirbuf))) > 0) {
-        for (ssize_t off = 0; off < nread; ) {
-            struct ph_dirent64 *de = (struct ph_dirent64 *)(dirbuf + off);
-            if (de->d_reclen < 24 || off + de->d_reclen > nread) break;
-            off += de->d_reclen;
-            if (de->d_name[0] == '.' && (de->d_name[1] == '\0' ||
-                (de->d_name[1] == '.' && de->d_name[2] == '\0'))) continue;
-
-            char fdpath[MAX_LENGTH] = "";
-            PH_AES(_base, PROC_FD);
-            my_path_cat3(fdpath, MAX_LENGTH, _base, "/", de->d_name);
-            PH_ZERO(_base, SP_BUF_SZ);
-
-            char target[MAX_LENGTH] = "";
-            long target_len = vm_readlinkat(
-                    AT_FDCWD, fdpath, target, MAX_LENGTH - 1u);
-            if (target_len < 0) continue;
-            if (target_len >= MAX_LENGTH) target_len = MAX_LENGTH - 1;
-            target[target_len] = '\0';
-
-            if (my_strstr(target, _mem) || my_strstr(target, _page) ||
-                my_strstr(target, _kcore) || my_strstr(target, _kmem)) {
-                PH_ZERO(_mem, SP_BUF_SZ);
-                PH_ZERO(_page, SP_BUF_SZ);
-                PH_ZERO(_kcore, SP_BUF_SZ);
-                PH_ZERO(_kmem, SP_BUF_SZ);
-                vm_close(dfd);
-                PH_NUKE("suspicious proc memory/kernel fd");
-                nuke_app();
-            }
-            PH_ZERO(target, sizeof(target));
-        }
-    }
-
-    PH_ZERO(_mem, SP_BUF_SZ);
-    PH_ZERO(_page, SP_BUF_SZ);
-    PH_ZERO(_kcore, SP_BUF_SZ);
-    PH_ZERO(_kmem, SP_BUF_SZ);
-    vm_close(dfd);
-}
-
 
 
 
@@ -988,56 +914,6 @@ static __attribute__((noinline)) void detect_ebpf_uprobe(void) {
                 int hit = my_strstr(buf, _la) != NULL || my_strstr(buf, _dd) != NULL;
                 PH_ZERO(_la, SP_BUF_SZ); PH_ZERO(_dd, SP_BUF_SZ);
                 if (hit) { PH_NUKE("eBPF uprobe on libart detected"); nuke_app(); }
-            }
-        }
-    }
-
-    /*
-     * Kernel kprobes are a separate event source from uprobes.  Only active
-     * entries naming libart or a DEX dumper are hostile; the mere presence of
-     * a readable tracing filesystem is not.
-     */
-    {
-        PH_AES(_kp1, PATH_KPROBE_DBG);
-        int fd = vm_openat(AT_FDCWD, _kp1, O_RDONLY | O_CLOEXEC, 0);
-        PH_ZERO(_kp1, SP_BUF_SZ);
-        if (fd >= 0) {
-            my_memset(buf, 0, sizeof(buf));
-            ssize_t n = vm_read(fd, buf, sizeof(buf) - 1);
-            vm_close(fd);
-            if (n > 0) {
-                PH_AES(_la, STR_LIBART);
-                PH_AES(_dd, STR_DEX_DUMP);
-                int hit = my_strstr(buf, _la) != NULL ||
-                          my_strstr(buf, _dd) != NULL;
-                PH_ZERO(_la, SP_BUF_SZ);
-                PH_ZERO(_dd, SP_BUF_SZ);
-                if (hit) {
-                    PH_NUKE("eBPF kprobe on libart detected");
-                    nuke_app();
-                }
-            }
-        }
-    }
-    {
-        PH_AES(_kp2, PATH_KPROBE);
-        int fd = vm_openat(AT_FDCWD, _kp2, O_RDONLY | O_CLOEXEC, 0);
-        PH_ZERO(_kp2, SP_BUF_SZ);
-        if (fd >= 0) {
-            my_memset(buf, 0, sizeof(buf));
-            ssize_t n = vm_read(fd, buf, sizeof(buf) - 1);
-            vm_close(fd);
-            if (n > 0) {
-                PH_AES(_la, STR_LIBART);
-                PH_AES(_dd, STR_DEX_DUMP);
-                int hit = my_strstr(buf, _la) != NULL ||
-                          my_strstr(buf, _dd) != NULL;
-                PH_ZERO(_la, SP_BUF_SZ);
-                PH_ZERO(_dd, SP_BUF_SZ);
-                if (hit) {
-                    PH_NUKE("eBPF kprobe on libart detected");
-                    nuke_app();
-                }
             }
         }
     }
@@ -1466,15 +1342,11 @@ static __attribute__((noinline)) void detect_general_dumper_before_decrypt(void)
         PH_NUKE("process became dumpable");
         nuke_app();
     }
-    PH_LOGI("pre-decrypt gate: self-integrity check");
-    detect_phantom_self_integrity();
     /* All functions below use independent high-confidence observations. */
     PH_LOGI("pre-decrypt gate: ptrace check");
     detect_ptrace();          /* TracerPid */
     PH_LOGI("pre-decrypt gate: thread check");
     detect_frida_threads();   /* per-thread tracer, JDWP, gum-js-loop */
-    PH_LOGI("pre-decrypt gate: proc fd check");
-    detect_proc_dump_artifacts(); /* self-observable /proc memory handles */
     PH_LOGI("pre-decrypt gate: named-pipe check");
     detect_frida_namedpipe(); /* named-pipe and fd artifacts */
     PH_LOGI("pre-decrypt gate: websocket check");
@@ -1562,10 +1434,6 @@ static __attribute__((noinline)) void detect_root(void) {
    Declared volatile so the compiler does not cache it across loop iterations. */
 static volatile int g_block_rooted = 0;
 
-/* Defined below with the other rooted-device probes. */
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) void cr_selinux(void);
-
 /*
  * The DEX loader is deliberately one-shot per process. Every protected process
  * loads its own libphantom instance, so this rejects only repeated/re-entrant
@@ -1606,10 +1474,7 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     timereq.tv_nsec = 0;
     while (1) {
         detect_general_dumper_before_decrypt();
-        if (g_block_rooted) {
-            cr_selinux();                         // re-check enforcement at runtime
-            detect_root();                        // su binaries + Magisk mounts
-        }
+        if (g_block_rooted) detect_root();        // su binaries + Magisk mounts — only if toggle ON
         vm_nanosleep(&timereq, NULL);
     }
     return NULL;
@@ -1781,7 +1646,6 @@ void detect_frida_init(void) {
     PH_LOGI("constructor: begin");
     vm_prctl(PR_SET_DUMPABLE, 0);
     PH_LOGI("constructor: dumpable sealed");
-    detect_phantom_self_integrity();
     vm_spawn_watcher();
     PH_LOGI("constructor: watcher started");
 }
@@ -1884,169 +1748,6 @@ static void sha256(const uint8_t *msg, size_t len, uint8_t out[32]) {
         out[i*4+1] = (uint8_t)(h[i]>>16);
         out[i*4+2] = (uint8_t)(h[i]>>8);
         out[i*4+3] = (uint8_t)(h[i]);
-    }
-}
-
-/*
- * Phantom self-integrity.
- *
- * The build workflow stamps the final ABI's executable PT_LOAD segments. At
- * runtime we locate the loaded object containing this function, hash the same
- * executable segments from memory, and compare against that stamp. Hashing
- * only PF_X/p_filesz bytes avoids mutable data, BSS, and ordinary relocation
- * state. Hashes are combined as SHA256(SHA256(segment_0) || ...), so the
- * runtime never allocates a second copy of the executable image.
- *
- * This catches code-page patching after the authenticated blob is loaded. It
- * does not make a compromised kernel trustworthy: a privileged kernel can
- * change the code and hide the modified pages from the process.
- */
-#define PH_MAX_SELF_EXEC_SEGMENTS 32
-
-typedef struct {
-    uintptr_t start;
-    size_t len;
-} ph_self_exec_range_t;
-
-typedef struct {
-    uintptr_t marker;
-    ph_self_exec_range_t ranges[PH_MAX_SELF_EXEC_SEGMENTS];
-    unsigned int count;
-    int invalid;
-} ph_self_integrity_ctx_t;
-
-static __attribute__((noinline)) int ph_collect_self_exec_segments_cb(
-        struct dl_phdr_info *info, size_t size, void *data) {
-    (void)size;
-    ph_self_integrity_ctx_t *ctx = (ph_self_integrity_ctx_t *)data;
-    if (!ctx || !info || !info->dlpi_phdr || info->dlpi_phnum == 0 ||
-        info->dlpi_phnum > 256) {
-        return 0;
-    }
-
-    uintptr_t base = (uintptr_t)info->dlpi_addr;
-    int owns_marker = 0;
-    for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
-        const ElfW(Phdr) *ph = &info->dlpi_phdr[i];
-        if (ph->p_type != PT_LOAD || !(ph->p_flags & PF_X) ||
-            ph->p_filesz == 0) continue;
-        uintptr_t start = base + (uintptr_t)ph->p_vaddr;
-        uintptr_t end = start + (uintptr_t)ph->p_filesz;
-        if (end <= start) {
-            ctx->invalid = 1;
-            return 1;
-        }
-        if (ctx->marker >= start && ctx->marker < end) owns_marker = 1;
-    }
-    if (!owns_marker) return 0;
-
-    for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
-        const ElfW(Phdr) *ph = &info->dlpi_phdr[i];
-        if (ph->p_type != PT_LOAD || !(ph->p_flags & PF_X) ||
-            ph->p_filesz == 0) continue;
-        if (ctx->count >= PH_MAX_SELF_EXEC_SEGMENTS) {
-            ctx->invalid = 1;
-            return 1;
-        }
-        uintptr_t start = base + (uintptr_t)ph->p_vaddr;
-        uintptr_t end = start + (uintptr_t)ph->p_filesz;
-        if (end <= start) {
-            ctx->invalid = 1;
-            return 1;
-        }
-        ctx->ranges[ctx->count].start = start;
-        ctx->ranges[ctx->count].len = (size_t)(end - start);
-        ctx->count++;
-    }
-    return 1;
-}
-
-/*
- * The address-bearing anchor is intentionally native: taking a function's
- * address prevents Amice from virtualizing that function.  Keeping it separate
- * lets the actual enforcement gate remain VM-backed.
- */
-static __attribute__((noinline, used)) void ph_self_integrity_anchor(void) {
-    __asm__ __volatile__("" ::: "memory");
-}
-
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) void ph_self_hash_range(
-        uintptr_t start, size_t len, uint8_t *digest) {
-    sha256((const uint8_t *)start, len, digest);
-}
-
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) void ph_self_finalize_digest(
-        const uint8_t *segment_hashes, size_t byte_count, uint8_t *actual) {
-    sha256(segment_hashes, byte_count, actual);
-}
-
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) uint32_t ph_self_compare_word(
-        uint32_t actual, uint32_t expected) {
-    return actual ^ expected;
-}
-
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) int ph_self_enforcement_policy(int clean) {
-    return clean == 0;
-}
-
-static __attribute__((noinline)) int ph_self_compare_digest(
-        const uint8_t *actual) {
-    uint32_t diff = 0;
-    uint32_t expected_or = 0;
-    for (unsigned int i = 0; i < 8; ++i) {
-        unsigned int offset = i * 4u;
-        uint32_t actual_word =
-                ((uint32_t)actual[offset]) |
-                ((uint32_t)actual[offset + 1u] << 8) |
-                ((uint32_t)actual[offset + 2u] << 16) |
-                ((uint32_t)actual[offset + 3u] << 24);
-        uint32_t expected_word =
-                ((uint32_t)PHANTOM_EXPECTED_EXEC_SHA256[offset]) |
-                ((uint32_t)PHANTOM_EXPECTED_EXEC_SHA256[offset + 1u] << 8) |
-                ((uint32_t)PHANTOM_EXPECTED_EXEC_SHA256[offset + 2u] << 16) |
-                ((uint32_t)PHANTOM_EXPECTED_EXEC_SHA256[offset + 3u] << 24);
-        diff |= ph_self_compare_word(actual_word, expected_word);
-        expected_or |= expected_word;
-    }
-    return ph_self_enforcement_policy((int)diff) &&
-           !ph_self_enforcement_policy((int)expected_or);
-}
-
-static __attribute__((noinline)) int ph_self_integrity_compute(void) {
-    ph_self_integrity_ctx_t ctx;
-    my_memset(&ctx, 0, sizeof(ctx));
-    ctx.marker = (uintptr_t)&ph_self_integrity_anchor;
-    vm_dl_iterate_phdr(ph_collect_self_exec_segments_cb, &ctx);
-
-    if (ctx.invalid || ctx.count == 0 || ctx.count > PH_MAX_SELF_EXEC_SEGMENTS) {
-        ph_secure_zero(&ctx, sizeof(ctx));
-        return 0;
-    }
-
-    uint8_t segment_hashes[PH_MAX_SELF_EXEC_SEGMENTS * 32];
-    my_memset(segment_hashes, 0, sizeof(segment_hashes));
-    for (unsigned int i = 0; i < ctx.count; ++i) {
-        ph_self_hash_range(ctx.ranges[i].start, ctx.ranges[i].len,
-                           segment_hashes + (i * 32u));
-    }
-
-    uint8_t actual[32];
-    my_memset(actual, 0, sizeof(actual));
-    ph_self_finalize_digest(segment_hashes, (size_t)ctx.count * 32u, actual);
-    int clean = ph_self_compare_digest(actual);
-    ph_secure_zero(actual, sizeof(actual));
-    ph_secure_zero(segment_hashes, sizeof(segment_hashes));
-    ph_secure_zero(&ctx, sizeof(ctx));
-    return clean;
-}
-
-static __attribute__((noinline)) void detect_phantom_self_integrity(void) {
-    if (ph_self_enforcement_policy(ph_self_integrity_compute())) {
-        PH_NUKE("Phantom executable integrity mismatch");
     }
 }
 
