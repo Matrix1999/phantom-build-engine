@@ -159,17 +159,30 @@ jobs:
 
           # CFI requires LTO and matching compiler-rt/linker support. Probe a
           # complete shared object first; unsupported toolchains stay compatible.
-          CFI_FLAGS=()
+          CFI_ARM64_FLAGS=()
           if printf 'int ph_probe(void) { return 0; }\n' | \
              "$CLANG" --target=aarch64-linux-android26 --sysroot="$SYSROOT" \
              -fPIC -flto=thin -fsanitize=cfi -fvisibility=hidden \
              -x c -c -o /tmp/ph-cfi.o - && \
              "$NDK_LINK_ARM64" -shared -flto=thin -fsanitize=cfi \
              /tmp/ph-cfi.o -o /tmp/ph-cfi.so; then
-            CFI_FLAGS=(-flto=thin -fsanitize=cfi)
-            echo "CFI toolchain support: enabled"
+            CFI_ARM64_FLAGS=(-flto=thin -fsanitize=cfi)
+            echo "CFI toolchain support: enabled for arm64"
           else
-            echo "CFI toolchain support: unavailable with this NDK/Amice build"
+            echo "CFI toolchain support: unavailable for arm64"
+          fi
+
+          CFI_ARM32_FLAGS=()
+          if printf 'int ph_probe(void) { return 0; }\n' | \
+             "$CLANG" --target=armv7a-linux-androideabi21 --sysroot="$SYSROOT" \
+             -fPIC -flto=thin -fsanitize=cfi -fvisibility=hidden \
+             -x c -c -o /tmp/ph-cfi-arm32.o - && \
+             "$NDK_LINK_ARM32" -shared -flto=thin -fsanitize=cfi \
+             /tmp/ph-cfi-arm32.o -o /tmp/ph-cfi-arm32.so; then
+            CFI_ARM32_FLAGS=(-flto=thin -fsanitize=cfi)
+            echo "CFI toolchain support: enabled for arm32"
+          else
+            echo "CFI toolchain support: unavailable for arm32"
           fi
 
           LDFLAGS=(
@@ -180,18 +193,18 @@ jobs:
 
           build_arm64() {
             env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
-              "${COMMON_FLAGS[@]}" "${ARM64_BRANCH_FLAGS[@]}" "${CFI_FLAGS[@]}" \
+              "${COMMON_FLAGS[@]}" "${ARM64_BRANCH_FLAGS[@]}" "${CFI_ARM64_FLAGS[@]}" \
               -c "$SRC" -o phantom_arm64.o 2>&1
             "$NDK_LINK_ARM64" "${LDFLAGS[@]}" "${ARM64_BRANCH_FLAGS[@]}" \
-              "${CFI_FLAGS[@]}" -Wl,-soname,libphantom.so \
+              "${CFI_ARM64_FLAGS[@]}" -Wl,-soname,libphantom.so \
               phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
               -o libphantom_arm64.so
           }
 
           build_arm32() {
             env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
-              "${COMMON_FLAGS[@]}" "${CFI_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
-            "$NDK_LINK_ARM32" "${LDFLAGS[@]}" "${CFI_FLAGS[@]}" \
+              "${COMMON_FLAGS[@]}" "${CFI_ARM32_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
+            "$NDK_LINK_ARM32" "${LDFLAGS[@]}" "${CFI_ARM32_FLAGS[@]}" \
               -Wl,-soname,libphantom.so \
               phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
               -o libphantom_arm.so
