@@ -98,3 +98,31 @@ mtime_ms = 1788079253810
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/fe9e69d9-3218-4fc7-9f33-a9ca6cf98e56/558d010a-732f-4e95-876e-38ada470724b"
 storage_version_token = "1788079258572519"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "KAEGRW33Ou5X3pMqK0NCG"
+uri = "file://attached_assets/phantom-integrity-debug-logging-blobs.zip"
+type = "unspecified"
+title = "Phantom integrity debug-logging blobs ZIP"
+description = "Debug-only ARM64 and ARM32 PHB3 blobs. They log only self-integrity begin/result/terminate events. Production Ultra assets remain unchanged."
+logical_id = "c4b48f85-3399-4a35-8045-38bc83efc317"
+content_hash = "sha256:c732a31fbf371c5016e36eb21b04751bfeeef4add22e68d47b7f38263ab09df0"
+size = 327475
+mtime_ms = 1788079706611
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/c4b48f85-3399-4a35-8045-38bc83efc317/7a3aeecd-9116-41bc-97ec-055b88f1b230"
+storage_version_token = "1788079728756922"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "9nWSP30Ss8jG77P2_Qj7P"
+uri = "file://attached_assets/phantom-integrity-debug-tampered-blobs.zip"
+type = "unspecified"
+title = "Phantom tampered integrity debug blobs ZIP"
+description = "Decrypts to debug-logging Phantom libraries with one controlled executable-segment instruction changed per ABI. The embedded integrity stamp is unchanged, so installation testing should log mismatch and terminate the app. Production assets remain untouched."
+logical_id = "53ba0c21-7bbc-4f0c-b3ea-9e14dc164a78"
+content_hash = "sha256:f8faad46a5531277b84383c6ebddace5985d5b538bf55784cf45e1c38cea550a"
+size = 327481
+mtime_ms = 1788079826522
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/53ba0c21-7bbc-4f0c-b3ea-9e14dc164a78/b89de10d-7bda-4e87-b7b2-6775390dad37"
+storage_version_token = "1788079831284702"
+content_type = "application/octet-stream"
