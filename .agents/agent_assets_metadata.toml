@@ -14,3 +14,17 @@ mtime_ms = 1788065773796
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/0d9f58a7-8e28-47d6-a5aa-bfd752d84759/587b3083-ce7d-40de-a67a-25faf5bff170"
 storage_version_token = "1788065786545161"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "Dxl968HW3s0YNJmsmQJtv"
+uri = "file://.local/tasks/add-early-phantom-integrity-gate.md"
+type = "text"
+title = "Phantom runtime fallback checks — task plan"
+description = "Downloadable implementation plan for mirroring the signer and TEE checks in phantom_key.c while preserving guard.cpp, PHX4, and XChaCha authentication."
+logical_id = "f5fd4462-f3f1-4ff2-8f83-4cbd007a1e6d"
+content_hash = "sha256:498b9096a2e85d37c43667ba5e028260c2030ae6c3da7077f3d7b9e5757021cb"
+size = 4657
+mtime_ms = 1788066284815
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/f5fd4462-f3f1-4ff2-8f83-4cbd007a1e6d/daeb2a9a-5da6-4a28-b3c9-47f4c799f8e1"
+storage_version_token = "1788066417372237"
+content_type = "text/markdown"
