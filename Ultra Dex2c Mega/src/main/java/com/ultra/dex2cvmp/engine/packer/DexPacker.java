@@ -139,7 +139,7 @@ public class DexPacker {
         }
         String pkgName = ManifestPatcher.packageName;
 
-        // ── 3. Generate per-APK salt, embed block-rooted flag, derive session key ──
+        // ── 3. Generate per-APK salt, embed block-rooted flag, derive seed ──────
         // The flag is hidden in bit 7 of salt[0] — invisible to Java/hook layer.
         // libphantom.so reads + strips it before KDF, so the derived key is the
         // same whether the flag is set or not (clean salt = salt[0] & 0x7F for KDF).
@@ -245,9 +245,14 @@ public class DexPacker {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private byte[] encryptDexToBytes(File input, byte[] key, int shardIndex) throws Exception {
+        byte[] shardKey = DexCrypto.deriveShardKey(key, shardIndex);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (InputStream in = new FileInputStream(input)) {
-            DexCrypto.encrypt(key, in, baos);
+        try {
+            try (InputStream in = new FileInputStream(input)) {
+                DexCrypto.encrypt(shardKey, in, baos);
+            }
+        } finally {
+            java.util.Arrays.fill(shardKey, (byte) 0);
         }
         byte[] inner = baos.toByteArray();
         try {

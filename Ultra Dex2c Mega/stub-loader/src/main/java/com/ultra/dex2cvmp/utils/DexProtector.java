@@ -38,7 +38,7 @@ import java.util.Arrays;
 public class DexProtector {
     @SuppressLint("StaticFieldLeak")
     public static Context mContext;
-    private static final int PHANTOM_BUNDLE_VERSION = 5;
+    private static final int PHANTOM_BUNDLE_VERSION = 6;
     private static final int BLOB_ROOT_SHARE_BYTES = 32;
 
     // ── Runtime string builders — no sensitive literals in DEX string pool ──────
