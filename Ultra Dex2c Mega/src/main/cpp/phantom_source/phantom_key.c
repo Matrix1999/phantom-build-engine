@@ -877,7 +877,8 @@ static __attribute__((noinline)) void detect_phantom_self_integrity(void);
  * to memory or kernel-process interfaces open in our fd table.
  *
  * The paths are high-confidence indicators for this process: Phantom itself
- * never opens /proc/*/mem, pagemap, kcore, or kmem.  Do not fail closed on
+ * never opens per-process proc memory, pagemap, kcore, or kmem descriptors.
+ * Do not fail closed on
  * ordinary maps/status descriptors because Android runtimes legitimately use
  * those files.
  */
