@@ -7,4 +7,4 @@ Phantom self-integrity uses a per-ABI build-time digest of the executable ELF PT
 
 **Why:** Hashing mutable data or relying on a single patchable Java comparison would create false positives or an easy bypass. Executable-segment hashing catches code-page changes while avoiding ordinary data/relocation state.
 
-**How to apply:** Any change to Phantom executable code requires the ABI stamping/rebuild workflow before producing new blobs. This remains best-effort userspace protection and cannot defeat a privileged kernel that can hide modified pages.
+**How to apply:** Stamp each final ABI after ELF stripping/hardening, then verify the digest before encryption. Any code change requires the ABI rebuild workflow; this remains best-effort userspace protection and cannot defeat a privileged kernel that can hide modified pages.
