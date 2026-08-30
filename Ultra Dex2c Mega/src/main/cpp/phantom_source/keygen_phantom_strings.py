@@ -200,6 +200,8 @@ STRINGS = {
     76: ('PROC_KMEM_SUFFIX',    '/kmem'),
     77: ('PATH_KPROBE_DBG',     '/sys/kernel/debug/tracing/kprobe_events'),
     78: ('PATH_KPROBE',         '/sys/kernel/tracing/kprobe_events'),
+    79: ('JAVA_XPOSED_BRIDGE', 'de.robv.android.xposed.XposedBridge'),
+    80: ('JAVA_CNFE',         'java/lang/ClassNotFoundException'),
 }
 
 def c_arr(name, data):

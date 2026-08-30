@@ -2652,18 +2652,9 @@ static __attribute__((noinline)) void detect_java_xposed_bridge(
         nuke_app();
     }
 
-    char name[48];
-    name[0]='d'; name[1]='e'; name[2]='.'; name[3]='r'; name[4]='o';
-    name[5]='b'; name[6]='v'; name[7]='.'; name[8]='a'; name[9]='n';
-    name[10]='d'; name[11]='r'; name[12]='o'; name[13]='i'; name[14]='d';
-    name[15]='.'; name[16]='x'; name[17]='p'; name[18]='o'; name[19]='s';
-    name[20]='e'; name[21]='d'; name[22]='.'; name[23]='X'; name[24]='p';
-    name[25]='o'; name[26]='s'; name[27]='e'; name[28]='d'; name[29]='B';
-    name[30]='r'; name[31]='i'; name[32]='d'; name[33]='g'; name[34]='e';
-    name[35]='\0';
-
-    jstring target = (*env)->NewStringUTF(env, name);
-    PH_ZERO(name, sizeof(name));
+    PH_AES(_xposed_bridge, JAVA_XPOSED_BRIDGE);
+    jstring target = (*env)->NewStringUTF(env, _xposed_bridge);
+    PH_ZERO(_xposed_bridge, SP_BUF_SZ);
     if (!target || (*env)->ExceptionCheck(env)) {
         if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
         (*env)->DeleteLocalRef(env, loader_cls);
@@ -2686,19 +2677,9 @@ static __attribute__((noinline)) void detect_java_xposed_bridge(
         nuke_app();
     }
     if (thrown) {
-        char cnfe_name[33];
-        cnfe_name[0]='j'; cnfe_name[1]='a'; cnfe_name[2]='v'; cnfe_name[3]='a';
-        cnfe_name[4]='/'; cnfe_name[5]='l'; cnfe_name[6]='a'; cnfe_name[7]='n';
-        cnfe_name[8]='g'; cnfe_name[9]='/'; cnfe_name[10]='C'; cnfe_name[11]='l';
-        cnfe_name[12]='a'; cnfe_name[13]='s'; cnfe_name[14]='s';
-        cnfe_name[15]='N'; cnfe_name[16]='o'; cnfe_name[17]='t';
-        cnfe_name[18]='F'; cnfe_name[19]='o'; cnfe_name[20]='u';
-        cnfe_name[21]='n'; cnfe_name[22]='d'; cnfe_name[23]='E';
-        cnfe_name[24]='x'; cnfe_name[25]='c'; cnfe_name[26]='e';
-        cnfe_name[27]='p'; cnfe_name[28]='t'; cnfe_name[29]='i';
-        cnfe_name[30]='o'; cnfe_name[31]='n'; cnfe_name[32]='\0';
-        jclass cnfe = (*env)->FindClass(env, cnfe_name);
-        PH_ZERO(cnfe_name, sizeof(cnfe_name));
+        PH_AES(_cnfe_name, JAVA_CNFE);
+        jclass cnfe = (*env)->FindClass(env, _cnfe_name);
+        PH_ZERO(_cnfe_name, SP_BUF_SZ);
         int expected_absence = cnfe && (*env)->IsInstanceOf(env, thrown, cnfe);
         if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
         if (cnfe) (*env)->DeleteLocalRef(env, cnfe);
