@@ -2,12 +2,6 @@ name: Build libphantom.so + encrypt blobs (amice-vmp)
 
 on:
   workflow_dispatch:
-    inputs:
-      integrity_debug:
-        description: Build a temporary Phantom integrity-diagnostic test blob
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   build-phantom:
@@ -150,18 +144,11 @@ jobs:
             -D__ANDROID__ -DANDROID
             -fpass-plugin="$AMICE_PLUGIN"
           )
-          if [ "${{ inputs.integrity_debug }}" = "true" ]; then
-            COMMON_FLAGS+=( -DPHANTOM_INTEGRITY_DEBUG_LOG=1 )
-            echo "Integrity-only diagnostic logging enabled for this test build"
-          fi
           LDFLAGS=(
             -shared -fPIC -Wl,--gc-sections -Wl,--build-id=none
             -Wl,--version-script=phantom.map
             -Wl,-z,relro -Wl,-z,now -Wl,--strip-all
           )
-          if [ "${{ inputs.integrity_debug }}" = "true" ]; then
-            LDFLAGS+=( -llog )
-          fi
 
           build_arm64() {
             env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \

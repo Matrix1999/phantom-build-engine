@@ -78,20 +78,6 @@
 #define PH_LOGE(...) ((void)0)
 #define PH_NUKE(...) nuke_app()
 
-#if defined(PHANTOM_INTEGRITY_DEBUG_LOG) && PHANTOM_INTEGRITY_DEBUG_LOG
-#include <android/log.h>
-static __attribute__((noinline)) void ph_integrity_debug_event(
-        const char *event, int value) {
-    __android_log_print(ANDROID_LOG_INFO, "PhantomIntegrity",
-                        "self-integrity %s code=%d", event, value);
-}
-#else
-static inline void ph_integrity_debug_event(const char *event, int value) {
-    (void)event;
-    (void)value;
-}
-#endif
-
 // ?
 // Anti-dump / Anti-Frida -- constants & types
 // ?
@@ -2023,12 +2009,7 @@ static __attribute__((noinline)) int ph_self_integrity_compute(void) {
 }
 
 static __attribute__((noinline)) void detect_phantom_self_integrity(void) {
-    ph_integrity_debug_event("begin", 0);
-    int clean = ph_self_integrity_compute();
-    int allowed = ph_self_enforcement_policy(clean);
-    ph_integrity_debug_event(clean ? "pass" : "mismatch", clean);
-    if (allowed) {
-        ph_integrity_debug_event("terminate", 0);
+    if (ph_self_enforcement_policy(ph_self_integrity_compute())) {
         PH_NUKE("Phantom executable integrity mismatch");
     }
 }
