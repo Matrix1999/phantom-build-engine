@@ -2164,9 +2164,12 @@ static volatile unsigned int g_direct_dex_count = 0;
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) int ph_stage_policy_vm(size_t data_len, size_t map_len) {
-    if (data_len < 112 || data_len > MAX_SZ) return 0;
-    if (map_len < data_len || (map_len & 4095u) != 0) return 0;
-    if (map_len - data_len >= 4096u) return 0;
+    if (data_len < 112) return 0;
+    if (data_len > MAX_SZ) return 0;
+    size_t padded_len = data_len + 4095u;
+    if (padded_len < data_len) return 0;
+    padded_len &= ~(size_t)4095u;
+    if (map_len != padded_len) return 0;
     return 1;
 }
 

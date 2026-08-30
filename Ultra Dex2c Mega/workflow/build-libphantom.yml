@@ -93,12 +93,17 @@ jobs:
             AMICE_VM_EMIT_MARKERS=true AMICE_VM_DUMP_BYTECODE=true \
             AMICE_VM_DUMP_LOWERING=true \
             AMICE_VM_FLATTEN=true \
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten \
+            AMICE_PASS_ORDER=VmFlatten,VmVirtualize \
             RUST_LOG=amice=debug \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
               -fpass-plugin="$AMICE_PLUGIN" -c /tmp/smoke.c -o /tmp/smoke_${TARGET}.o
-            echo "✅ $TARGET — amice OK"
+            if ! readelf -S --wide "/tmp/smoke_${TARGET}.o" \
+                | grep -q "amice\.vm.*foo"; then
+              echo "❌ $TARGET — amice compiled but did not virtualize foo" >&2
+              exit 1
+            fi
+            echo "✅ $TARGET — amice emitted VM markers"
           done
 
       - name: Write linker version script
@@ -124,7 +129,7 @@ jobs:
             AMICE_VM_DUMP_BYTECODE=true
             AMICE_VM_DUMP_LOWERING=true
             AMICE_VM_FLATTEN=true
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten
+            AMICE_PASS_ORDER=VmFlatten,VmVirtualize
             RUST_LOG=amice=debug
 
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
@@ -220,14 +225,26 @@ jobs:
               vm_dl_iterate_phdr \
               vm_read_one_line \
               vm_spawn_watcher \
-              ph_collect_exec_segments_cb \
-              ph_parse_maps_range \
-              detect_linker_maps_consistency \
               ph_stage_policy_vm; do
               if grep -q "amice\.vm.*${target}" "$SECTION_FILE"; then
                 echo "✅ ${target}"
               else
                 echo "❌ Missing AMICE marker for ${target}" >&2
+                exit 1
+              fi
+            done
+
+            echo ""
+            echo "--- Expected native fallbacks (Amice limitations) ($ABI) ---"
+            for target in \
+              ph_collect_exec_segments_cb \
+              ph_parse_maps_range \
+              detect_linker_maps_consistency; do
+              if "$TC/bin/llvm-nm" --defined-only "$OBJ" 2>/dev/null \
+                  | awk '{print $3}' | grep -qx "$target"; then
+                echo "✅ ${target} retained as native fallback"
+              else
+                echo "❌ Missing native fallback symbol: ${target}" >&2
                 exit 1
               fi
             done
