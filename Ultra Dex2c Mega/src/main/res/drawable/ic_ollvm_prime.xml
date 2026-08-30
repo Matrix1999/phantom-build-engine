@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Upward pyramid — prime/standard tier -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <!-- Outer triangle -->
+    <path android:fillColor="#2979FF"
+        android:pathData="M16,2 L30,28 L2,28 Z" />
+    <!-- Inner cutout -->
+    <path android:fillColor="#000000"
+        android:pathData="M16,8 L26,26 L6,26 Z" />
+    <!-- Inner fill -->
+    <path android:fillColor="#2979FF"
+        android:pathData="M16,14 L22,24 L10,24 Z" />
+    <!-- Center dot -->
+    <path android:fillColor="#000000"
+        android:pathData="M16,18 A2,2,0,1,1,15.999,18 Z" />
+</vector>

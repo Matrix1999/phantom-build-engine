@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_dialog_dark"
+    android:padding="0dp">
+
+    <!-- Green top accent bar -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:background="@color/accent_green" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <!-- Icon row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="18dp">
+
+            <!-- Shield badge -->
+            <LinearLayout
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:gravity="center"
+                android:background="@drawable/bg_icon_circle_green"
+                android:layout_marginEnd="16dp">
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:src="@drawable/ic_nav_shield"
+                    android:scaleType="fitCenter" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="PERMISSION REQUIRED"
+                    android:textColor="@color/accent_green"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.15"
+                    android:fontFamily="monospace"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Storage Access"
+                    android:textColor="@color/text_primary"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/border"
+            android:layout_marginBottom="18dp" />
+
+        <!-- Info row 1 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="top"
+            android:layout_marginBottom="14dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_folder"
+                android:scaleType="fitCenter"
+                android:layout_marginEnd="12dp"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Read APK files from any folder on your device"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:lineSpacingExtra="3dp" />
+
+        </LinearLayout>
+
+        <!-- Info row 2 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="top"
+            android:layout_marginBottom="14dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_save"
+                android:scaleType="fitCenter"
+                android:layout_marginEnd="12dp"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Save protected APKs to /storage/emulated/0/Dex2C/"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:lineSpacingExtra="3dp"
+                android:fontFamily="monospace" />
+
+        </LinearLayout>
+
+        <!-- Info row 3 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="top"
+            android:layout_marginBottom="22dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_lock"
+                android:scaleType="fitCenter"
+                android:layout_marginEnd="12dp"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="No internet access. Everything stays on-device."
+                android:textColor="@color/accent_green"
+                android:textSize="13sp"
+                android:lineSpacingExtra="3dp" />
+
+        </LinearLayout>
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/border"
+            android:layout_marginBottom="20dp" />
+
+        <!-- System prompt notice -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tap ALLOW — then enable &quot;Allow all files&quot; on the next screen and return here."
+            android:textColor="@color/text_muted"
+            android:textSize="12sp"
+            android:textStyle="italic"
+            android:gravity="center"
+            android:layout_marginBottom="20dp"
+            android:lineSpacingExtra="3dp" />
+
+        <!-- Buttons row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <!-- Skip -->
+            <LinearLayout
+                android:id="@+id/btn_dialog_skip"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:background="@drawable/bg_card_border"
+                android:layout_marginEnd="10dp"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="SKIP"
+                    android:textColor="@color/text_muted"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.08"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <!-- Allow -->
+            <LinearLayout
+                android:id="@+id/btn_dialog_allow"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="2"
+                android:gravity="center"
+                android:background="@drawable/bg_btn_green"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ALLOW ACCESS"
+                    android:textColor="@color/black"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.08"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

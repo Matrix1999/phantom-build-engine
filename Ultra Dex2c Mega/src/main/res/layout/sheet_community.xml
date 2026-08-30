@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/bg_card"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="32dp">
+
+    <!-- Handle -->
+    <View
+        android:layout_width="36dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="20dp"
+        android:background="#44FFFFFF"
+        android:backgroundTint="#44FFFFFF" />
+
+    <!-- ── Developer section ──────────────────────────────── -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="DEVELOPER"
+        android:textColor="@color/accent_green"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.14"
+        android:fontFamily="monospace"
+        android:layout_marginBottom="10dp" />
+
+    <LinearLayout
+        android:id="@+id/btn_contact_dev"
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_sheet_row"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:layout_marginBottom="16dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:gravity="center"
+            android:background="@drawable/bg_icon_circle_blue"
+            android:layout_marginEnd="14dp">
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:src="@drawable/ic_telegram"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Matrix Dev"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Contact developer on Telegram"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="›"
+            android:textColor="#44FFFFFF"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+    <!-- ── Community section ─────────────────────────────── -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="COMMUNITY"
+        android:textColor="@color/accent_green"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.14"
+        android:fontFamily="monospace"
+        android:layout_marginBottom="10dp" />
+
+    <!-- Telegram row -->
+    <LinearLayout
+        android:id="@+id/btn_telegram"
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_sheet_row"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:layout_marginBottom="8dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:gravity="center"
+            android:background="@drawable/bg_icon_circle_blue"
+            android:layout_marginEnd="14dp">
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_telegram"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Telegram Channel"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Updates, releases &amp; direct support"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="›"
+            android:textColor="#44FFFFFF"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+    <!-- WhatsApp row -->
+    <LinearLayout
+        android:id="@+id/btn_whatsapp"
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_sheet_row"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:gravity="center"
+            android:background="@drawable/bg_icon_circle_green"
+            android:layout_marginEnd="14dp">
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_whatsapp"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WhatsApp Group"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Community discussions &amp; quick support"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="›"
+            android:textColor="#44FFFFFF"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+    <!-- ── Credits section ───────────────────────────────── -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1E2A3A"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="CREDITS"
+        android:textColor="@color/accent_purple"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.14"
+        android:fontFamily="monospace"
+        android:layout_marginBottom="10dp" />
+
+    <!-- dex2c credit row -->
+    <LinearLayout
+        android:id="@+id/credit_dex2c"
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_sheet_row"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:gravity="center"
+            android:background="@drawable/bg_icon_circle_blue"
+            android:layout_marginEnd="14dp">
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:src="@drawable/ic_github"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="2dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="dex2c"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text=" OSS "
+                    android:textColor="@color/accent_purple"
+                    android:textSize="9sp"
+                    android:textStyle="bold"
+                    android:background="@drawable/bg_chip_credit"
+                    android:paddingStart="5dp"
+                    android:paddingEnd="5dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="codehasan · DEX to C++ transpiler engine"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="›"
+            android:textColor="@color/accent_purple"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+</LinearLayout>
