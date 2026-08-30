@@ -4,3 +4,4 @@
 - [ART direct DEX lifetime](art-direct-dex-lifetime.md) — direct native DEX mappings must remain read-only and alive while ART may lazily resolve classes.
 - [Amice flatten and VMP](amice-flatten-vmp.md) — keep flattening global, but exclude VM-critical functions from pre-flattening and verify actual bytecode output.
 - [Android linker compatibility](android-linker-compatibility.md) — do not fail closed on linker-versus-maps layout comparisons; Android linker records vary across API/device versions.
+- [Phantom self-integrity](phantom-self-integrity.md) — per-ABI executable-segment stamps catch post-load code patching; rebuild blobs through the stamping workflow.

@@ -125,6 +125,9 @@ jobs:
         run: |
           set -e
           SRC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
+          INTEGRITY_INC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_integrity.inc"
+          STAMPER="Ultra Dex2c Mega/src/main/cpp/phantom_source/stamp_phantom_integrity.py"
+          cp "$INTEGRITY_INC" /tmp/phantom_integrity.placeholder.inc
 
           AMICE_PASSES=(
             AMICE_VM_VIRTUALIZE=true
@@ -160,26 +163,42 @@ jobs:
             -Wl,-z,relro -Wl,-z,now -Wl,--strip-all -llog
           )
 
-          echo "Building arm64-v8a..."
-          env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
-            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o 2>&1
-          "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
-            phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
-            -o libphantom_arm64.so
-          echo "  OK $(wc -c < libphantom_arm64.so) bytes"
+          build_arm64() {
+            env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
+              "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o 2>&1
+            "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
+              phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
+              -o libphantom_arm64.so
+          }
 
-          echo "Building armeabi-v7a..."
-          env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
-            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
-          "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
-            phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
-            -o libphantom_arm.so
-          echo "  OK $(wc -c < libphantom_arm.so) bytes"
+          build_arm32() {
+            env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
+              "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
+            "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
+              phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
+              -o libphantom_arm.so
+          }
+
+          echo "Building and stamping arm64-v8a..."
+          cp /tmp/phantom_integrity.placeholder.inc "$INTEGRITY_INC"
+          build_arm64
+          HASH64=$(python3 "$STAMPER" libphantom_arm64.so --write-inc "$INTEGRITY_INC")
+          build_arm64
+          python3 "$STAMPER" libphantom_arm64.so --expect "$HASH64"
+          echo "  OK $(wc -c < libphantom_arm64.so) bytes; integrity stamp stable"
+
+          echo "Building and stamping armeabi-v7a..."
+          cp /tmp/phantom_integrity.placeholder.inc "$INTEGRITY_INC"
+          build_arm32
+          HASH32=$(python3 "$STAMPER" libphantom_arm.so --write-inc "$INTEGRITY_INC")
+          build_arm32
+          python3 "$STAMPER" libphantom_arm.so --expect "$HASH32"
+          echo "  OK $(wc -c < libphantom_arm.so) bytes; integrity stamp stable"
 
       - name: VMP section audit (arm64 + arm32)
         run: |
           set -e
-          PATTERN="detect_ptrace|detect_frida|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
+          PATTERN="detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
             if [ "$OBJ" = "phantom_arm64.o" ]; then
               ABI="arm64"
@@ -223,6 +242,9 @@ jobs:
               ph_load_advance \
               ph_load_fail \
               check_rooted \
+              cr_selinux \
+              detect_proc_dump_artifacts \
+              detect_phantom_self_integrity \
               nuke_app \
               sha256_block \
               vm_dl_iterate_phdr \

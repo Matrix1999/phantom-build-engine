@@ -194,6 +194,12 @@ STRINGS = {
     70: ('BLACKDEX_D_LIB',    'libblackdex_d.so'),
     71: ('BLACKDEX_HOST',     'top.niunaijun.blackdex'),
     72: ('BLACKBOX_CORE',     'top.niunaijun.blackbox'),
+    73: ('PROC_MEM_SUFFIX',     '/mem'),
+    74: ('PROC_PAGEMAP_SUFFIX', '/pagemap'),
+    75: ('PROC_KCORE_SUFFIX',   '/kcore'),
+    76: ('PROC_KMEM_SUFFIX',    '/kmem'),
+    77: ('PATH_KPROBE_DBG',     '/sys/kernel/debug/tracing/kprobe_events'),
+    78: ('PATH_KPROBE',         '/sys/kernel/tracing/kprobe_events'),
 }
 
 def c_arr(name, data):
