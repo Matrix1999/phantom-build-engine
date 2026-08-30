@@ -10,7 +10,7 @@
 //   HChaCha20 derives a nonce-specific subkey inside VMP-marked Phantom code, so
 //   the universal root key never crosses a normal native call boundary.
 // * Key NEVER crosses the JNI boundary -- lives only on the C stack, zeroed on return.
-// * API 27+ shard loading returns only a ClassLoader. No plaintext-returning
+// * API 26+ shard loading returns only a ClassLoader. No plaintext-returning
 //   JNI path is present in production source.
 //
 // Anti-Frida / Anti-Debugger layers:
@@ -976,7 +976,7 @@ static __attribute__((noinline)) int hook_phdr_cb(struct dl_phdr_info *info, siz
  * Only executable linker segments are compared, so ART oat/JIT mappings that
  * are not ELF objects do not create false positives.
  */
-#define PH_MAX_EXEC_SEGMENTS 192
+#define PH_MAX_EXEC_SEGMENTS 512
 typedef struct {
     uintptr_t start;
     uintptr_t end;
@@ -987,6 +987,7 @@ typedef struct {
 typedef struct {
     ph_exec_segment_t seg[PH_MAX_EXEC_SEGMENTS];
     unsigned int count;
+    unsigned int skipped;
     int invalid;
 } ph_linker_map_ctx_t;
 
@@ -995,9 +996,21 @@ static __attribute__((noinline)) int ph_collect_exec_segments_cb(
         struct dl_phdr_info *info, size_t size, void *data) {
     (void)size;
     ph_linker_map_ctx_t *ctx = (ph_linker_map_ctx_t *)data;
-    if (!ctx || !info || !info->dlpi_phdr || info->dlpi_phnum == 0 ||
+    if (!ctx) return 1;
+    /*
+     * Bionic can expose auxiliary linker records without a complete
+     * program-header table (for example vendor/VDSO records).  They are not
+     * executable objects that can participate in the maps comparison, so
+     * ignore them instead of treating a valid device layout as tampering.
+     */
+    if (!info || !info->dlpi_phdr || info->dlpi_phnum == 0 ||
         info->dlpi_phnum > 256) {
-        if (ctx) ctx->invalid = 1;
+        ctx->skipped++;
+        return 0;
+    }
+
+    if (ctx->count >= PH_MAX_EXEC_SEGMENTS) {
+        ctx->skipped++;
         return 1;
     }
 
@@ -1014,8 +1027,8 @@ static __attribute__((noinline)) int ph_collect_exec_segments_cb(
         uintptr_t raw_start = base + (uintptr_t)ph->p_vaddr;
         uintptr_t raw_end = raw_start + (uintptr_t)ph->p_memsz;
         if (raw_end <= raw_start) {
-            ctx->invalid = 1;
-            return 1;
+            ctx->skipped++;
+            continue;
         }
 
         if (ph->p_offset == 0 && (ph->p_flags & PF_R)) {
@@ -1041,10 +1054,7 @@ static __attribute__((noinline)) int ph_collect_exec_segments_cb(
         out->need_read = (ph->p_flags & PF_R) ? 1u : 0u;
         out->seen = 0;
     }
-    if (!saw_header && info->dlpi_name && info->dlpi_name[0] != '\0') {
-        ctx->invalid = 1;
-        return 1;
-    }
+    (void)saw_header;
     return 0;
 }
 
@@ -1092,9 +1102,17 @@ static __attribute__((noinline)) void detect_linker_maps_consistency(void) {
     ph_linker_map_ctx_t ctx;
     my_memset(&ctx, 0, sizeof(ctx));
     vm_dl_iterate_phdr(ph_collect_exec_segments_cb, &ctx);
-    if (ctx.invalid || ctx.count == 0) {
+    if (ctx.invalid) {
         PH_NUKE("invalid linker ELF metadata");
         nuke_app();
+    }
+    if (ctx.count == 0) {
+        PH_NUKE("no executable linker segments");
+        nuke_app();
+    }
+    if (ctx.skipped) {
+        PH_LOGI("linker/map check: skipped unsupported linker records=%u",
+                ctx.skipped);
     }
 
     PH_AES(_maps, PROC_MAPS);
@@ -1337,8 +1355,6 @@ static __attribute__((noinline)) void detect_general_dumper_before_decrypt(void)
     detect_ebpf_uprobe();     /* active kernel uprobe instrumentation */
     PH_LOGI("pre-decrypt gate: framework check");
     detect_riru_zygisk();     /* maps, linker, and known hook framework paths */
-    PH_LOGI("pre-decrypt gate: linker/map check");
-    detect_linker_maps_consistency(); /* linker PT_LOAD vs procfs permissions */
     PH_LOGI("pre-decrypt gate: pass");
 }
 

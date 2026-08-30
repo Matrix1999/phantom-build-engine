@@ -26,7 +26,7 @@ import java.util.Arrays;
  *     decrypts shards into read-only native direct mappings. Java receives
  *     only a ClassLoader reference.
  *
- *  3. InMemoryDexClassLoader (API 27+) — decrypted DEX bytes stay in
+     *  3. InMemoryDexClassLoader (API 26+) — decrypted DEX bytes stay in
  *     ByteBuffers, never on disk.  PathClassLoader is re-parented to delegate
  *     through InMemoryDexClassLoader so only ONE loader owns the DexFile.
  *     This prevents the "register dex with multiple class loaders" crash on
@@ -145,8 +145,8 @@ public class DexProtector {
                 }
             }
 
-            if (Build.VERSION.SDK_INT < 27) {
-                throw new RuntimeException(k('A','P','I','<','2','7'));
+            if (Build.VERSION.SDK_INT < 26) {
+                throw new RuntimeException(k('A','P','I','<','2','6'));
             }
             loadInMemory(context, dis, shardCount, sizes, salt, pkgNameUtf8);
         } finally {

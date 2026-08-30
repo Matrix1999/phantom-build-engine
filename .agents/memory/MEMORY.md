@@ -3,3 +3,4 @@
 - [Cloud source asset IDs](cloud-source-asset-ids.md) — release-asset downloads require numeric REST IDs; GraphQL node IDs download an error body instead of the ZIP.
 - [ART direct DEX lifetime](art-direct-dex-lifetime.md) — direct native DEX mappings must remain read-only and alive while ART may lazily resolve classes.
 - [Amice flatten and VMP](amice-flatten-vmp.md) — keep flattening global, but exclude VM-critical functions from pre-flattening and verify actual bytecode output.
+- [Android linker compatibility](android-linker-compatibility.md) — do not fail closed on linker-versus-maps layout comparisons; Android linker records vary across API/device versions.
