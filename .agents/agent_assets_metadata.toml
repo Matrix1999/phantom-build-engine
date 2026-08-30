@@ -84,3 +84,17 @@ mtime_ms = 1788079186054
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/3ffee0a1-199c-4b2d-a0d3-330d7b26ced1/12c4d6d7-8d20-44e0-9619-7d306ebb5ef6"
 storage_version_token = "1788079191610108"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "wmiXk3bWEs5gMw08_kXJU"
+uri = "file://attached_assets/phantom-integrity-test-blobs.zip"
+type = "unspecified"
+title = "Phantom integrity-test blobs ZIP"
+description = "Contains the ARM64 and ARM32 tampered PHB3 blobs for controlled runtime integrity-rejection testing. Production blobs were not modified."
+logical_id = "fe9e69d9-3218-4fc7-9f33-a9ca6cf98e56"
+content_hash = "sha256:910248dbd78419e42a06b3c8aea594f98ca90c30b84525756769b987c8539622"
+size = 329495
+mtime_ms = 1788079253810
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/fe9e69d9-3218-4fc7-9f33-a9ca6cf98e56/558d010a-732f-4e95-876e-38ada470724b"
+storage_version_token = "1788079258572519"
+content_type = "application/octet-stream"
