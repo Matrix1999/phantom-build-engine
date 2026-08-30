@@ -1621,18 +1621,36 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
    small, pure vm_* calls only, and explicitly annotated +vm_virtualize. */
 
 __attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) void cr_selinux(void) {
+static __attribute__((noinline)) int cr_selinux_open_primary(void) {
     PH_AES(_s1, PATH_SELINUX1);
     int fd = vm_openat(AT_FDCWD, _s1, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_s1, SP_BUF_SZ);
-    if (fd < 0) {
-        PH_AES(_s2, PATH_SELINUX2);
-        fd = vm_openat(AT_FDCWD, _s2, O_RDONLY | O_CLOEXEC, 0);
-        PH_ZERO(_s2, SP_BUF_SZ);
+    return fd;
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int cr_selinux_open_fallback(void) {
+    PH_AES(_s2, PATH_SELINUX2);
+    int fd = vm_openat(AT_FDCWD, _s2, O_RDONLY | O_CLOEXEC, 0);
+    PH_ZERO(_s2, SP_BUF_SZ);
+    return fd;
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int cr_selinux_is_permissive(int fd) {
+    char b = '\0';
+    ssize_t count = vm_read(fd, &b, 1);
+    vm_close(fd);
+    return count == 1 && b == '0';
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void cr_selinux(void) {
+    int fd = cr_selinux_open_primary();
+    if (fd < 0) fd = cr_selinux_open_fallback();
+    if (fd >= 0 && cr_selinux_is_permissive(fd)) {
+        PH_NUKE("SELinux permissive");
     }
-    if (fd < 0) return;
-    char b[4] = {0}; vm_read(fd, b, 3); vm_close(fd);
-    if (b[0] == '0') { PH_NUKE("SELinux permissive"); nuke_app(); }
 }
 
 __attribute__((annotate("+vm_virtualize")))
@@ -1962,56 +1980,71 @@ static __attribute__((noinline)) int ph_collect_self_exec_segments_cb(
     return 1;
 }
 
-/* Keep the VM lowering units small: one digest loop and one reducer. */
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) void ph_self_hash_segments(
-        const ph_self_integrity_ctx_t *ctx, uint8_t *segment_hashes) {
-    for (unsigned int i = 0; i < ctx->count; ++i) {
-        sha256((const uint8_t *)ctx->ranges[i].start,
-               ctx->ranges[i].len, segment_hashes + (i * 32u));
-    }
+/*
+ * The address-bearing anchor is intentionally native: taking a function's
+ * address prevents Amice from virtualizing that function.  Keeping it separate
+ * lets the actual enforcement gate remain VM-backed.
+ */
+static __attribute__((noinline, used)) void ph_self_integrity_anchor(void) {
+    __asm__ __volatile__("" ::: "memory");
 }
 
 __attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) int ph_self_digest_matches(
-        const uint8_t *segment_hashes, unsigned int count) {
-    uint8_t actual[32];
-    my_memset(actual, 0, sizeof(actual));
-    sha256(segment_hashes, (size_t)count * 32u, actual);
+static __attribute__((noinline)) void ph_self_hash_range(
+        uintptr_t start, size_t len, uint8_t *digest) {
+    sha256((const uint8_t *)start, len, digest);
+}
 
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void ph_self_finalize_digest(
+        const uint8_t *segment_hashes, size_t byte_count, uint8_t *actual) {
+    sha256(segment_hashes, byte_count, actual);
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int ph_self_compare_digest(
+        const uint8_t *actual) {
     unsigned int diff = 0;
     int expected_nonzero = 0;
     for (unsigned int i = 0; i < 32; ++i) {
         diff |= (unsigned int)(actual[i] ^ PHANTOM_EXPECTED_EXEC_SHA256[i]);
         expected_nonzero |= PHANTOM_EXPECTED_EXEC_SHA256[i] != 0;
     }
-    ph_secure_zero(actual, sizeof(actual));
     return expected_nonzero && diff == 0;
 }
 
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) void detect_phantom_self_integrity(void) {
+static __attribute__((noinline)) int ph_self_integrity_compute(void) {
     ph_self_integrity_ctx_t ctx;
     my_memset(&ctx, 0, sizeof(ctx));
-    ctx.marker = (uintptr_t)&detect_phantom_self_integrity;
+    ctx.marker = (uintptr_t)&ph_self_integrity_anchor;
     vm_dl_iterate_phdr(ph_collect_self_exec_segments_cb, &ctx);
 
     if (ctx.invalid || ctx.count == 0 || ctx.count > PH_MAX_SELF_EXEC_SEGMENTS) {
         ph_secure_zero(&ctx, sizeof(ctx));
-        PH_NUKE("Phantom executable segment discovery failed");
-        nuke_app();
+        return 0;
     }
 
     uint8_t segment_hashes[PH_MAX_SELF_EXEC_SEGMENTS * 32];
     my_memset(segment_hashes, 0, sizeof(segment_hashes));
-    ph_self_hash_segments(&ctx, segment_hashes);
-    int clean = ph_self_digest_matches(segment_hashes, ctx.count);
+    for (unsigned int i = 0; i < ctx.count; ++i) {
+        ph_self_hash_range(ctx.ranges[i].start, ctx.ranges[i].len,
+                           segment_hashes + (i * 32u));
+    }
+
+    uint8_t actual[32];
+    my_memset(actual, 0, sizeof(actual));
+    ph_self_finalize_digest(segment_hashes, (size_t)ctx.count * 32u, actual);
+    int clean = ph_self_compare_digest(actual);
+    ph_secure_zero(actual, sizeof(actual));
     ph_secure_zero(segment_hashes, sizeof(segment_hashes));
     ph_secure_zero(&ctx, sizeof(ctx));
+    return clean;
+}
 
-    if (!clean) {
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void detect_phantom_self_integrity(void) {
+    if (!ph_self_integrity_compute()) {
         PH_NUKE("Phantom executable integrity mismatch");
-        nuke_app();
     }
 }
 
