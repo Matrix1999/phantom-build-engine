@@ -2525,6 +2525,68 @@ static void ph_direct_dex_destructor(void) {
  * existing watcher calls this bounded scan again after load, covering later
  * ART mappings without adding another thread or changing the loader lifetime.
  */
+static __attribute__((noinline)) int ph_parse_art_map(
+        const char *line, uintptr_t *start, uintptr_t *end,
+        int *writable, unsigned long *inode) {
+    const char *p = line;
+    uintptr_t a = 0, b = 0;
+    unsigned long ino = 0;
+    int digits = 0;
+
+    while (*p) {
+        int v;
+        if (*p >= '0' && *p <= '9') v = *p - '0';
+        else if (*p >= 'a' && *p <= 'f') v = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F') v = *p - 'A' + 10;
+        else break;
+        if (a > (UINTPTR_MAX >> 4)) return 0;
+        a = (a << 4) | (uintptr_t)v;
+        ++digits;
+        ++p;
+    }
+    if (!digits || *p++ != '-') return 0;
+
+    digits = 0;
+    while (*p) {
+        int v;
+        if (*p >= '0' && *p <= '9') v = *p - '0';
+        else if (*p >= 'a' && *p <= 'f') v = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F') v = *p - 'A' + 10;
+        else break;
+        if (b > (UINTPTR_MAX >> 4)) return 0;
+        b = (b << 4) | (uintptr_t)v;
+        ++digits;
+        ++p;
+    }
+    if (!digits || b <= a || *p++ != ' ') return 0;
+    if (!p[0] || !p[1] || !p[2] || !p[3]) return 0;
+    *writable = p[1] == 'w';
+    p += 4;
+    if (*p++ != ' ') return 0;
+
+    for (int field = 0; field < 2; ++field) {
+        while (*p == ' ') ++p;
+        if (!*p) return 0;
+        while (*p && *p != ' ') ++p;
+    }
+    while (*p == ' ') ++p;
+    if (!*p) return 0;
+
+    digits = 0;
+    while (*p >= '0' && *p <= '9') {
+        unsigned long next = (ino * 10u) + (unsigned long)(*p - '0');
+        if (next < ino) return 0;
+        ino = next;
+        ++digits;
+        ++p;
+    }
+    if (!digits) return 0;
+    *start = a;
+    *end = b;
+    *inode = ino;
+    return 1;
+}
+
 static __attribute__((noinline)) void ph_scrub_art_dex_markers(void) {
     PH_AES(_maps, PROC_MAPS);
     int fd = vm_openat(AT_FDCWD, _maps, O_RDONLY | O_CLOEXEC, 0);
@@ -2533,28 +2595,19 @@ static __attribute__((noinline)) void ph_scrub_art_dex_markers(void) {
 
     char line[MAX_LINE];
     while (vm_read_one_line(fd, line, MAX_LINE) > 0) {
-        unsigned long start = 0, end = 0, offset = 0;
-        unsigned int major = 0, minor = 0;
+        uintptr_t start = 0, end = 0;
+        int writable = 0;
         unsigned long inode = 0;
-        char perms[5] = {0};
-        char path[256] = {0};
-        int fields = sscanf(line, "%lx-%lx %4s %lx %x:%x %lu %255s",
-                            &start, &end, perms, &offset,
-                            &major, &minor, &inode, path);
-        if (fields < 7 || end <= start || (end - start) < 112) continue;
-        if (perms[0] != 'r' || inode != 0) continue;
-        if (fields >= 8 && path[0] == '[') {
-            if (my_strncmp(path, "[stack", 6) == 0 ||
-                my_strncmp(path, "[heap",  5) == 0 ||
-                my_strncmp(path, "[vvar",  5) == 0 ||
-                my_strncmp(path, "[vdso",  5) == 0) continue;
-        }
+        if (!ph_parse_art_map(line, &start, &end, &writable, &inode)) continue;
+        if (end <= start || (end - start) < 112 || inode != 0) continue;
+        if (my_strstr(line, "[stack") || my_strstr(line, "[heap") ||
+            my_strstr(line, "[vvar") || my_strstr(line, "[vdso")) continue;
 
         uint8_t *ptr = (uint8_t *)start;
         if (ptr[0] != 0x64 || ptr[1] != 0x65 ||
             ptr[2] != 0x78 || ptr[3] != 0x0A) continue;
 
-        bool was_read_only = (perms[1] != 'w');
+        bool was_read_only = !writable;
         if (was_read_only &&
             vm_mprotect(ptr, 4096, PROT_READ | PROT_WRITE) != 0) {
             continue;
