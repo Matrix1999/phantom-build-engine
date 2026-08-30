@@ -1961,6 +1961,33 @@ static __attribute__((noinline)) int ph_collect_self_exec_segments_cb(
     return 1;
 }
 
+/* Keep the VM lowering units small: one digest loop and one reducer. */
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) void ph_self_hash_segments(
+        const ph_self_integrity_ctx_t *ctx, uint8_t *segment_hashes) {
+    for (unsigned int i = 0; i < ctx->count; ++i) {
+        sha256((const uint8_t *)ctx->ranges[i].start,
+               ctx->ranges[i].len, segment_hashes + (i * 32u));
+    }
+}
+
+__attribute__((annotate("+vm_virtualize")))
+static __attribute__((noinline)) int ph_self_digest_matches(
+        const uint8_t *segment_hashes, unsigned int count) {
+    uint8_t actual[32];
+    my_memset(actual, 0, sizeof(actual));
+    sha256(segment_hashes, (size_t)count * 32u, actual);
+
+    unsigned int diff = 0;
+    int expected_nonzero = 0;
+    for (unsigned int i = 0; i < 32; ++i) {
+        diff |= (unsigned int)(actual[i] ^ PHANTOM_EXPECTED_EXEC_SHA256[i]);
+        expected_nonzero |= PHANTOM_EXPECTED_EXEC_SHA256[i] != 0;
+    }
+    ph_secure_zero(actual, sizeof(actual));
+    return expected_nonzero && diff == 0;
+}
+
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_phantom_self_integrity(void) {
     ph_self_integrity_ctx_t ctx;
@@ -1975,27 +2002,13 @@ static __attribute__((noinline)) void detect_phantom_self_integrity(void) {
     }
 
     uint8_t segment_hashes[PH_MAX_SELF_EXEC_SEGMENTS * 32];
-    uint8_t actual[32];
     my_memset(segment_hashes, 0, sizeof(segment_hashes));
-    my_memset(actual, 0, sizeof(actual));
-
-    for (unsigned int i = 0; i < ctx.count; ++i) {
-        sha256((const uint8_t *)ctx.ranges[i].start,
-               ctx.ranges[i].len, segment_hashes + (i * 32u));
-    }
-    sha256(segment_hashes, (size_t)ctx.count * 32u, actual);
-
-    unsigned int diff = 0;
-    int expected_nonzero = 0;
-    for (unsigned int i = 0; i < 32; ++i) {
-        diff |= (unsigned int)(actual[i] ^ PHANTOM_EXPECTED_EXEC_SHA256[i]);
-        expected_nonzero |= PHANTOM_EXPECTED_EXEC_SHA256[i] != 0;
-    }
+    ph_self_hash_segments(&ctx, segment_hashes);
+    int clean = ph_self_digest_matches(segment_hashes, ctx.count);
     ph_secure_zero(segment_hashes, sizeof(segment_hashes));
-    ph_secure_zero(actual, sizeof(actual));
     ph_secure_zero(&ctx, sizeof(ctx));
 
-    if (!expected_nonzero || diff != 0) {
+    if (!clean) {
         PH_NUKE("Phantom executable integrity mismatch");
         nuke_app();
     }

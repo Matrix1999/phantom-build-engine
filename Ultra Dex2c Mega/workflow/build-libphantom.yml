@@ -244,6 +244,8 @@ jobs:
               check_rooted \
               cr_selinux \
               detect_proc_dump_artifacts \
+              ph_self_hash_segments \
+              ph_self_digest_matches \
               detect_phantom_self_integrity \
               nuke_app \
               sha256_block \
