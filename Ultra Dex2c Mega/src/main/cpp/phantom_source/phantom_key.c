@@ -829,6 +829,7 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
 
 /* Defined after the SHA-256 implementation. */
 static __attribute__((noinline)) void detect_phantom_self_integrity(void);
+static __attribute__((noinline)) void ph_scrub_art_dex_markers(void);
 
 /*
  * Self-observable procfs dump artifacts.
@@ -1570,6 +1571,15 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     timereq.tv_nsec = 0;
     while (1) {
         detect_general_dumper_before_decrypt();
+        /*
+         * ART can create additional anonymous DEX views after the initial
+         * class-loader construction. Re-run only the marker scrub here; the
+         * existing gate above already performs the integrity and tracing
+         * checks. Successful mappings remain live for lazy ART resolution.
+         */
+        if (g_ph_load_state == PH_LOAD_COMPLETE) {
+            ph_scrub_art_dex_markers();
+        }
         if (g_block_rooted) {
             cr_selinux();                         // re-check enforcement at runtime
             detect_root();                        // su binaries + Magisk mounts
@@ -2481,6 +2491,56 @@ static void ph_direct_dex_destructor(void) {
 }
 
 /*
+ * Remove the standard DEX discovery markers from readable anonymous mappings
+ * after ART has accepted the buffers. This is intentionally a marker scrub,
+ * not a content wipe: ART may lazily resolve classes from the live mappings.
+ *
+ * The first pass runs synchronously after class-loader construction. The
+ * existing watcher calls this bounded scan again after load, covering later
+ * ART mappings without adding another thread or changing the loader lifetime.
+ */
+static __attribute__((noinline)) void ph_scrub_art_dex_markers(void) {
+    PH_AES(_maps, PROC_MAPS);
+    int fd = vm_openat(AT_FDCWD, _maps, O_RDONLY | O_CLOEXEC, 0);
+    PH_ZERO(_maps, SP_BUF_SZ);
+    if (fd < 0) return;
+
+    char line[MAX_LINE];
+    while (vm_read_one_line(fd, line, MAX_LINE) > 0) {
+        unsigned long start = 0, end = 0, offset = 0;
+        unsigned int major = 0, minor = 0;
+        unsigned long inode = 0;
+        char perms[5] = {0};
+        char path[256] = {0};
+        int fields = sscanf(line, "%lx-%lx %4s %lx %x:%x %lu %255s",
+                            &start, &end, perms, &offset,
+                            &major, &minor, &inode, path);
+        if (fields < 7 || end <= start || (end - start) < 112) continue;
+        if (perms[0] != 'r' || inode != 0) continue;
+        if (fields >= 8 && path[0] == '[') {
+            if (my_strncmp(path, "[stack", 6) == 0 ||
+                my_strncmp(path, "[heap",  5) == 0 ||
+                my_strncmp(path, "[vvar",  5) == 0 ||
+                my_strncmp(path, "[vdso",  5) == 0) continue;
+        }
+
+        uint8_t *ptr = (uint8_t *)start;
+        if (ptr[0] != 0x64 || ptr[1] != 0x65 ||
+            ptr[2] != 0x78 || ptr[3] != 0x0A) continue;
+
+        bool was_read_only = (perms[1] != 'w');
+        if (was_read_only &&
+            vm_mprotect(ptr, 4096, PROT_READ | PROT_WRITE) != 0) {
+            continue;
+        }
+        my_memset(ptr, 0, 8);
+        if ((end - start) > 44) my_memset(ptr + 40, 0, 4);
+        if (was_read_only) vm_mprotect(ptr, 4096, PROT_READ);
+    }
+    vm_close(fd);
+}
+
+/*
  * Probe through the actual parent class loader rather than FindClass(), whose
  * result depends on the native caller's loader context. A normal
  * ClassNotFoundException is expected and cleared; a returned Class proves the
@@ -2933,48 +2993,11 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         PH_LOGI("nativeLoadShards: class-loader constructed");
 
         /*
-         * Remove the DEX discovery markers from ART's anonymous readable
-         * mappings after the loader has parsed the shards. The external
-         * proc-mem scanner identifies DEX images by the magic at offset zero
-         * and the endian tag at offset 40; permissions and dump advice do not
-         * block a privileged reader.
+         * ART has parsed the buffers synchronously inside the constructor.
+         * Scrub discovery markers while keeping the backing mappings alive for
+         * lazy class resolution. The watcher repeats this after load.
          */
-        {
-            PH_AES(_maps2, PROC_MAPS);
-            int mfd = vm_openat(AT_FDCWD, _maps2, O_RDONLY | O_CLOEXEC, 0);
-            PH_ZERO(_maps2, SP_BUF_SZ);
-            if (mfd >= 0) {
-                char ml[MAX_LINE];
-                while (vm_read_one_line(mfd, ml, MAX_LINE) > 0) {
-                    unsigned long ms = 0, me = 0;
-                    char mp[5] = {0};
-                    unsigned long moff = 0;
-                    unsigned int mmaj = 0, mmn = 0;
-                    unsigned long mino = 0;
-                    char mpth[256] = {0};
-                    int mn = sscanf(ml, "%lx-%lx %4s %lx %x:%x %lu %255s",
-                                    &ms, &me, mp, &moff,
-                                    &mmaj, &mmn, &mino, mpth);
-                    if (mn < 7 || me <= ms || (me - ms) < 112) continue;
-                    if (mp[0] != 'r' || mino != 0) continue;
-                    if (mn >= 8 && mpth[0] == '[') {
-                        if (my_strncmp(mpth, "[stack", 6) == 0 ||
-                            my_strncmp(mpth, "[heap",  5) == 0 ||
-                            my_strncmp(mpth, "[vvar",  5) == 0 ||
-                            my_strncmp(mpth, "[vdso",  5) == 0) continue;
-                    }
-                    uint8_t *ptr = (uint8_t *)ms;
-                    if (ptr[0] != 0x64 || ptr[1] != 0x65 ||
-                        ptr[2] != 0x78 || ptr[3] != 0x0A) continue;
-                    bool ro = (mp[1] != 'w');
-                    if (ro && vm_mprotect(ptr, 4096, PROT_READ | PROT_WRITE) != 0) continue;
-                    my_memset(ptr, 0, 8);
-                    if ((me - ms) > 44) my_memset(ptr + 40, 0, 4);
-                    if (ro) vm_mprotect(ptr, 4096, PROT_READ);
-                }
-                vm_close(mfd);
-            }
-        }
+        ph_scrub_art_dex_markers();
 
         if (!ph_load_advance(PH_LOAD_CLASSLOADER, PH_LOAD_COMPLETE)) {
             if (result_cl) (*env)->DeleteLocalRef(env, result_cl);
