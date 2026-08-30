@@ -13,8 +13,8 @@ import java.util.zip.ZipFile;
  *
  * Security model:
  *   • A 16-byte cryptographically random salt is generated for every pack operation.
- *   • The existing 16-byte session key is derived via DexSeed.deriveKey(salt, pkgName)
- *     and remains as the inner compatibility layer.
+ *   • A per-APK seed is derived via DexSeed.deriveKey(salt, pkgName), then
+ *     narrowed to an independent 16-byte key for each shard.
  *   • Every shard is additionally wrapped by a universal XChaCha20-Poly1305 payload key
  *     mirrored inside the VMP-compiled Phantom native loader.
  *   • salt is written to assets/phantom/ph_salt (raw, 16 bytes) so the stub can read it
@@ -24,7 +24,7 @@ import java.util.zip.ZipFile;
  * Flow:
  *  1. Extract classes*.dex + AndroidManifest.xml from input APK.
  *  2. Parse manifest → capture real Application class, patch android:name → ProxyApplication.
- *  3. Generate random salt; derive the inner session key from (salt, pkgName).
+ *  3. Generate random salt; derive the per-APK seed from (salt, pkgName).
  *  4. Encrypt all DEX shards and bundle them into a single phantom.vmp payload.
  *     Bundle format: [32-byte blob header][4-byte version][4-byte shard count]
  *     [count × 4-byte shard sizes][XChaCha20-Poly1305 envelope records…]
