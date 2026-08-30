@@ -5,6 +5,7 @@
  * it with the SHA-256 hash-of-hashes for the executable PT_LOAD segments before
  * producing release blobs. A placeholder must never be packaged.
  */
+__attribute__((section(".phantom.integrity"), used))
 static volatile const uint8_t PHANTOM_EXPECTED_EXEC_SHA256[32] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

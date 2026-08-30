@@ -84,11 +84,123 @@ def write_include(path: Path, digest: bytes) -> None:
     )
 
 
+def patch_embedded_stamp(elf_path: Path, digest: bytes) -> None:
+    data = bytearray(elf_path.read_bytes())
+    if len(data) < 64 or data[:4] != b"\x7fELF":
+        raise ValueError(f"{elf_path}: not an ELF file")
+    if data[5] != 1:
+        raise ValueError(f"{elf_path}: only little-endian ELF is supported")
+
+    elf_class = data[4]
+    if elf_class == 2:
+        shoff = struct.unpack_from("<Q", data, 40)[0]
+        shentsize = struct.unpack_from("<H", data, 58)[0]
+        shnum = struct.unpack_from("<H", data, 60)[0]
+        shstrndx = struct.unpack_from("<H", data, 62)[0]
+
+        def section_fields(off: int) -> tuple[int, int, int]:
+            return (
+                struct.unpack_from("<I", data, off)[0],
+                struct.unpack_from("<Q", data, off + 24)[0],
+                struct.unpack_from("<Q", data, off + 32)[0],
+            )
+    elif elf_class == 1:
+        shoff = struct.unpack_from("<I", data, 32)[0]
+        shentsize = struct.unpack_from("<H", data, 46)[0]
+        shnum = struct.unpack_from("<H", data, 48)[0]
+        shstrndx = struct.unpack_from("<H", data, 50)[0]
+
+        def section_fields(off: int) -> tuple[int, int, int]:
+            return (
+                struct.unpack_from("<I", data, off)[0],
+                struct.unpack_from("<I", data, off + 16)[0],
+                struct.unpack_from("<I", data, off + 20)[0],
+            )
+    else:
+        raise ValueError(f"{elf_path}: unsupported ELF class {elf_class}")
+
+    if not shnum or shnum > 512 or shstrndx >= shnum:
+        raise ValueError(f"{elf_path}: invalid section-header table")
+    if shoff + shentsize * shnum > len(data):
+        raise ValueError(f"{elf_path}: truncated section-header table")
+
+    _, str_off, str_size = section_fields(shoff + shstrndx * shentsize)
+    if str_off + str_size > len(data):
+        raise ValueError(f"{elf_path}: invalid section-name string table")
+    names = data[str_off:str_off + str_size]
+    target = None
+    for index in range(shnum):
+        name_off, section_off, section_size = section_fields(
+            shoff + index * shentsize
+        )
+        if name_off >= len(names):
+            continue
+        end = names.find(b"\0", name_off)
+        if end < 0:
+            continue
+        if names[name_off:end] == b".phantom.integrity":
+            target = (section_off, section_size)
+            break
+    if target is None:
+        raise ValueError(f"{elf_path}: .phantom.integrity section is missing")
+    section_off, section_size = target
+    if section_size < len(digest) or section_off + len(digest) > len(data):
+        raise ValueError(f"{elf_path}: invalid .phantom.integrity section")
+    data[section_off:section_off + len(digest)] = digest
+    elf_path.write_bytes(data)
+
+
+def embedded_stamp(elf_path: Path) -> bytes:
+    data = elf_path.read_bytes()
+    if len(data) < 64 or data[:4] != b"\x7fELF" or data[5] != 1:
+        raise ValueError(f"{elf_path}: unsupported ELF for embedded stamp")
+    elf_class = data[4]
+    if elf_class == 2:
+        shoff = struct.unpack_from("<Q", data, 40)[0]
+        shentsize = struct.unpack_from("<H", data, 58)[0]
+        shnum = struct.unpack_from("<H", data, 60)[0]
+        shstrndx = struct.unpack_from("<H", data, 62)[0]
+
+        def section_fields(off: int) -> tuple[int, int, int]:
+            return (
+                struct.unpack_from("<I", data, off)[0],
+                struct.unpack_from("<Q", data, off + 24)[0],
+                struct.unpack_from("<Q", data, off + 32)[0],
+            )
+    else:
+        shoff = struct.unpack_from("<I", data, 32)[0]
+        shentsize = struct.unpack_from("<H", data, 46)[0]
+        shnum = struct.unpack_from("<H", data, 48)[0]
+        shstrndx = struct.unpack_from("<H", data, 50)[0]
+
+        def section_fields(off: int) -> tuple[int, int, int]:
+            return (
+                struct.unpack_from("<I", data, off)[0],
+                struct.unpack_from("<I", data, off + 16)[0],
+                struct.unpack_from("<I", data, off + 20)[0],
+            )
+
+    _, str_off, str_size = section_fields(shoff + shstrndx * shentsize)
+    names = data[str_off:str_off + str_size]
+    for index in range(shnum):
+        name_off, section_off, section_size = section_fields(
+            shoff + index * shentsize
+        )
+        end = names.find(b"\0", name_off)
+        if end >= 0 and names[name_off:end] == b".phantom.integrity":
+            if section_size < 32:
+                break
+            return bytes(data[section_off:section_off + 32])
+    raise ValueError(f"{elf_path}: .phantom.integrity section is missing")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("elf", type=Path)
     parser.add_argument("--write-inc", type=Path)
+    parser.add_argument("--patch-elf", type=Path)
     parser.add_argument("--expect", help="expected lowercase/uppercase SHA-256 hex")
+    parser.add_argument("--verify-embedded", action="store_true")
     args = parser.parse_args()
 
     digest = executable_segment_digest(args.elf)
@@ -100,6 +212,10 @@ def main() -> None:
         )
     if args.write_inc is not None:
         write_include(args.write_inc, digest)
+    if args.patch_elf is not None:
+        patch_embedded_stamp(args.patch_elf, digest)
+    if args.verify_embedded and embedded_stamp(args.elf) != digest:
+        raise SystemExit(f"{args.elf}: embedded integrity stamp does not match")
     print(actual)
 
 

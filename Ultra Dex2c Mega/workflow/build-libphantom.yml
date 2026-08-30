@@ -182,17 +182,19 @@ jobs:
           echo "Building and stamping arm64-v8a..."
           cp /tmp/phantom_integrity.placeholder.inc "$INTEGRITY_INC"
           build_arm64
-          HASH64=$(python3 "$STAMPER" libphantom_arm64.so --write-inc "$INTEGRITY_INC")
-          build_arm64
-          python3 "$STAMPER" libphantom_arm64.so --expect "$HASH64"
+          HASH64=$(python3 "$STAMPER" libphantom_arm64.so \
+            --patch-elf libphantom_arm64.so)
+          python3 "$STAMPER" libphantom_arm64.so \
+            --expect "$HASH64" --verify-embedded
           echo "  OK $(wc -c < libphantom_arm64.so) bytes; integrity stamp stable"
 
           echo "Building and stamping armeabi-v7a..."
           cp /tmp/phantom_integrity.placeholder.inc "$INTEGRITY_INC"
           build_arm32
-          HASH32=$(python3 "$STAMPER" libphantom_arm.so --write-inc "$INTEGRITY_INC")
-          build_arm32
-          python3 "$STAMPER" libphantom_arm.so --expect "$HASH32"
+          HASH32=$(python3 "$STAMPER" libphantom_arm.so \
+            --patch-elf libphantom_arm.so)
+          python3 "$STAMPER" libphantom_arm.so \
+            --expect "$HASH32" --verify-embedded
           echo "  OK $(wc -c < libphantom_arm.so) bytes; integrity stamp stable"
 
       - name: VMP section audit (arm64 + arm32)
