@@ -56,3 +56,31 @@ mtime_ms = 1788067952231
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/61554d43-2868-4b2e-a9ea-cd72ae3aa828/21f3df66-5e97-4b63-9331-606c38284154"
 storage_version_token = "1788067964293855"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "tj3JziSf2Lty3_1hHazSf"
+uri = "file://attached_assets/libphantom_arm64_integrity-test.blob"
+type = "unspecified"
+title = "Phantom ARM64 integrity-test blob"
+description = "Tampered ARM64 PHB3 test blob. Its decrypted executable segment differs from the embedded integrity stamp; use only for controlled runtime rejection testing."
+logical_id = "5f9f925d-d467-40fe-90ab-bccc644a9815"
+content_hash = "sha256:ebd3e0a9c418d4747c6bda6d4b66d3faba7c46b4f3d9a509e2b3845bc9bba336"
+size = 154421
+mtime_ms = 1788079185192
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/5f9f925d-d467-40fe-90ab-bccc644a9815/8066890d-4303-4d16-8076-889d2cc4f883"
+storage_version_token = "1788079191015064"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "cC9TdBmMgpn5VvKsAhlve"
+uri = "file://attached_assets/libphantom_arm_integrity-test.blob"
+type = "unspecified"
+title = "Phantom ARM32 integrity-test blob"
+description = "Tampered ARM32 PHB3 test blob. Its decrypted executable segment differs from the embedded integrity stamp; use only for controlled runtime rejection testing."
+logical_id = "3ffee0a1-199c-4b2d-a0d3-330d7b26ced1"
+content_hash = "sha256:f3c9758268f916c7379bc9d83f98291f5c3dfd928f2a3cf3ac101b1151aa2514"
+size = 174601
+mtime_ms = 1788079186054
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/3ffee0a1-199c-4b2d-a0d3-330d7b26ced1/12c4d6d7-8d20-44e0-9619-7d306ebb5ef6"
+storage_version_token = "1788079191610108"
+content_type = "application/octet-stream"
