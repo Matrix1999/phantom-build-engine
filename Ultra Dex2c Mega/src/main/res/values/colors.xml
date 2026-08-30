@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Backgrounds -->
+    <color name="bg_dark">#000000</color>
+    <color name="bg_card">#0D1520</color>
+    <color name="bg_card2">#111E2E</color>
+
+    <!-- Accent — deep vivid matrix green -->
+    <color name="accent_green">#00E676</color>
+    <color name="accent_green_dim">#00C853</color>
+    <color name="accent_green_glow">#00FF6A</color>
+    <color name="accent_blue">#00E5FF</color>
+    <color name="accent_purple">#8B5CF6</color>
+    <color name="accent_orange">#F59E0B</color>
+
+    <!-- Text -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#9BA8BB</color>
+    <color name="text_muted">#4A5568</color>
+    <color name="text_code">#10B981</color>
+
+    <!-- Borders -->
+    <color name="border">#1E2A3A</color>
+    <color name="border_accent">#1A3A2A</color>
+
+    <!-- UI elements -->
+    <color name="chip_bg">#1A2235</color>
+    <color name="danger">#EF4444</color>
+    <color name="success">#22C55E</color>
+    <color name="warning">#F59E0B</color>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+
+    <!-- Nav -->
+    <color name="nav_bg">#000000</color>
+    <color name="nav_indicator">#1A3A2A</color>
+
+    <!-- Adaptive icon background -->
+    <color name="ic_launcher_background">#060610</color>
+</resources>

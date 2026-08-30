@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Diamond / rhombus -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path
+        android:fillColor="#C6FF00"
+        android:pathData="M16,2 L30,16 L16,30 L2,16 Z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M16,8 L24,16 L16,24 L8,16 Z" />
+    <path
+        android:fillColor="#C6FF00"
+        android:pathData="M16,13 L19,16 L16,19 L13,16 Z" />
+</vector>

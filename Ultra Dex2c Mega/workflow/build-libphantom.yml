@@ -1,0 +1,391 @@
+name: Build libphantom.so + encrypt blobs (amice-vmp)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-phantom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Standard NDK r29 — sysroot + linker wrappers
+      - name: Install NDK r29 (sysroot + linker)
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r29
+          add-to-path: false
+
+      - name: Install Python (for encrypt_blob.py)
+        run: sudo apt-get install -y --no-install-recommends python3
+
+      - name: Test XChaCha20-Poly1305 implementation
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra \
+            "Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_chacha20poly1305_test.c" \
+            -o /tmp/phantom_xchacha_test
+          /tmp/phantom_xchacha_test
+
+      - name: Download amice plugin + libLLVM.so from release tag (API + token)
+        env:
+          TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          fetch_asset() {
+            local name="$1" dest="$2"
+            ASSET_ID=$(curl -sf \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/releases/tags/amice-ndk-r29" \
+              | jq -r --arg n "$name" '.assets[] | select(.name==$n) | .id')
+            if [ -z "$ASSET_ID" ]; then echo "❌ Asset not found: $name"; exit 1; fi
+            curl -Lf -s \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/octet-stream" \
+              "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID" \
+              -o "$dest"
+            echo "✅ $name — $(du -sh "$dest" | cut -f1)"
+          }
+          fetch_asset "libamice-android-ndk-r29-linux-x86_64.so" "libamice.so"
+          fetch_asset "libLLVM.so" "libLLVM.so"
+
+      - name: Fix libedit symlink for amice
+        run: |
+          LIBEDIT=$(find /usr/lib/x86_64-linux-gnu -name "libedit.so.2*" | head -1)
+          sudo ln -sf "$LIBEDIT" /usr/lib/x86_64-linux-gnu/libedit.so.0
+          echo "✅ libedit.so.0 → $LIBEDIT"
+
+      - name: Resolve toolchain paths
+        run: |
+          NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}"
+          TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          LLVM_LIBDIR="$PWD"   # libLLVM.so is right here in the workspace root
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "TC=$TC"
+            echo "SYSROOT=$TC/sysroot"
+            echo "CLANG=$TC/bin/clang"
+            echo "NDK_LINK_ARM64=$TC/bin/aarch64-linux-android26-clang"
+            echo "NDK_LINK_ARM32=$TC/bin/armv7a-linux-androideabi21-clang"
+            echo "LLVM_LIBDIR=$LLVM_LIBDIR"
+            echo "AMICE_PLUGIN=$PWD/libamice.so"
+          } >> "$GITHUB_ENV"
+
+      - name: Smoke-test amice plugin (arm64 + arm32)
+        run: |
+          cat > /tmp/smoke.c <<'CSRC'
+          int foo(int x, int y) { int a=x^y; int b=a+x; if(a>0) return b; return b*y; }
+          CSRC
+          for TARGET in aarch64-linux-android26 armv7a-linux-androideabi21; do
+            AMICE_VM_VIRTUALIZE=true \
+            AMICE_VM_EMIT_MARKERS=true AMICE_VM_DUMP_BYTECODE=true \
+            AMICE_VM_DUMP_LOWERING=true \
+            AMICE_VM_FLATTEN=true \
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten \
+            RUST_LOG=amice=debug \
+            LD_LIBRARY_PATH="$LLVM_LIBDIR" \
+            "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
+              -fpass-plugin="$AMICE_PLUGIN" -c /tmp/smoke.c -o /tmp/smoke_${TARGET}.o
+            echo "✅ $TARGET — amice OK"
+          done
+
+      - name: Write linker version script
+        run: |
+          cat > phantom.map <<'EOF'
+          {
+            global:
+              Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards;
+              Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication;
+            local: *;
+          };
+          EOF
+
+      - name: Build libphantom.so (arm64-v8a + armeabi-v7a)
+        timeout-minutes: 30
+        run: |
+          set -e
+          SRC="Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_key.c"
+
+          AMICE_PASSES=(
+            AMICE_VM_VIRTUALIZE=true
+            AMICE_VM_EMIT_MARKERS=true
+            AMICE_VM_DUMP_BYTECODE=true
+            AMICE_VM_DUMP_LOWERING=true
+            AMICE_VM_FLATTEN=true
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten
+            RUST_LOG=amice=debug
+
+            LD_LIBRARY_PATH="$LLVM_LIBDIR"
+          )
+
+          COMMON_FLAGS=(
+            --sysroot="$SYSROOT" -fPIC -O2 -g0 -std=c11
+            -fno-unwind-tables -fno-asynchronous-unwind-tables
+            -fvisibility=hidden -ffunction-sections -fdata-sections
+            -fstack-protector-strong -D_FORTIFY_SOURCE=2
+            -D__ANDROID__ -DANDROID
+            -fpass-plugin="$AMICE_PLUGIN"
+          )
+
+          LDFLAGS=(
+            -shared -fPIC -Wl,--gc-sections -Wl,--build-id=none
+            -Wl,--version-script=phantom.map
+            -Wl,-z,relro -Wl,-z,now -Wl,--strip-all -llog
+          )
+
+          echo "Building arm64-v8a..."
+          env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o 2>&1
+          "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
+            phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
+            -o libphantom_arm64.so
+          echo "  OK $(wc -c < libphantom_arm64.so) bytes"
+
+          echo "Building armeabi-v7a..."
+          env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
+            "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
+          "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
+            phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
+            -o libphantom_arm.so
+          echo "  OK $(wc -c < libphantom_arm.so) bytes"
+
+      - name: VMP section audit (arm64 + arm32)
+        run: |
+          set -e
+          PATTERN="detect_ptrace|detect_frida|detect_ebpf|detect_riru|detect_root|check_rooted|nuke_app|hook_phdr|parse_proc_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_init|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
+          for OBJ in phantom_arm64.o phantom_arm32.o; do
+            if [ "$OBJ" = "phantom_arm64.o" ]; then
+              ABI="arm64"
+            else
+              ABI="arm32"
+            fi
+            SECTION_REPORT="amice-vmp-${ABI}-report.txt"
+            SECTION_FILE="/tmp/${ABI}_phantom_sections.txt"
+
+            echo "======================================================"
+            echo "$OBJ - VMP protection audit"
+            echo "======================================================"
+
+            echo ""
+            echo "--- VMP marker sections (.amice.vm.*) ---"
+            readelf -S --wide "$OBJ" > "$SECTION_FILE"
+            if ! grep -E "amice\.vm|vm\.meta|vm\.bc|vm\.bytecode" \
+                "$SECTION_FILE" > "$SECTION_REPORT"; then
+              echo "No VMP marker sections found in $OBJ" >&2
+              exit 1
+            fi
+            head -80 "$SECTION_REPORT"
+
+            echo ""
+            echo "--- All amice-related section names ---"
+            awk '{print $2}' "$SECTION_FILE" | grep -i "amice" | sort -u | head -60 || true
+
+            echo ""
+            echo "--- VMP section count ---"
+            VM_COUNT=$(grep -cE "amice\.vm|vm\.meta|vm\.bc" "$SECTION_FILE" || true)
+            echo "amice.vm.* sections found: $VM_COUNT"
+
+            echo ""
+            echo "--- Detection function symbol sizes (pre-strip) ---"
+            "$TC/bin/llvm-nm" --print-size --size-sort "$OBJ" 2>/dev/null | grep -iE "$PATTERN" | sort -k2 -rn || echo "(none visible)"
+
+            echo ""
+            echo "--- Required Phantom VM markers ($ABI) ---"
+            for target in \
+              ph_load_begin \
+              ph_load_advance \
+              ph_load_fail \
+              check_rooted \
+              nuke_app \
+              sha256_block \
+              vm_dl_iterate_phdr \
+              vm_read_one_line \
+              vm_spawn_watcher; do
+              if grep -q "amice\.vm.*${target}" "$SECTION_FILE"; then
+                echo "✅ ${target}"
+              else
+                echo "❌ Missing AMICE marker for ${target}" >&2
+                exit 1
+              fi
+            done
+
+            echo ""
+            echo "--- Key-path VMP bytecode requirements ($ABI) ---"
+            KEY_PATH_OK=true
+            for target in \
+              stage_root_word0_vm \
+              stage_root_word1_vm \
+              stage_root_word2_vm \
+              stage_root_word3_vm \
+              stage_root_word4_vm \
+              stage_root_word5_vm \
+              stage_root_word6_vm \
+              stage_root_word7_vm \
+              stage_root_group0_vm \
+              stage_root_group1_vm \
+              stage_apply \
+              stage_hchacha_constants_vm \
+              stage_hchacha_nonce0_vm \
+              stage_hchacha_nonce1_vm \
+              stage_hchacha_nonce2_vm \
+              stage_hchacha_nonce3_vm \
+              stage_hchacha_prepare_vm \
+              stage_hchacha_qr_vm \
+              stage_hchacha_column_vm \
+              stage_hchacha_diagonal_vm \
+              stage_hchacha_round_vm \
+              stage_hchacha_rounds0_vm \
+              stage_hchacha_rounds1_vm \
+              stage_hchacha_rounds2_vm \
+              stage_hchacha_store_vm \
+              stage_hchacha_vm \
+              stage_bridge; do
+              if grep -q "amice\.vm\.bytecode\.${target}" "$SECTION_FILE" && \
+                  grep -q "amice\.vm\.meta\.${target}" "$SECTION_FILE"; then
+                echo "✅ ${target} has explicit Amice VM bytecode + metadata"
+              else
+                echo "❌ ${target} is not present as an explicit Amice VM function" >&2
+                KEY_PATH_OK=false
+              fi
+            done
+            if [ "$KEY_PATH_OK" != true ]; then
+              exit 1
+            fi
+
+            echo ""
+            echo "--- Key-path native dispatch audit ($ABI) ---"
+            for target in stage_apply stage_hchacha_vm stage_hchacha_qr_vm stage_decrypt; do
+              DISASM_FILE="/tmp/${ABI}_${target}_dispatch.txt"
+              "$TC/bin/llvm-objdump" -dr --disassemble-symbols="$target" "$OBJ" \
+                | tee "$DISASM_FILE"
+            done
+
+            echo ""
+          done
+
+      - name: Strip + harden
+        run: |
+          for SO in libphantom_arm64.so libphantom_arm.so; do
+            "$TC/bin/llvm-strip" --strip-all "$SO"
+            for SEC in .symtab .strtab .comment .note.android.ident .eh_frame .eh_frame_hdr; do
+              "$TC/bin/llvm-objcopy" --remove-section="$SEC" "$SO" 2>/dev/null || true
+            done
+            echo "  $SO → $(wc -c < $SO) bytes"
+          done
+
+      - name: Reject static payload-key patterns
+        run: |
+          python3 - <<'PY'
+          import re
+          import struct
+          from pathlib import Path
+
+          native = Path(
+              "Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_key.c"
+          ).read_text()
+
+          if "uint32_t material[8];" in native or "ctx->material" in native:
+              raise SystemExit("native stage context still carries key material")
+
+          material_parts = re.findall(
+              r"PH_DEFINE_ROOT_STAGE\(\s*(\d+)\s*,\s*0x([0-9a-fA-F]{8})u\s*\)",
+              native,
+          )
+          material_parts.sort(key=lambda item: int(item[0]))
+          if [int(i) for i, _ in material_parts] != list(range(8)):
+              raise SystemExit("VMP-local stage material cases are incomplete")
+          encoded_material = b"".join(
+              struct.pack("<I", int(word, 16))
+              for _, word in material_parts
+          )
+          payload_key = b""
+          for i, word in material_parts:
+              index = int(i)
+              value = int(word, 16)
+              mix = 0xA5A5A5A5 ^ (index * 0x9E3779B9 & 0xFFFFFFFF)
+              rotate = (index % 5) + 3
+              add = (0x31415927 + index * 0x01020304) & 0xFFFFFFFF
+              value ^= mix
+              value = ((value >> rotate) | (value << (32 - rotate))) & 0xFFFFFFFF
+              value = (value - add) & 0xFFFFFFFF
+              payload_key += struct.pack("<I", value)
+          if len(payload_key) != 32:
+              raise SystemExit("native VMP key reconstruction did not produce 32 bytes")
+
+          forbidden = {
+              "universal payload key": payload_key,
+              "encoded stage material": encoded_material,
+          }
+
+          for name in ("libphantom_arm64.so", "libphantom_arm.so"):
+              data = Path(name).read_bytes()
+              for label, pattern in forbidden.items():
+                  offset = data.find(pattern)
+                  if offset >= 0:
+                      raise SystemExit(
+                          f"{name}: {label} is contiguous at 0x{offset:x}")
+              print(f"[scan] {name}: no contiguous payload-key patterns")
+          PY
+
+      - name: Verify JNI exports
+        run: |
+          for SO in libphantom_arm64.so libphantom_arm.so; do
+            echo "=== $SO ==="
+            EXPORTED=$("$TC/bin/llvm-nm" -D --defined-only "$SO" \
+              | awk '{print $3}' \
+              | grep '^Java_com_ultra_dex2cvmp_utils_DexCrypto_' || true)
+            printf '%s\n' "$EXPORTED"
+            printf '%s\n' "$EXPORTED" | grep -qx \
+              'Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards'
+            printf '%s\n' "$EXPORTED" | grep -qx \
+              'Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeSwapApplication'
+            if printf '%s\n' "$EXPORTED" | grep -Eq \
+              'nativeDecryptShard|nativeWipeShard|nativeWipeArtDex'; then
+              echo "Legacy DEX JNI export detected in $SO" >&2
+              exit 1
+            fi
+          done
+
+      - name: Encrypt blobs
+        run: |
+          python3 "Ultra Dex2C VMP/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
+          python3 "Ultra Dex2C VMP/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm.so  libphantom_arm.blob
+          ls -lh libphantom_arm64.blob libphantom_arm.blob
+
+      - name: Install generated Phantom blobs into project assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          ASSET_DIR="Ultra Dex2C VMP/src/main/assets/phantom"
+          mkdir -p "$ASSET_DIR"
+          cp libphantom_arm64.blob "$ASSET_DIR/libphantom_arm64.blob"
+          cp libphantom_arm.blob "$ASSET_DIR/libphantom_arm.blob"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$ASSET_DIR/libphantom_arm64.blob" "$ASSET_DIR/libphantom_arm.blob"
+          if git diff --cached --quiet; then
+            echo "Phantom blobs are already current"
+            exit 0
+          fi
+          git commit -m "Refresh Phantom runtime blobs"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Upload artifacts
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: phantom-blobs-amice
+          retention-days: 90
+          path: |
+            libphantom_arm64.blob
+            libphantom_arm.blob
+            amice-vmp-arm64-report.txt
+            amice-vmp-arm32-report.txt

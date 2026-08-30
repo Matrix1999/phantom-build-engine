@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="20dp"
+    android:overScrollMode="never">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/bg_card_border"
+        android:padding="24dp">
+
+        <!-- ── Title row ──────────────────────────────────────────────── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="6dp">
+
+            <!-- Pass abbreviation badge -->
+            <TextView
+                android:id="@+id/tv_pass_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="FLA"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06"
+                android:background="@drawable/bg_card_accent"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:layout_marginEnd="12dp" />
+
+            <!-- Pass full name -->
+            <TextView
+                android:id="@+id/tv_pass_name"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Control-Flow Flattening"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <!-- Close button -->
+            <TextView
+                android:id="@+id/btn_pass_close"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:text="✕"
+                android:textColor="@color/text_secondary"
+                android:textSize="16sp"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
+
+        <!-- ── What it does tag ───────────────────────────────────────── -->
+        <TextView
+            android:id="@+id/tv_pass_tag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Scrambles code flow paths"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.03"
+            android:layout_marginBottom="16dp" />
+
+        <!-- ── Divider ────────────────────────────────────────────────── -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/border"
+            android:layout_marginBottom="16dp" />
+
+        <!-- ── Description ───────────────────────────────────────────── -->
+        <TextView
+            android:id="@+id/tv_pass_description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Description goes here."
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:lineSpacingExtra="5dp"
+            android:layout_marginBottom="18dp" />
+
+        <!-- ── Protects section ──────────────────────────────────────── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/bg_card"
+            android:padding="14dp"
+            android:layout_marginBottom="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WHAT IT PROTECTS"
+                android:textColor="@color/accent_green_dim"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:id="@+id/tv_pass_protects"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Protects against static control-flow analysis."
+                android:textColor="@color/text_muted"
+                android:textSize="12sp"
+                android:lineSpacingExtra="3dp" />
+        </LinearLayout>
+
+        <!-- ── Toggle button row ─────────────────────────────────────── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_pass_toggle_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Enable this pass"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/sw_pass_modal_toggle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:thumbTint="@color/accent_green"
+                app:trackTint="@color/checkbox_tint"
+                xmlns:app="http://schemas.android.com/apk/res-auto" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

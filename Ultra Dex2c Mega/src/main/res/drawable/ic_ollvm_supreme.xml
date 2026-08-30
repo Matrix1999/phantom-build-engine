@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Crown — supreme tier -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <!-- Crown body -->
+    <path android:fillColor="#FFAB00"
+        android:pathData="M2,22 L6,10 L11,17 L16,6 L21,17 L26,10 L30,22 Z" />
+    <!-- Crown bottom band -->
+    <path android:fillColor="#FF8F00"
+        android:pathData="M2,22 H30 V27 H2 Z" />
+    <!-- Jewel dots -->
+    <path android:fillColor="#FFD740"
+        android:pathData="M8,24 A1.5,1.5,0,1,1,7.999,24 Z" />
+    <path android:fillColor="#FFD740"
+        android:pathData="M16,24 A1.5,1.5,0,1,1,15.999,24 Z" />
+    <path android:fillColor="#FFD740"
+        android:pathData="M24,24 A1.5,1.5,0,1,1,23.999,24 Z" />
+</vector>

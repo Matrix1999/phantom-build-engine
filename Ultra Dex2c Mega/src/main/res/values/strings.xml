@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ultra Dex2C-VMP</string>
+    <string name="pick_apk">Select APK</string>
+    <string name="protect">Protect APK</string>
+    <string name="no_apk">No APK selected</string>
+    <string name="ready">Ready to protect your APK</string>
+    <string name="compiler_setup">Compiler Setup</string>
+</resources>

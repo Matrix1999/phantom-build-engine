@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_dialog_dark"
+    android:clipChildren="true"
+    android:clipToPadding="true">
+
+    <!-- Green top accent bar -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:background="@color/accent_green" />
+
+    <!-- Shield animation view -->
+    <com.ultra.dex2cvmp.ui.ShieldAnimView
+        android:id="@+id/update_shield_view"
+        android:layout_width="match_parent"
+        android:layout_height="140dp"
+        android:background="@color/bg_card2" />
+
+    <!-- Content -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <!-- UPDATE AVAILABLE label -->
+        <TextView
+            android:id="@+id/tv_update_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="UPDATE AVAILABLE"
+            android:textColor="@color/accent_green"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.15"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="6dp" />
+
+        <!-- Version name -->
+        <TextView
+            android:id="@+id/tv_update_version"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Version 4.0"
+            android:textColor="@color/text_primary"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="18dp" />
+
+        <!-- Divider 1 -->
+        <View
+            android:id="@+id/divider_update_1"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/border"
+            android:layout_marginBottom="16dp" />
+
+        <!-- WHAT'S NEW label -->
+        <TextView
+            android:id="@+id/tv_update_whats_new"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WHAT'S NEW"
+            android:textColor="@color/text_muted"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.15"
+            android:fontFamily="monospace"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Changelog -->
+        <TextView
+            android:id="@+id/tv_update_changelog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Bug fixes and improvements."
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:lineSpacingExtra="5dp"
+            android:layout_marginBottom="22dp" />
+
+        <!-- Divider 2 -->
+        <View
+            android:id="@+id/divider_update_2"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/border"
+            android:layout_marginBottom="20dp" />
+
+        <!-- Buttons row -->
+        <LinearLayout
+            android:id="@+id/update_buttons_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <!-- Later -->
+            <LinearLayout
+                android:id="@+id/btn_update_later"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:background="@drawable/bg_card_border"
+                android:layout_marginEnd="10dp"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="LATER"
+                    android:textColor="@color/text_muted"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.08"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <!-- Download -->
+            <LinearLayout
+                android:id="@+id/btn_update_download"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="2"
+                android:gravity="center"
+                android:background="@drawable/bg_btn_green"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView
+                    android:id="@+id/tv_btn_download_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="DOWNLOAD UPDATE"
+                    android:textColor="@color/black"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.08"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Download complete section — hidden until download finishes -->
+        <LinearLayout
+            android:id="@+id/download_complete_section"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- Success card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_card_border"
+                android:padding="14dp"
+                android:layout_marginBottom="14dp">
+
+                <!-- Green checkmark -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="✓"
+                    android:textColor="@color/accent_green"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    android:layout_marginEnd="12dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="DOWNLOADED"
+                        android:textColor="@color/accent_green"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.15"
+                        android:fontFamily="monospace"
+                        android:layout_marginBottom="3dp" />
+
+                    <TextView
+                        android:id="@+id/tv_download_path"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="/storage/emulated/0/Download/UltraDex2CVMP_update.apk"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:fontFamily="monospace" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- INSTALL NOW button — full width green -->
+            <LinearLayout
+                android:id="@+id/btn_install_now"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:gravity="center"
+                android:background="@drawable/bg_btn_green"
+                android:clickable="true"
+                android:focusable="true">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="INSTALL NOW"
+                    android:textColor="@color/black"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.08"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

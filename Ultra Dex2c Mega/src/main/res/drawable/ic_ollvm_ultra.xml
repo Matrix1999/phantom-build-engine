@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hexagon outline -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <!-- Outer hexagon -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M16,2 L27.86,9 L27.86,23 L16,30 L4.14,23 L4.14,9 Z" />
+    <!-- Inner cutout -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M16,7 L24,11.5 L24,20.5 L16,25 L8,20.5 L8,11.5 Z" />
+    <!-- Inner fill -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M16,12 L20,14.3 L20,19 L16,21.3 L12,19 L12,14.3 Z" />
+</vector>
