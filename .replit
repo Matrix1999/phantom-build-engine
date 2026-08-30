@@ -1,3 +1,4 @@
+modules = ["java-graalvm22.3"]
 [nix]
 channel = "stable-25_05"
 packages = ["unzip"]

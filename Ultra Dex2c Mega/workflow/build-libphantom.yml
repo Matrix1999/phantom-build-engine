@@ -28,7 +28,7 @@ jobs:
       - name: Test XChaCha20-Poly1305 implementation
         run: |
           cc -std=c11 -O2 -Wall -Wextra \
-            "Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_chacha20poly1305_test.c" \
+            "Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_chacha20poly1305_test.c" \
             -o /tmp/phantom_xchacha_test
           /tmp/phantom_xchacha_test
 
@@ -110,7 +110,7 @@ jobs:
         timeout-minutes: 30
         run: |
           set -e
-          SRC="Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_key.c"
+          SRC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
 
           AMICE_PASSES=(
             AMICE_VM_VIRTUALIZE=true
@@ -287,7 +287,7 @@ jobs:
           from pathlib import Path
 
           native = Path(
-              "Ultra Dex2C VMP/src/main/cpp/phantom_source/phantom_key.c"
+              "Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
           ).read_text()
 
           if "uint32_t material[8];" in native or "ctx->material" in native:
@@ -354,8 +354,15 @@ jobs:
 
       - name: Encrypt blobs
         run: |
-          python3 "Ultra Dex2C VMP/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
-          python3 "Ultra Dex2C VMP/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm.so  libphantom_arm.blob
+          python3 "Ultra Dex2c Mega/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
+          python3 "Ultra Dex2c Mega/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm.so  libphantom_arm.blob
+          for BLOB in libphantom_arm64.blob libphantom_arm.blob; do
+            if [ "$(head -c 4 "$BLOB")" != "PHX4" ]; then
+              echo "Unsupported Phantom blob format in $BLOB" >&2
+              exit 1
+            fi
+            echo "Verified PHX4 envelope: $BLOB"
+          done
           ls -lh libphantom_arm64.blob libphantom_arm.blob
 
       - name: Install generated Phantom blobs into project assets
@@ -363,7 +370,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          ASSET_DIR="Ultra Dex2C VMP/src/main/assets/phantom"
+          ASSET_DIR="Ultra Dex2c Mega/src/main/assets/phantom"
           mkdir -p "$ASSET_DIR"
           cp libphantom_arm64.blob "$ASSET_DIR/libphantom_arm64.blob"
           cp libphantom_arm.blob "$ASSET_DIR/libphantom_arm.blob"
