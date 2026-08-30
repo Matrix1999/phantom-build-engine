@@ -2162,7 +2162,7 @@ typedef struct {
 static ph_direct_dex_map_t g_direct_dex_maps[PH_MAX_DIRECT_DEX_MAPS];
 static volatile unsigned int g_direct_dex_count = 0;
 
-__attribute__((annotate("+vm_virtualize")))
+__attribute__((annotate("+vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) int ph_stage_policy_vm(size_t data_len, size_t map_len) {
     if (data_len < 112) return 0;
     if (data_len > MAX_SZ) return 0;

@@ -86,20 +86,23 @@ jobs:
       - name: Smoke-test amice plugin (arm64 + arm32)
         run: |
           cat > /tmp/smoke.c <<'CSRC'
+          __attribute__((annotate("+vm_virtualize,-vm_flatten")))
           int foo(int x, int y) { int a=x^y; int b=a+x; if(a>0) return b; return b*y; }
           CSRC
           for TARGET in aarch64-linux-android26 armv7a-linux-androideabi21; do
+            SMOKE_LOG="/tmp/smoke_${TARGET}.log"
             AMICE_VM_VIRTUALIZE=true \
             AMICE_VM_EMIT_MARKERS=true AMICE_VM_DUMP_BYTECODE=true \
             AMICE_VM_DUMP_LOWERING=true \
             AMICE_VM_FLATTEN=true \
-            AMICE_PASS_ORDER=VmFlatten,VmVirtualize \
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten \
             RUST_LOG=amice=debug \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
-              -fpass-plugin="$AMICE_PLUGIN" -c /tmp/smoke.c -o /tmp/smoke_${TARGET}.o
-            if ! readelf -S --wide "/tmp/smoke_${TARGET}.o" \
-                | grep -q "amice\.vm.*foo"; then
+              -fpass-plugin="$AMICE_PLUGIN" -c /tmp/smoke.c \
+              -o "/tmp/smoke_${TARGET}.o" 2>&1 | tee "$SMOKE_LOG"
+            if grep -q 'skip function "foo"' "$SMOKE_LOG" || \
+                ! grep -q 'bytecode for "foo"' "$SMOKE_LOG"; then
               echo "❌ $TARGET — amice compiled but did not virtualize foo" >&2
               exit 1
             fi
@@ -129,7 +132,7 @@ jobs:
             AMICE_VM_DUMP_BYTECODE=true
             AMICE_VM_DUMP_LOWERING=true
             AMICE_VM_FLATTEN=true
-            AMICE_PASS_ORDER=VmFlatten,VmVirtualize
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten
             RUST_LOG=amice=debug
 
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
