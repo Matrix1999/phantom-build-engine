@@ -42,3 +42,17 @@ mtime_ms = 1788066497665
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/30bcff74-838b-444b-9c59-25aad2f455c3/fcd0e8af-10c4-4850-b0b0-6f402bd1db7d"
 storage_version_token = "1788066501594455"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "Kw_rnZH9d7Qlhg0VBLnnf"
+uri = "file://build/cloud/Ultra-Dex2C-Mega-11.1-portable-bootstrap.apk"
+type = "unspecified"
+title = "Ultra Dex2C Mega 11.1 — Portable Bootstrap"
+description = "Exact APK from successful run 33294562296. App ID com.ultra.dex2cvmp. Contains byte-matched portable ARM64/ARM bootstrap files and matching PHX4 Phantom blobs."
+logical_id = "61554d43-2868-4b2e-a9ea-cd72ae3aa828"
+content_hash = "sha256:52419135d14f90584821c3372480ecd89049d14438c5148367864fe73a9ba9f2"
+size = 27940970
+mtime_ms = 1788067952231
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:27f7a7ff-d35b-454b-b36f-6cb496b0a82f/61554d43-2868-4b2e-a9ea-cd72ae3aa828/21f3df66-5e97-4b63-9331-606c38284154"
+storage_version_token = "1788067964293855"
+content_type = "application/octet-stream"

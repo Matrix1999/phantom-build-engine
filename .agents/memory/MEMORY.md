@@ -1,2 +1,3 @@
 - [Phantom loader architecture](phantom-loader-architecture.md) — two-stage native envelope/decryption pipeline and the Java/JNI contracts that must stay aligned.
 - [Guard signature and TEE gates](guard-signature-tee.md) — signer verification and hardware-key continuity run after blob loading and have a separate fail-closed policy.
+- [Cloud source asset IDs](cloud-source-asset-ids.md) — release-asset downloads require numeric REST IDs; GraphQL node IDs download an error body instead of the ZIP.

@@ -1,4 +1,4 @@
-name: Build Phantom bootstrap (amice-vmp)
+name: Build Phantom bootstrap (portable)
 
 on:
   workflow_dispatch:
@@ -21,37 +21,6 @@ jobs:
           ndk-version: r29
           add-to-path: false
 
-      - name: Download amice plugin + libLLVM.so
-        env:
-          TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -e
-          fetch_asset() {
-            local name="$1" dest="$2"
-            ASSET_ID=$(curl -sf \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/releases/tags/amice-ndk-r29" \
-              | jq -r --arg n "$name" '.assets[] | select(.name==$n) | .id')
-            if [ -z "$ASSET_ID" ]; then
-              echo "Asset not found: $name" >&2
-              exit 1
-            fi
-            curl -Lf -s \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/octet-stream" \
-              "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID" \
-              -o "$dest"
-          }
-          fetch_asset "libamice-android-ndk-r29-linux-x86_64.so" "libamice.so"
-          fetch_asset "libLLVM.so" "libLLVM.so"
-
-      - name: Fix libedit symlink for amice
-        run: |
-          LIBEDIT=$(find /usr/lib/x86_64-linux-gnu -name "libedit.so.2*" | head -1)
-          sudo ln -sf "$LIBEDIT" /usr/lib/x86_64-linux-gnu/libedit.so.0
-
       - name: Resolve toolchain paths
         run: |
           NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}"
@@ -63,8 +32,6 @@ jobs:
             echo "CLANG=$TC/bin/clang"
             echo "NDK_LINK_ARM64=$TC/bin/aarch64-linux-android26-clang"
             echo "NDK_LINK_ARM32=$TC/bin/armv7a-linux-androideabi21-clang"
-            echo "LLVM_LIBDIR=$PWD"
-            echo "AMICE_PLUGIN=$PWD/libamice.so"
           } >> "$GITHUB_ENV"
 
       - name: Write bootstrap linker version script
@@ -81,23 +48,12 @@ jobs:
         run: |
           set -e
           SRC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_bootstrap.c"
-          AMICE_PASSES=(
-            AMICE_VM_VIRTUALIZE=true
-            AMICE_VM_EMIT_MARKERS=true
-            AMICE_VM_DUMP_BYTECODE=true
-            AMICE_VM_DUMP_LOWERING=true
-            AMICE_VM_FLATTEN=true
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten
-            RUST_LOG=amice=debug
-            LD_LIBRARY_PATH="$LLVM_LIBDIR"
-          )
           COMMON_FLAGS=(
             --sysroot="$SYSROOT" -fPIC -O2 -g0 -std=c11
             -fno-unwind-tables -fno-asynchronous-unwind-tables
             -fvisibility=hidden -ffunction-sections -fdata-sections
             -fstack-protector-strong -D_FORTIFY_SOURCE=2
             -D__ANDROID__ -DANDROID
-            -fpass-plugin="$AMICE_PLUGIN"
           )
           LDFLAGS=(
             -shared -fPIC -Wl,--gc-sections -Wl,--build-id=none
@@ -105,66 +61,70 @@ jobs:
             -Wl,-z,relro -Wl,-z,now -Wl,--strip-all
           )
 
-          env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
+          "$CLANG" --target=aarch64-linux-android26 \
             "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_bootstrap_arm64.o
           "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom_bootstrap.so \
             phantom_bootstrap_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
             -o libbootstrap_arm64.so
 
-          env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
+          "$CLANG" --target=armv7a-linux-androideabi21 \
             "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_bootstrap_arm32.o
           "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom_bootstrap.so \
             phantom_bootstrap_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
             -o libbootstrap_arm.so
 
-      - name: Audit bootstrap VM sections
+      - name: Verify bootstrap crypto and key contract
         run: |
           set -euo pipefail
-          for SPEC in "phantom_bootstrap_arm64.o:arm64" "phantom_bootstrap_arm32.o:arm32"; do
-            OBJ="${SPEC%%:*}"
-            ABI="${SPEC##*:}"
-            REPORT="amice-vmp-${ABI}-report.txt"
-            AUDIT_STATUS=0
-            set +e
-            (
-              set +e
-              SECTION_FILE="/tmp/${ABI}_bootstrap_sections.txt"
-              readelf -S --wide "$OBJ" > "$SECTION_FILE"
-              echo "======================================================"
-              echo "$OBJ - bootstrap VMP protection audit"
-              echo "======================================================"
-              echo ""
-              echo "--- Complete section table ---"
-              cat "$SECTION_FILE"
-              echo ""
-              echo "--- VMP marker sections (.amice.vm.*) ---"
-              grep -E "amice\.vm\.(bytecode|meta)" "$SECTION_FILE"
-              if [ $? -ne 0 ]; then
-                echo "ERROR: no Amice VM marker sections found"
-                exit 1
-              fi
-              STAGE_STATUS=0
-              for target in stage_blob_word0_vm stage_blob_word1_vm stage_blob_word2_vm \
-                stage_blob_word3_vm stage_blob_word4_vm stage_blob_word5_vm \
-                stage_blob_word6_vm stage_blob_word7_vm stage_blob_group0_vm \
-                stage_blob_group1_vm stage_blob_key_vm stage_blob_decrypt_vm; do
-                if grep -q "$target" "$SECTION_FILE"; then
-                  echo "OK $target"
-                else
-                  echo "MISSING $target"
-                  STAGE_STATUS=1
-                fi
-              done
-              exit "$STAGE_STATUS"
-            ) > "$REPORT" 2>&1
-            AUDIT_STATUS=$?
-            set -e
-            cat "$REPORT"
-            if [ "$AUDIT_STATUS" -ne 0 ]; then
-              echo "Bootstrap VMP audit failed for $ABI" >&2
-              exit "$AUDIT_STATUS"
-            fi
-          done
+          SRC_DIR="Ultra Dex2c Mega/src/main/cpp/phantom_source"
+          cc -std=c11 -O2 -Wall -Wextra -I "$SRC_DIR" \
+            "$SRC_DIR/phantom_chacha20poly1305_test.c" \
+            -o phantom_chacha20poly1305_test
+          ./phantom_chacha20poly1305_test
+
+          python3 - <<'PY'
+          import hashlib
+          import re
+          import struct
+          from pathlib import Path
+
+          source = Path(
+              "Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_bootstrap.c"
+          ).read_text()
+          stages = re.findall(
+              r"PH_DEFINE_BLOB_STAGE\(\s*(\d+)\s*,\s*0x([0-9a-fA-F]{8})u\s*\)",
+              source,
+          )
+          stages.sort(key=lambda item: int(item[0]))
+          if [int(index) for index, _ in stages] != list(range(8)):
+              raise SystemExit("bootstrap key stages are incomplete")
+
+          decoded = bytearray()
+          encoded = bytearray()
+          for index_text, value_text in stages:
+              index = int(index_text)
+              value = int(value_text, 16)
+              encoded += struct.pack("<I", value)
+              mix = 0xA5A5A5A5 ^ ((index * 0x9E3779B9) & 0xFFFFFFFF)
+              rotate = (index % 5) + 3
+              add = (0x31415927 + index * 0x01020304) & 0xFFFFFFFF
+              value ^= mix
+              value = ((value >> rotate) | (value << (32 - rotate))) & 0xFFFFFFFF
+              value = (value - add) & 0xFFFFFFFF
+              decoded += struct.pack("<I", value)
+
+          expected = hashlib.sha256(b"phantom-outer-xchacha-v1").digest()
+          if bytes(decoded) != expected:
+              raise SystemExit("bootstrap key does not match encrypt_blob.py")
+
+          for name in ("libbootstrap_arm64.so", "libbootstrap_arm.so"):
+              data = Path(name).read_bytes()
+              if expected in data:
+                  raise SystemExit(f"{name}: decoded blob key is contiguous")
+              if bytes(encoded) in data:
+                  raise SystemExit(f"{name}: encoded key stages are contiguous")
+              print(f"{name}: key contract OK; no contiguous key material")
+          PY
 
       - name: Strip and harden bootstrap libraries
         run: |
@@ -174,8 +134,6 @@ jobs:
             for SEC in .symtab .strtab .comment .note.android.ident .eh_frame .eh_frame_hdr; do
               "$TC/bin/llvm-objcopy" --remove-section="$SEC" "$SO" 2>/dev/null || true
             done
-            "$TC/bin/llvm-objcopy" --remove-section=.amice.vm.bytecode \
-              --remove-section=.amice.vm.meta "$SO" 2>/dev/null || true
           done
 
       - name: Verify bootstrap JNI exports
@@ -213,7 +171,7 @@ jobs:
       - name: Upload bootstrap artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: phantom-bootstrap-amice
+          name: phantom-bootstrap-portable
           retention-days: 90
           path: |
             libbootstrap_arm64.so
