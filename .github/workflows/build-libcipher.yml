@@ -102,6 +102,7 @@ jobs:
           AMICE_VM_VIRTUALIZE=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
+          AMICE_VM_DUMP_LOWERING=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=aarch64-linux-android26 \
@@ -152,13 +153,17 @@ jobs:
             | awk '{print $5, $6}' | sort -k1 -rn | head -20
 
           echo ""
-          echo "── Required TEE VM markers (arm64-v8a) ──"
+          echo "── Required Guard VM markers (arm64-v8a) ──"
           readelf -S --wide guard_arm64.o > /tmp/guard_arm64_sections.txt
-          for target in vm_gate_hwkey vm_tee_vmp_validate_evidence vm_tee_vmp_failure; do
+          for target in \
+              vm_gate_mapscan vm_gate_vccheck vm_gate_so_integrity \
+              vm_gate_sigcheck vm_gate_hwkey vm_gate_antik \
+              vm_tee_vmp_validate_evidence vm_security_vmp_aggregate \
+              vm_tee_vmp_failure; do
             if grep -q "amice\.vm.*${target}" /tmp/guard_arm64_sections.txt; then
               echo "✅ ${target}"
             else
-              echo "❌ Missing AMICE marker for ${target}"
+              echo "❌ Missing AMICE VM marker for ${target}; refusing Guard artifact"
               exit 1
             fi
           done
@@ -197,6 +202,7 @@ jobs:
           AMICE_VM_VIRTUALIZE=true \
           AMICE_VM_EMIT_MARKERS=true \
           AMICE_VM_DUMP_BYTECODE=true \
+          AMICE_VM_DUMP_LOWERING=true \
           LD_LIBRARY_PATH="$LLVM_LIBDIR" \
           "$CLANGXX" \
             --target=armv7a-linux-androideabi21 \
@@ -212,13 +218,17 @@ jobs:
             -c guard.cpp -o guard_arm32.o 2>&1
           "$TC/bin/llvm-objcopy" --strip-debug guard_arm32.o
           echo ""
-          echo "── Required TEE VM markers (armeabi-v7a) ──"
+          echo "── Required Guard VM markers (armeabi-v7a) ──"
           readelf -S --wide guard_arm32.o > /tmp/guard_arm32_sections.txt
-          for target in vm_gate_hwkey vm_tee_vmp_validate_evidence vm_tee_vmp_failure; do
+          for target in \
+              vm_gate_mapscan vm_gate_vccheck vm_gate_so_integrity \
+              vm_gate_sigcheck vm_gate_hwkey vm_gate_antik \
+              vm_tee_vmp_validate_evidence vm_security_vmp_aggregate \
+              vm_tee_vmp_failure; do
             if grep -q "amice\.vm.*${target}" /tmp/guard_arm32_sections.txt; then
               echo "✅ ${target}"
             else
-              echo "❌ Missing AMICE marker for ${target}"
+              echo "❌ Missing AMICE VM marker for ${target}; refusing Guard artifact"
               exit 1
             fi
           done
