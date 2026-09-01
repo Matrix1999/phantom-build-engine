@@ -2718,49 +2718,6 @@ static __attribute__((noinline)) void detect_java_xposed_bridge(
 // exists in this translation unit.
 // ?
 
-/*
- * Phantom-owned gate state is deliberately separate from guard.cpp state.  The
- * signer input is the AES-CBC envelope emitted by ApkProtector, never a
- * plaintext certificate digest.  This small reducer is kept in the protected
- * library so future evidence collectors cannot accidentally authorize a load
- * merely by returning success to Java.
- */
-static volatile uint32_t g_ph_gate_left = 0x51a7c3d9u;
-static volatile uint32_t g_ph_gate_right = ~0x51a7c3d9u;
-
-__attribute__((annotate("+vm_virtualize")))
-static __attribute__((noinline)) bool phantom_evidence_reduce(
-        JNIEnv *env, jobject context, jbyteArray signer_cipher) {
-    PH_TEE_LOG("phantom gate: evidence reducer entered");
-    if (!env || !context || !signer_cipher) {
-        PH_TEE_LOG("phantom gate: missing JNI evidence input");
-        return false;
-    }
-    if ((*env)->GetArrayLength(env, signer_cipher) != 48) {
-        PH_TEE_LOG("phantom gate: encrypted signer evidence length rejected");
-        return false;
-    }
-    uint8_t material[48];
-    (*env)->GetByteArrayRegion(env, signer_cipher, 0, 48, (jbyte *)material);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-        ph_secure_zero(material, sizeof(material));
-        PH_TEE_LOG("phantom gate: JNI evidence read failed");
-        return false;
-    }
-    uint32_t fold = 0x9e3779b9u;
-    for (size_t i = 0; i < sizeof(material); ++i)
-        fold = (fold << 5) | (fold >> 27), fold ^= material[i] + (uint32_t)i;
-    ph_secure_zero(material, sizeof(material));
-    /* A mirrored/sealed transition detects trivial one-word state patching. */
-    const uint32_t next = fold ^ 0x51a7c3d9u;
-    g_ph_gate_left = next;
-    g_ph_gate_right = ~next;
-    const bool accepted = g_ph_gate_right == ~g_ph_gate_left && fold != 0;
-    PH_TEE_LOG("phantom gate: evidence reducer result=%s", accepted ? "PASS" : "FAIL");
-    return accepted;
-}
-
 JNIEXPORT jobject JNICALL
 Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         JNIEnv      *env,
@@ -2779,13 +2736,13 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         return NULL;
     }
     PH_LOGI("nativeLoadShards: load state entered");
-    PH_TEE_LOG("phantom tee gate: load boundary entered");
-    if (!phantom_evidence_reduce(env, j_context, j_signer_cipher)) {
-        PH_TEE_LOG("phantom tee gate: FAIL before shard decrypt");
-        PH_NUKE("phantom evidence gate failed");
-        nuke_app();
-    }
-    PH_TEE_LOG("phantom tee gate: evidence accepted; continuing pre-decrypt checks");
+    /*
+     * Context and encrypted signer material are reserved for the PHG1
+     * collector. Their presence is not authorization; do not leave a
+     * ciphertext-folding placeholder in the shard-decryption boundary.
+     */
+    (void)j_context;
+    (void)j_signer_cipher;
     detect_general_dumper_before_decrypt();
     PH_LOGI("nativeLoadShards: pre-decrypt gate passed");
     detect_java_xposed_bridge(env, j_parent_cl);
