@@ -32,3 +32,15 @@ authoritative identity and cause a hard failure before DEX decryption.
 **How to apply:** Register the final output signer's SHA-256 during protection,
 require the same digest in server and local Phantom evidence, and bind the
 attested package name in addition to—not instead of—that signer identity.
+
+The runtime attestation origin belongs in Phantom's encrypted native string
+table and must be revealed and integrity-checked only inside a VMP target.
+Upload-time enrollment may use the same public origin from the builder.
+
+**Why:** A Java-only runtime endpoint is easy to redirect with a wrapper or
+hook. The endpoint is not a secret, but the native gate must reject substituted
+origins and independently verify the server's pinned signing key.
+
+**How to apply:** Never accept a runtime origin supplied by Java. Keep redirect
+following disabled, bind the exact HTTPS origin in VMP, and treat the pinned
+server proof key—not URL secrecy—as the final authority.
