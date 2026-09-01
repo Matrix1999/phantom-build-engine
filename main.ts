@@ -19,6 +19,7 @@ import {
   sign as signEd25519,
 } from "node:crypto";
 import { Buffer } from "node:buffer";
+import pg from "npm:pg@8.16.3";
 
 const PORT = parseInt(Deno.env.get("PORT") ?? "5000", 10);
 const TOKEN_VERSION = 1;
@@ -82,6 +83,7 @@ const requestBuckets = new Map<string, { start: number; count: number }>();
 let revocationCache:
   | { expires: number; entries: Record<string, { status?: string; reason?: string }> }
   | undefined;
+let databasePool: InstanceType<typeof pg.Pool> | undefined;
 
 function json(data: JsonRecord, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -609,6 +611,41 @@ function allowedSigners(): Set<string> {
   );
 }
 
+function db(): InstanceType<typeof pg.Pool> {
+  if (!databasePool) {
+    const connectionString = Deno.env.get("DATABASE_URL");
+    if (!connectionString) throw new Error("database unavailable");
+    databasePool = new pg.Pool({
+      connectionString,
+      max: 5,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+    });
+  }
+  return databasePool;
+}
+
+async function requireRegisteredApp(packageName: string, signerDigest: string): Promise<void> {
+  const result = await db().query(
+    `SELECT package_name, status
+       FROM phantom_app_enrollments
+      WHERE signer_sha256 = $1
+      ORDER BY updated_at DESC
+      LIMIT 16`,
+    [signerDigest],
+  );
+  if (result.rowCount === 0) {
+    throw new Error("APK signer is not enrolled");
+  }
+  const matchingPackage = result.rows.find(
+    (row: { package_name: string; status: string }) =>
+      row.package_name === packageName && row.status === "active",
+  );
+  if (!matchingPackage) {
+    throw new Error("APK package binding rejected for enrolled signer");
+  }
+}
+
 async function verifyAttestationChain(
   chainPem: string[],
   challenge: Uint8Array,
@@ -708,6 +745,7 @@ async function bindResponse(request: Request): Promise<Response> {
   if (!/^[0-9a-f]{64}$/u.test(signerDigest)) throw new Error("invalid signer digest");
   const record = await verifyRecord(challengeToken, "challenge");
   if (record.challenge !== challenge) throw new Error("challenge token mismatch");
+  await requireRegisteredApp(packageName, signerDigest);
   const certChain = body.certChain;
   if (!Array.isArray(certChain) || !certChain.every((item) => typeof item === "string")) {
     throw new Error("invalid certChain");
@@ -737,6 +775,39 @@ async function bindResponse(request: Request): Promise<Response> {
     securityLevel: verified.securityLevel,
     keyFingerprint: verified.leafFingerprint,
   });
+}
+
+async function registerAppResponse(request: Request): Promise<Response> {
+  const body = await readJson(request);
+  const packageName = requiredString(body, "packageName", 255);
+  const signerDigest = requiredString(body, "signerDigest", 64).toLowerCase();
+  const certificateDigest = typeof body.certificateDigest === "string"
+    ? body.certificateDigest.toLowerCase()
+    : null;
+  if (!/^[A-Za-z][A-Za-z0-9_.]{1,254}$/u.test(packageName)) {
+    throw new Error("invalid package name");
+  }
+  if (!/^[0-9a-f]{64}$/u.test(signerDigest)) throw new Error("invalid signer digest");
+  if (certificateDigest !== null && !/^[0-9a-f]{64}$/u.test(certificateDigest)) {
+    throw new Error("invalid certificate digest");
+  }
+  const result = await db().query(
+    `INSERT INTO phantom_app_enrollments
+       (package_name, signer_sha256, certificate_sha256, status)
+     VALUES ($1, $2, $3, 'active')
+     ON CONFLICT (package_name, signer_sha256)
+     DO UPDATE SET
+       certificate_sha256 = COALESCE(EXCLUDED.certificate_sha256,
+                                     phantom_app_enrollments.certificate_sha256),
+       updated_at = NOW()
+     RETURNING id, status`,
+    [packageName, signerDigest, certificateDigest],
+  );
+  return json({
+    ok: true,
+    enrollmentId: String(result.rows[0].id),
+    status: result.rows[0].status,
+  }, 201);
 }
 
 async function nonceResponse(request: Request): Promise<Response> {
@@ -839,6 +910,9 @@ export async function handler(request: Request): Promise<Response> {
     }
     if (request.method === "POST" && url.pathname === "/api/phantom/attest/bind") {
       return await bindResponse(request);
+    }
+    if (request.method === "POST" && url.pathname === "/api/phantom/apps/register") {
+      return await registerAppResponse(request);
     }
     if (request.method === "POST" && url.pathname === "/api/phantom/attest/nonce") {
       return await nonceResponse(request);

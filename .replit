@@ -1,4 +1,4 @@
-modules = ["java-graalvm22.3", "python-base-3.13", "deno-2"]
+modules = ["java-graalvm22.3", "python-base-3.13", "deno-2", "postgresql-16"]
 [nix]
 channel = "stable-25_05"
 packages = ["unzip", "apktool", "radare2"]

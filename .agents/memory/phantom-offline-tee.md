@@ -20,3 +20,15 @@ under Phantom-owned VMP targets. Online success requires the local signer/TEE
 checks plus server enrollment and nonce proof. Only an actual availability
 failure may select the local fallback; an explicit server rejection remains a
 failure. Never use the guard result as Phantom evidence.
+
+The uploaded APK signing-certificate SHA-256 is the authoritative application
+identity for server enrollment. Package name is only a secondary attestation
+binding and must never authorize an APK without the enrolled signer digest.
+
+**Why:** Ultra Dex2c protects APKs from many unrelated users, so package names
+are user-controlled and can collide or be copied. Re-signing must change the
+authoritative identity and cause a hard failure before DEX decryption.
+
+**How to apply:** Register the final output signer's SHA-256 during protection,
+require the same digest in server and local Phantom evidence, and bind the
+attested package name in addition to—not instead of—that signer identity.

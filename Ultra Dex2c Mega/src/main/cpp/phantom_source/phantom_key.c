@@ -64,6 +64,9 @@
 #include <link.h>
 #include <dlfcn.h>
 #include <zlib.h>
+#if defined(PHANTOM_DEBUG_TEE) && PHANTOM_DEBUG_TEE
+#include <android/log.h>
+#endif
 #include "phantom_cipher.h"
 #include "phantom_chacha20poly1305.h"
 #include "phantom_pstrings.inc"
@@ -77,6 +80,19 @@
 #define PH_LOGI(...) ((void)0)
 #define PH_LOGE(...) ((void)0)
 #define PH_NUKE(...) nuke_app()
+
+/*
+ * Testing-only TEE breadcrumbs.  This is intentionally compile-time gated:
+ * production Phantom blobs contain no Android log backend or D2CG messages.
+ * Enable only on a throwaway test build and collect with:
+ *   adb logcat -s D2CG:I '*:S'
+ */
+#if defined(PHANTOM_DEBUG_TEE) && PHANTOM_DEBUG_TEE
+#define PH_TEE_LOG(...) \
+    ((void)__android_log_print(ANDROID_LOG_INFO, "D2CG", __VA_ARGS__))
+#else
+#define PH_TEE_LOG(...) ((void)0)
+#endif
 
 // ?
 // Anti-dump / Anti-Frida -- constants & types
@@ -2715,13 +2731,21 @@ static volatile uint32_t g_ph_gate_right = ~0x51a7c3d9u;
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) bool phantom_evidence_reduce(
         JNIEnv *env, jobject context, jbyteArray signer_cipher) {
-    if (!env || !context || !signer_cipher) return false;
-    if ((*env)->GetArrayLength(env, signer_cipher) != 48) return false;
+    PH_TEE_LOG("phantom gate: evidence reducer entered");
+    if (!env || !context || !signer_cipher) {
+        PH_TEE_LOG("phantom gate: missing JNI evidence input");
+        return false;
+    }
+    if ((*env)->GetArrayLength(env, signer_cipher) != 48) {
+        PH_TEE_LOG("phantom gate: encrypted signer evidence length rejected");
+        return false;
+    }
     uint8_t material[48];
     (*env)->GetByteArrayRegion(env, signer_cipher, 0, 48, (jbyte *)material);
     if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionClear(env);
         ph_secure_zero(material, sizeof(material));
+        PH_TEE_LOG("phantom gate: JNI evidence read failed");
         return false;
     }
     uint32_t fold = 0x9e3779b9u;
@@ -2732,7 +2756,9 @@ static __attribute__((noinline)) bool phantom_evidence_reduce(
     const uint32_t next = fold ^ 0x51a7c3d9u;
     g_ph_gate_left = next;
     g_ph_gate_right = ~next;
-    return g_ph_gate_right == ~g_ph_gate_left && fold != 0;
+    const bool accepted = g_ph_gate_right == ~g_ph_gate_left && fold != 0;
+    PH_TEE_LOG("phantom gate: evidence reducer result=%s", accepted ? "PASS" : "FAIL");
+    return accepted;
 }
 
 JNIEXPORT jobject JNICALL
@@ -2753,10 +2779,13 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         return NULL;
     }
     PH_LOGI("nativeLoadShards: load state entered");
+    PH_TEE_LOG("phantom tee gate: load boundary entered");
     if (!phantom_evidence_reduce(env, j_context, j_signer_cipher)) {
+        PH_TEE_LOG("phantom tee gate: FAIL before shard decrypt");
         PH_NUKE("phantom evidence gate failed");
         nuke_app();
     }
+    PH_TEE_LOG("phantom tee gate: evidence accepted; continuing pre-decrypt checks");
     detect_general_dumper_before_decrypt();
     PH_LOGI("nativeLoadShards: pre-decrypt gate passed");
     detect_java_xposed_bridge(env, j_parent_cl);

@@ -2,6 +2,12 @@ name: Build libphantom.so + encrypt blobs (amice-vmp)
 
 on:
   workflow_dispatch:
+    inputs:
+      debug_tee:
+        description: "Enable D2CG Android logcat breadcrumbs for a test blob only"
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   build-phantom:
@@ -144,6 +150,14 @@ jobs:
             -D__ANDROID__ -DANDROID
             -fpass-plugin="$AMICE_PLUGIN"
           )
+          LINK_EXTRA=()
+          if [ "${{ inputs.debug_tee }}" = "true" ]; then
+            COMMON_FLAGS+=( -DPHANTOM_DEBUG_TEE=1 )
+            LINK_EXTRA+=( -llog )
+            echo "⚠️ TEE debug logging ENABLED for this test blob"
+          else
+            echo "TEE debug logging disabled (production-safe)"
+          fi
 
           LDFLAGS=(
             -shared -fPIC -Wl,--gc-sections -Wl,--build-id=none
@@ -156,6 +170,7 @@ jobs:
               "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o 2>&1
             "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
               phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
+              "${LINK_EXTRA[@]}" \
               -o libphantom_arm64.so
           }
 
@@ -164,6 +179,7 @@ jobs:
               "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
             "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
               phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
+              "${LINK_EXTRA[@]}" \
               -o libphantom_arm.so
           }
 

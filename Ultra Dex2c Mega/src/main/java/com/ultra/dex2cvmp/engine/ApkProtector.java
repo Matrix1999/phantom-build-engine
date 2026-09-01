@@ -17,6 +17,8 @@ import com.ultra.dex2cvmp.engine.vmp.GlobalDexConfig;
 import com.ultra.dex2cvmp.engine.vmp.converter.structs.RegisterNativesUtilClassDef;
 import com.ultra.dex2cvmp.ui.SettingsFragment;
 import java.io.*;
+import java.net.URL;
+import javax.net.ssl.HttpsURLConnection;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
@@ -24,6 +26,13 @@ import java.util.concurrent.*;
 import java.util.zip.*;
 
 public class ApkProtector {
+    /* Public service configuration, kept in one location. It is not credential material. */
+    private static final String PHANTOM_REGISTER_URL =
+            "https://27f7a7ff-d35b-454b-b36f-6cb496b0a82f-00-3i4o2ewl5tnbc.reed.replit.dev"
+            + "/api/phantom/apps/register";
+    private static final int PHANTOM_CONNECT_TIMEOUT_MS = 10_000;
+    private static final int PHANTOM_READ_TIMEOUT_MS = 10_000;
+    private static final int PHANTOM_MAX_RESPONSE_BYTES = 8 * 1024;
 
     public interface ProgressCallback {
         void onProgress(int percent, String message);
@@ -153,7 +162,27 @@ public class ApkProtector {
         boolean sigCheckEnabled = protectionPrefs.getBoolean(SettingsFragment.KEY_SIG_CHECK, true);
         boolean dexPackerEnabled = protectionPrefs.getBoolean(
                 SettingsFragment.KEY_DEX_PACKER, false);
-        byte[] signerCipher = buildSignerCipher(inputApk, signOutput, sigCheckEnabled);
+        SignerMaterial signerMaterial = buildSignerCipher(inputApk, signOutput, sigCheckEnabled);
+        byte[] signerCipher = signerMaterial.cipher;
+        // The package is extracted from the uploaded APK immediately after the
+        // final signer is selected. Registration is fail-closed: no output is
+        // built if this public inventory service cannot acknowledge it.
+        try {
+            byte[] manifest = readZipEntry(inputApk, "AndroidManifest.xml");
+            if (manifest == null || manifest.length == 0) {
+                throw new Exception("AndroidManifest.xml missing in input APK.");
+            }
+            byte[] parsed = ManifestPatcher.parseManifest(manifest, DexPacker.PROXY_APP, false);
+            String packageName = ManifestPatcher.packageName;
+            java.util.Arrays.fill(manifest, (byte) 0);
+            java.util.Arrays.fill(parsed, (byte) 0);
+            if (packageName == null || packageName.isEmpty()) {
+                throw new Exception("APK package name is unavailable for Phantom registration.");
+            }
+            registerPhantomApp(packageName, signerMaterial.digest);
+        } finally {
+            java.util.Arrays.fill(signerMaterial.digest, (byte) 0);
+        }
         // Phantom consumes a separate copy of the existing encrypted evidence;
         // no plaintext signer digest is added to the bundle.
         byte[] phantomSignerCipher = signerCipher.clone();
@@ -1297,21 +1326,8 @@ public class ApkProtector {
      * Builds the exact 48-byte AES-CBC payload consumed by guard.cpp. Generated
      * native C++ receives this encrypted value, never the plaintext certificate hash.
      */
-    private byte[] buildSignerCipher(File inputApk, boolean signOutput,
+    private SignerMaterial buildSignerCipher(File inputApk, boolean signOutput,
                                      boolean signatureVerificationEnabled) throws Exception {
-        if (!signatureVerificationEnabled) {
-            // The guard decrypts before checking the sentinel, so this must be
-            // AES-CBC(ciphertext of 32 zero bytes), not literal zero ciphertext.
-            report(35, "Signature verification disabled — no signer SHA-256 will be protected.");
-            byte[] key = buildGuardKey();
-            byte[] iv = buildGuardIv();
-            try {
-                return encryptGuardPayload(new byte[32], key, iv);
-            } finally {
-                java.util.Arrays.fill(key, (byte) 0);
-                java.util.Arrays.fill(iv, (byte) 0);
-            }
-        }
         byte[] certDer;
         String certificateSource;
         if (signOutput) {
@@ -1331,17 +1347,80 @@ public class ApkProtector {
         byte[] key = buildGuardKey();
         byte[] iv = buildGuardIv();
         try {
-            byte[] cipher = encryptGuardPayload(digest, key, iv);
+            // Retain the real digest only until public registration completes.
+            // A disabled local signer gate still gets its historical encrypted
+            // zero sentinel; the plaintext fingerprint is never bundled.
+            byte[] cipher = encryptGuardPayload(
+                    signatureVerificationEnabled ? digest : new byte[32], key, iv);
             if (cipher.length != GateContext.SIGNER_CIPHER_BYTES) {
                 throw new Exception("Signer payload must be 48 bytes after AES-CBC padding.");
             }
-            return cipher;
+            return new SignerMaterial(cipher, digest);
         } finally {
             java.util.Arrays.fill(certDer, (byte) 0);
-            java.util.Arrays.fill(digest, (byte) 0);
             java.util.Arrays.fill(key, (byte) 0);
             java.util.Arrays.fill(iv, (byte) 0);
         }
+    }
+
+    private static final class SignerMaterial {
+        final byte[] cipher;
+        final byte[] digest;
+        SignerMaterial(byte[] cipher, byte[] digest) {
+            this.cipher = cipher;
+            this.digest = digest;
+        }
+    }
+
+    /** Register one selected signing-certificate fingerprint; successful HTTP is mandatory. */
+    private static void registerPhantomApp(String packageName, byte[] signerDigest) throws Exception {
+        if (signerDigest == null || signerDigest.length != 32) {
+            throw new IOException("Invalid signer digest for Phantom registration.");
+        }
+        URL url = new URL(PHANTOM_REGISTER_URL);
+        if (!"https".equalsIgnoreCase(url.getProtocol())) {
+            throw new IOException("Phantom registration requires HTTPS.");
+        }
+        String body = "{\"packageName\":\"" + jsonString(packageName)
+                + "\",\"signerDigest\":\"" + bytesToHex(signerDigest, signerDigest.length) + "\"}";
+        HttpsURLConnection connection = (HttpsURLConnection) url.openConnection();
+        try {
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(PHANTOM_CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(PHANTOM_READ_TIMEOUT_MS);
+            connection.setInstanceFollowRedirects(false);
+            connection.setDoOutput(true);
+            connection.setFixedLengthStreamingMode(body.getBytes("UTF-8").length);
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(body.getBytes("UTF-8"));
+            }
+            int status = connection.getResponseCode();
+            InputStream response = status >= 200 && status < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            readBounded(response, PHANTOM_MAX_RESPONSE_BYTES);
+            if (status < 200 || status >= 300) {
+                throw new IOException("Phantom registration was rejected (HTTP " + status + ").");
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static void readBounded(InputStream input, int limit) throws IOException {
+        if (input == null) return;
+        try (InputStream in = input) {
+            byte[] buffer = new byte[1024];
+            int total = 0, n;
+            while ((n = in.read(buffer)) != -1) {
+                total += n;
+                if (total > limit) throw new IOException("Phantom registration response is too large.");
+            }
+        }
+    }
+
+    private static String jsonString(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     /**
