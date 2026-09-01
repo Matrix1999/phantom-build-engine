@@ -1,9 +1,0 @@
-- [Phantom loader architecture](phantom-loader-architecture.md) — two-stage native envelope/decryption pipeline and the Java/JNI contracts that must stay aligned.
-- [Guard signature and TEE gates](guard-signature-tee.md) — signer verification and hardware-key continuity run after blob loading and have a separate fail-closed policy.
-- [Phantom offline TEE gate](phantom-offline-tee.md) — borrow Android attestation primitives, but make local chain, signer, challenge, signature, and continuity checks authoritative.
-- [Cloud source asset IDs](cloud-source-asset-ids.md) — release-asset downloads require numeric REST IDs; GraphQL node IDs download an error body instead of the ZIP.
-- [ART direct DEX lifetime](art-direct-dex-lifetime.md) — direct native DEX mappings must remain read-only and alive while ART may lazily resolve classes.
-- [Amice flatten and VMP](amice-flatten-vmp.md) — keep flattening global, but exclude VM-critical functions from pre-flattening and verify actual bytecode output.
-- [Android linker compatibility](android-linker-compatibility.md) — do not fail closed on linker-versus-maps layout comparisons; Android linker records vary across API/device versions.
-- [Phantom self-integrity](phantom-self-integrity.md) — per-ABI executable-segment stamps catch post-load code patching; rebuild blobs through the stamping workflow.
-- [Privileged proc-mem dumping](phantom-proc-mem-dumping.md) — dumpability and DONTDUMP do not hide plaintext from root; defeat magic-scanning readers with post-load content scrubbing.

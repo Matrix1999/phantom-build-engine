@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">Matrix Dumper</string>
-    <string name="dump">DUMP</string>
-    <string name="scanning">Scanning…</string>
-    <string name="no_root">Root access required</string>
-</resources>
