@@ -249,7 +249,8 @@ jobs:
               vm_dl_iterate_phdr \
               vm_read_one_line \
               vm_spawn_watcher \
-               ph_stage_policy_vm; do
+              phantom_load_attestation_origin \
+              ph_stage_policy_vm; do
               if grep -q "amice\.vm.*${target}" "$SECTION_FILE"; then
                 echo "✅ ${target}"
               else

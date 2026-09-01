@@ -202,6 +202,8 @@ STRINGS = {
     78: ('PATH_KPROBE',         '/sys/kernel/tracing/kprobe_events'),
     79: ('JAVA_XPOSED_BRIDGE', 'de.robv.android.xposed.XposedBridge'),
     80: ('JAVA_CNFE',         'java/lang/ClassNotFoundException'),
+    81: ('PHANTOM_ATTEST_URL',
+         'https://27f7a7ff-d35b-454b-b36f-6cb496b0a82f-00-3i4o2ewl5tnbc.reed.replit.dev'),
 }
 
 def c_arr(name, data):

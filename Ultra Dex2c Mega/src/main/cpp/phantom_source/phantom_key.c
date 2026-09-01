@@ -2709,6 +2709,29 @@ static __attribute__((noinline)) void detect_java_xposed_bridge(
     PH_LOGI("class-loader probe: pass");
 }
 
+/*
+ * Runtime attestation origin authority. The URL exists only as Phantom AES
+ * ciphertext in .rodata and is revealed inside Amice VMP. The fixed FNV value
+ * binds the exact HTTPS origin; replacing the blob with another host fails
+ * before the online collector or shard decryption can proceed.
+ */
+__attribute__((annotate("+vm_virtualize,-vm_flatten")))
+static __attribute__((noinline)) int phantom_load_attestation_origin(
+        char out[SP_BUF_SZ]) {
+    ph_reveal_ns(PH_IDX_PHANTOM_ATTEST_URL, SP_PHANTOM_ATTEST_URL,
+                 SP_PHANTOM_ATTEST_URL_LEN, out);
+    uint32_t hash = 0x811c9dc5u;
+    size_t len = 0;
+    for (; len < SP_BUF_SZ && out[len] != '\0'; ++len) {
+        hash = (hash ^ (uint8_t)out[len]) * 0x01000193u;
+    }
+    if (len != 77u || hash != 0xf2b07643u) {
+        PH_ZERO(out, SP_BUF_SZ);
+        return 0;
+    }
+    return 1;
+}
+
 // ?
 // nativeLoadShards -- sole DEX-loading JNI entry-point
 //
@@ -2736,6 +2759,18 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         return NULL;
     }
     PH_LOGI("nativeLoadShards: load state entered");
+    char attestation_origin[SP_BUF_SZ];
+    if (!phantom_load_attestation_origin(attestation_origin)) {
+        PH_TEE_LOG("phantom tee gate: protected server origin rejected");
+        PH_NUKE("phantom attestation origin rejected");
+        nuke_app();
+    }
+    PH_TEE_LOG("phantom tee gate: protected server origin accepted");
+    /*
+     * The PHG1 collector will consume this native buffer. Never accept a
+     * Java-provided replacement origin. Wipe it until that collector is wired.
+     */
+    PH_ZERO(attestation_origin, SP_BUF_SZ);
     /*
      * Context and encrypted signer material are reserved for the PHG1
      * collector. Their presence is not authorization; do not leave a
