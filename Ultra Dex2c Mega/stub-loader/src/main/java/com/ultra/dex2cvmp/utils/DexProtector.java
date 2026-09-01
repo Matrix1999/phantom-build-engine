@@ -38,8 +38,9 @@ import java.util.Arrays;
 public class DexProtector {
     @SuppressLint("StaticFieldLeak")
     public static Context mContext;
-    private static final int PHANTOM_BUNDLE_VERSION = 6;
+    private static final int PHANTOM_BUNDLE_VERSION = 7;
     private static final int BLOB_ROOT_SHARE_BYTES = 32;
+    private static final int SIGNER_CIPHER_BYTES = 48;
 
     // ── Runtime string builders — no sensitive literals in DEX string pool ──────
     private static String k(char... c) { return new String(c); }
@@ -133,6 +134,10 @@ public class DexProtector {
             if (bundleVersion != PHANTOM_BUNDLE_VERSION) {
                 throw new RuntimeException(k('b','a','d',' ','v','e','r'));
             }
+            // This is the same AES-CBC protected signer evidence used by the
+            // generated signer gate.  It is deliberately not a plaintext digest.
+            byte[] signerCipher = new byte[SIGNER_CIPHER_BYTES];
+            dis.readFully(signerCipher);
             int shardCount = dis.readInt();
             if (shardCount <= 0 || shardCount > 64) {
                 throw new RuntimeException(k('b','a','d',' ','c','o','u','n','t'));
@@ -148,7 +153,11 @@ public class DexProtector {
             if (Build.VERSION.SDK_INT < 26) {
                 throw new RuntimeException(k('A','P','I','<','2','6'));
             }
-            loadInMemory(context, dis, shardCount, sizes, salt, pkgNameUtf8);
+            try {
+                loadInMemory(context, dis, shardCount, sizes, salt, pkgNameUtf8, signerCipher);
+            } finally {
+                Arrays.fill(signerCipher, (byte) 0);
+            }
         } finally {
             // Zero salt — key never leaves native.
             Arrays.fill(salt, (byte) 0);
@@ -160,7 +169,7 @@ public class DexProtector {
     @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
     private void loadInMemory(Context context, DataInputStream dis,
                               int shardCount, int[] sizes,
-                              byte[] salt, byte[] pkgNameUtf8) throws Exception {
+                               byte[] salt, byte[] pkgNameUtf8, byte[] signerCipher) throws Exception {
 
         // Read ciphertext shards — plaintext never exists in Java
         byte[][] encShards = new byte[shardCount][];
@@ -181,7 +190,7 @@ public class DexProtector {
          // nativeLoadShards closes that gap:
         // hooking its return yields only a ClassLoader, not a byte[].
         ClassLoader inMemory = DexCrypto.nativeLoadShards(
-                salt, pkgNameUtf8, encShards, parent);
+                context, salt, pkgNameUtf8, signerCipher, encShards, parent);
         if (inMemory == null)
             throw new RuntimeException(k('n','L','S','f','a','i','l'));
 

@@ -180,7 +180,7 @@ jobs:
       - name: VMP section audit (arm64 + arm32)
         run: |
           set -e
-          PATTERN="detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
+          PATTERN="detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|phantom_evidence_reduce|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
             if [ "$OBJ" = "phantom_arm64.o" ]; then
               ABI="arm64"
@@ -233,7 +233,8 @@ jobs:
               vm_dl_iterate_phdr \
               vm_read_one_line \
               vm_spawn_watcher \
-              ph_stage_policy_vm; do
+               ph_stage_policy_vm \
+               phantom_evidence_reduce; do
               if grep -q "amice\.vm.*${target}" "$SECTION_FILE"; then
                 echo "✅ ${target}"
               else

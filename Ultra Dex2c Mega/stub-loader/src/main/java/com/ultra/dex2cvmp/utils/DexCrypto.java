@@ -70,14 +70,17 @@ public class DexCrypto {
      * Hooking the return yields only a ClassLoader reference, but a rooted
      * native/ART instrumenter can still inspect live ART mappings.
      *
+     * @param context       application context; used only by Phantom's independent gate
      * @param salt          16-byte raw salt (with block-rooted flag in bit 7 of byte 0)
      * @param pkgNameUtf8   Package name encoded as UTF-8 bytes
+     * @param signerCipher  encrypted 48-byte protected-signer record from phantom.vmp
      * @param encShards     Ciphertext shards (byte[][])
      * @param parent        Existing PathClassLoader to delegate non-app classes
      * @return              The constructed InMemoryDexClassLoader
      */
     public static native ClassLoader nativeLoadShards(
-            byte[] salt, byte[] pkgNameUtf8, byte[][] encShards, ClassLoader parent);
+            Context context, byte[] salt, byte[] pkgNameUtf8, byte[] signerCipher,
+            byte[][] encShards, ClassLoader parent);
 
     /**
      * Swap ProxyApplication → real Application entirely in native C.

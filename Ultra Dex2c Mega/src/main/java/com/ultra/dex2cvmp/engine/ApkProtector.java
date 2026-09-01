@@ -154,6 +154,9 @@ public class ApkProtector {
         boolean dexPackerEnabled = protectionPrefs.getBoolean(
                 SettingsFragment.KEY_DEX_PACKER, false);
         byte[] signerCipher = buildSignerCipher(inputApk, signOutput, sigCheckEnabled);
+        // Phantom consumes a separate copy of the existing encrypted evidence;
+        // no plaintext signer digest is added to the bundle.
+        byte[] phantomSignerCipher = signerCipher.clone();
 
         // ── VMP gates: string token + encrypted signer payload ─────────────────
         // Extra DEX files avoid rewriting the input ZIP before conversion.
@@ -620,8 +623,12 @@ public class ApkProtector {
             // The final, stripped DEX files are already in this job's clean
             // workspace.  Give them directly to the packer instead of extracting
             // the freshly rebuilt APK a second time.
-            new DexPacker(context).pack(outputApk, packedUnsigned, packWorkDir,
-                    dexDir, blockRootedDevices);
+            try {
+                new DexPacker(context).pack(outputApk, packedUnsigned, packWorkDir,
+                        dexDir, blockRootedDevices, phantomSignerCipher);
+            } finally {
+                java.util.Arrays.fill(phantomSignerCipher, (byte) 0);
+            }
             report(97, "DEX packer: stub injected — "
                     + (packedUnsigned.length() / 1024) + " KB packed APK");
 
@@ -641,6 +648,8 @@ public class ApkProtector {
                 outputApk = packedSigned;
                 report(99, "DEX packer: signed — " + (outputApk.length() / 1024) + " KB");
             }
+        } else {
+            java.util.Arrays.fill(phantomSignerCipher, (byte) 0);
         }
 
         report(100, "Done! → " + outputApk.getName());

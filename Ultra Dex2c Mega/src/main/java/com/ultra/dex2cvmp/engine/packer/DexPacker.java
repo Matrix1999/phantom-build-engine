@@ -26,7 +26,8 @@ import java.util.zip.ZipFile;
  *  2. Parse manifest → capture real Application class, patch android:name → ProxyApplication.
  *  3. Generate random salt; derive the per-APK seed from (salt, pkgName).
  *  4. Encrypt all DEX shards and bundle them into a single phantom.vmp payload.
- *     Bundle format: [32-byte blob header][4-byte version][4-byte shard count]
+     *     Bundle format: [32-byte blob header][4-byte version]
+     *     [48-byte encrypted signer evidence][4-byte shard count]
  *     [count × 4-byte shard sizes][XChaCha20-Poly1305 envelope records…]
  *  5. Write assets/phantom/app.cfg  (real app class name, UTF-8).
  *     Write assets/phantom/ph_salt  (16-byte raw salt).
@@ -51,7 +52,9 @@ public class DexPacker {
     public static final String SALT_ASSET = "ph_salt";
 
     /** Version for the universal XChaCha20-Poly1305-wrapped shard bundle. */
-    public static final int BUNDLE_VERSION = 6;
+    public static final int BUNDLE_VERSION = 7;
+    /** Existing AES-CBC signer envelope; the plaintext digest is never bundled. */
+    public static final int SIGNER_CIPHER_BYTES = 48;
 
     /** Asset names for the OLLVM-compiled native KDF library, one per ABI.
      *  A single blob per ABI handles both root-blocking ON and OFF at runtime.
@@ -104,11 +107,33 @@ public class DexPacker {
         if (finalDexDir == null || !finalDexDir.isDirectory()) {
             throw new IOException("Final DEX workspace is unavailable for Phantom packing.");
         }
-        packInternal(inputApk, outputApk, workDir, finalDexDir, blockRootedDevices);
+        throw new IOException("Phantom packing requires protected signer evidence.");
+    }
+
+    /**
+     * Packs with the signer cipher already generated for the native signer gate.
+     * This is intentionally an encrypted/recoverable record rather than a second
+     * plaintext copy of the certificate SHA-256.
+     */
+    public void pack(File inputApk, File outputApk, File workDir, File finalDexDir,
+                     boolean blockRootedDevices, byte[] signerCipher) throws Exception {
+        if (finalDexDir == null || !finalDexDir.isDirectory()) {
+            throw new IOException("Final DEX workspace is unavailable for Phantom packing.");
+        }
+        if (signerCipher == null || signerCipher.length != SIGNER_CIPHER_BYTES) {
+            throw new IOException("Phantom packing requires the encrypted signer record.");
+        }
+        packInternal(inputApk, outputApk, workDir, finalDexDir, blockRootedDevices, signerCipher);
     }
 
     private void packInternal(File inputApk, File outputApk, File workDir,
                               File finalDexDir, boolean blockRootedDevices) throws Exception {
+        throw new IOException("Phantom packing requires protected signer evidence.");
+    }
+
+    private void packInternal(File inputApk, File outputApk, File workDir,
+                               File finalDexDir, boolean blockRootedDevices,
+                               byte[] signerCipher) throws Exception {
         // ── 1. Read manifest and locate final DEX files ────────────────────────
         byte[] manifestBytes;
         File dexSourceDir;
@@ -196,7 +221,8 @@ public class DexPacker {
         // Zero the key as soon as all encryption is done.
         java.util.Arrays.fill(key, (byte) 0);
 
-        // Write bundle: [32-byte masked blob root][4-byte version][4-byte count]
+        // Write bundle: [32-byte masked blob root][4-byte version]
+        // [48-byte encrypted signer evidence][4-byte count]
         // [count × 4-byte shard size][XChaCha20-Poly1305 envelope shard bytes…]
         // MASKED_BLOB_ROOT[i] = BLOB_ROOT[i] ^ ASSET_KEY_MASK[i].
         // Neither half alone reveals the key — both are needed.
@@ -210,6 +236,7 @@ public class DexPacker {
         try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(bundleFile))) {
             dos.write(maskedBlobRoot);                             // 32-byte header
             dos.writeInt(BUNDLE_VERSION);
+            dos.write(signerCipher);
             dos.writeInt(shards.size());
             for (byte[] shard : shards) dos.writeInt(shard.length);
             for (byte[] shard : shards) dos.write(shard);

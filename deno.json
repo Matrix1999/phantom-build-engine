@@ -1,0 +1,11 @@
+{
+  "tasks": {
+    "start": "deno run --allow-env --allow-net main.ts",
+    "test": "deno test --allow-env main_test.ts"
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "semiColons": true,
+    "singleQuote": false
+  }
+}
