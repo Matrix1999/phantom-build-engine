@@ -12,7 +12,8 @@
 //   • Per-string unique nonce — embedded in each authenticated envelope
 //   • AAD binds the Phantom string domain and index
 //   • Plaintext XOR 0x5A     — second layer post-decrypt
-//   • ph_reveal_ns() is annotated +vm_virtualize — decrypt runs inside VMP
+//   • ph_reveal_ns() is virtualized without pre-flattening so it stays within
+//     Amice's VM register budget
 //
 // Usage:
 //   char buf[SP_BUF_SZ];
@@ -105,7 +106,8 @@ static __attribute__((noinline)) void ph_build_str_key(uint32_t idx, uint8_t *ke
 
 // ════════════════════════════════════════════════════════════════════════════
 // ph_reveal_ns — authenticate and decrypt one string envelope into buf.
-// Annotate +vm_virtualize so the decrypt loop runs inside VMP bytecode.
+// Disable pre-flattening so the function remains within Amice's 32-register
+// VM budget while still requiring VM bytecode emission.
 // Envelope: [24-byte nonce][ciphertext][16-byte Poly1305 tag].
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -113,7 +115,7 @@ static __attribute__((noinline, noreturn)) void ph_pstring_auth_fail(void) {
     __builtin_trap();
 }
 
-__attribute__((annotate("+vm_virtualize")))
+__attribute__((annotate("+vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) const char *ph_reveal_ns(
         uint32_t idx, const uint8_t *envelope, int envelope_len, char *buf) {
     static const uint8_t aad_prefix[] = "PHANTOM-PSTRI";
