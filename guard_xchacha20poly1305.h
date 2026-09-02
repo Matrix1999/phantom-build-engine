@@ -64,6 +64,10 @@
 #define GD_XCHACHA_OVERHEAD 40u
 #define GD_GUARD_AAD_BYTES 16u
 
+#ifndef GD_GUARD_DIAG
+#define GD_GUARD_DIAG(...) ((void)0)
+#endif
+
 static inline void gd_guard_store32_le(uint8_t *out, uint32_t value) {
     out[0] = (uint8_t)value;
     out[1] = (uint8_t)(value >> 8);
@@ -99,10 +103,33 @@ static __attribute__((noinline)) int gd_guard_decrypt_envelope(
     size_t ciphertext_len;
     int authentic;
 
-    if (!key || !envelope || envelope_len < GD_XCHACHA_OVERHEAD) return 0;
+    if (!key) {
+        GD_GUARD_DIAG("xchacha: rejected null key domain=%u object=%u",
+                      (unsigned)domain, (unsigned)object_id);
+        return 0;
+    }
+    if (!envelope) {
+        GD_GUARD_DIAG("xchacha: rejected null envelope domain=%u object=%u",
+                      (unsigned)domain, (unsigned)object_id);
+        return 0;
+    }
+    if (envelope_len < GD_XCHACHA_OVERHEAD) {
+        GD_GUARD_DIAG("xchacha: malformed envelope domain=%u object=%u len=%zu",
+                      (unsigned)domain, (unsigned)object_id, envelope_len);
+        return 0;
+    }
     ciphertext_len = envelope_len - GD_XCHACHA_OVERHEAD;
-    if (ciphertext_len > plaintext_capacity ||
-            (ciphertext_len && !plaintext)) return 0;
+    if (ciphertext_len > plaintext_capacity) {
+        GD_GUARD_DIAG("xchacha: output too small domain=%u object=%u ciphertext=%zu capacity=%zu",
+                      (unsigned)domain, (unsigned)object_id,
+                      ciphertext_len, plaintext_capacity);
+        return 0;
+    }
+    if (ciphertext_len && !plaintext) {
+        GD_GUARD_DIAG("xchacha: rejected null output domain=%u object=%u ciphertext=%zu",
+                      (unsigned)domain, (unsigned)object_id, ciphertext_len);
+        return 0;
+    }
 
     gd_guard_build_aad(aad, domain, object_id, (uint32_t)ciphertext_len);
     authentic = gd_xchacha20poly1305_decrypt(
@@ -116,6 +143,11 @@ static __attribute__((noinline)) int gd_guard_decrypt_envelope(
             plaintext);
     if (!authentic && plaintext && plaintext_capacity) {
         memset(plaintext, 0, plaintext_capacity);
+    }
+    if (!authentic) {
+        GD_GUARD_DIAG("xchacha: authentication failed domain=%u object=%u envelope=%zu plaintext=%zu",
+                      (unsigned)domain, (unsigned)object_id,
+                      envelope_len, ciphertext_len);
     }
     memset(aad, 0, sizeof(aad));
     return authentic;
