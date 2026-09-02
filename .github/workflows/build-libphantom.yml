@@ -10,6 +10,8 @@ on:
 # 55 targets on ARM64 and 72 targets on ARM32. Do not broaden obfuscation,
 # move protection onto JNI/ABI-sensitive functions, or change the offline
 # source/blob flow without a separate cross-ABI experiment and audit.
+# Keep SplitBasicBlock and standalone Flatten globally disabled; opt them in only
+# through explicit annotations on audited, non-VMP helpers.
 # Always retain the Amice logs, object disassembly checks, stripped-artifact
 # checks, and exact VMP metadata comparison. A protection change is incomplete
 # until both ABI builds, logs, instruction audits, artifacts, and baselines pass.
@@ -115,6 +117,11 @@ jobs:
             AMICE_VM_EMIT_MARKERS=true AMICE_VM_DUMP_BYTECODE=true \
             AMICE_VM_DUMP_LOWERING=true \
             AMICE_VM_FLATTEN=true \
+            AMICE_SPLIT_BASIC_BLOCK=false AMICE_SPLIT_BASIC_BLOCK_NUM=1 \
+            AMICE_FLATTEN=false AMICE_FLATTEN_FIX_STACK=true \
+            AMICE_FLATTEN_LOWER_SWITCH=true AMICE_FLATTEN_MODE=basic \
+            AMICE_FLATTEN_LOOP_COUNT=1 AMICE_FLATTEN_SKIP_BIG_FUNCTION=true \
+            AMICE_FLATTEN_ALWAYS_INLINE=false \
             AMICE_INDIRECT_CALL=false \
             AMICE_INDIRECT_BRANCH=false \
             AMICE_INDIRECT_BRANCH_FLAGS=encrypt_block_index,shuffle_table \
@@ -125,7 +132,7 @@ jobs:
             AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
             AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=false \
             AMICE_MBA=false \
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,IndirectCall,IndirectBranch,Mba \
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,SplitBasicBlock,Flatten,IndirectCall,IndirectBranch,Mba \
             RUST_LOG=amice=debug \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
@@ -203,6 +210,15 @@ jobs:
             AMICE_VM_DUMP_BYTECODE=true
             AMICE_VM_DUMP_LOWERING=true
             AMICE_VM_FLATTEN=true
+            AMICE_SPLIT_BASIC_BLOCK=false
+            AMICE_SPLIT_BASIC_BLOCK_NUM=1
+            AMICE_FLATTEN=false
+            AMICE_FLATTEN_FIX_STACK=true
+            AMICE_FLATTEN_LOWER_SWITCH=true
+            AMICE_FLATTEN_MODE=basic
+            AMICE_FLATTEN_LOOP_COUNT=1
+            AMICE_FLATTEN_SKIP_BIG_FUNCTION=true
+            AMICE_FLATTEN_ALWAYS_INLINE=false
             AMICE_INDIRECT_CALL=false
             AMICE_INDIRECT_BRANCH=false
             AMICE_INDIRECT_BRANCH_FLAGS=encrypt_block_index,shuffle_table
@@ -213,7 +229,7 @@ jobs:
             AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
             AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=false
             AMICE_MBA=false
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,IndirectCall,IndirectBranch,Mba
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,SplitBasicBlock,Flatten,IndirectCall,IndirectBranch,Mba
             RUST_LOG=amice=debug
 
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
@@ -271,33 +287,55 @@ jobs:
           : > "$AUDIT"
 
           python3 - "$SRC" <<'PY'
-          import re
           import sys
           from pathlib import Path
 
           source = Path(sys.argv[1]).read_text()
           expected = {
-              "_sha_expand": "+mba,+indirect_branch,+alias_access",
-              "_sha_compress": "+mba,+indirect_branch,+alias_access",
-              "ph_parse_art_map": "+mba,+indirect_branch,+alias_access",
-              "arx_advance_block": "+mba,+alias_access",
-              "arx_xor": "+mba,+indirect_branch,+alias_access",
+              "_sha_expand": (
+                  "+split_basic_block",
+                  "+split_basic_block_num=1",
+                  "+flatten",
+                  "+flatten_mode=basic",
+                  "+flatten_loop_count=1",
+                  "+mba,+indirect_branch,+alias_access",
+              ),
+              "_sha_compress": (
+                  "+split_basic_block",
+                  "+split_basic_block_num=1",
+                  "+flatten",
+                  "+flatten_mode=basic",
+                  "+flatten_loop_count=1",
+                  "+mba,+indirect_branch,+alias_access",
+              ),
+              "ph_parse_art_map": (
+                  "+split_basic_block",
+                  "+split_basic_block_num=1",
+                  "+flatten",
+                  "+flatten_mode=basic",
+                  "+flatten_loop_count=1",
+                  "+mba,+indirect_branch,+alias_access",
+              ),
+              "arx_advance_block": ("+mba,+alias_access",),
+              "arx_xor": ("+mba,+indirect_branch,+alias_access",),
           }
-          for function, passes in expected.items():
+          for function, pass_tokens in expected.items():
               position = source.find(function + "(")
               if position < 0:
                   raise SystemExit(f"{function}: function missing")
               declaration = source[max(0, position - 320):position]
               if (
                   "annotate(" not in declaration
-                  or passes not in declaration
+                  or any(token not in declaration for token in pass_tokens)
                   or "-vm_virtualize" not in declaration
                   or "-vm_flatten" not in declaration
               ):
                   raise SystemExit(
                       f"{function}: expected selective annotation missing"
                   )
-              print(f"{function}: annotation {passes}; VMP excluded")
+              print(
+                  f"{function}: annotation {', '.join(pass_tokens)}; VMP excluded"
+              )
           PY
 
           BASELINE_FLAGS=(
