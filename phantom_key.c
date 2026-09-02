@@ -1798,8 +1798,8 @@ static const uint32_t K256[64] = {
     Keep this native because arm64 IR causes a VMP apply-phase crash here;
     selective CFG obfuscation is safe after VMP discovery has finished. */
 __attribute__((annotate(
-     "+split_basic_block,+split_basic_block_num=1,"
-     "+flatten,+flatten_mode=basic,+flatten_loop_count=1,"
+     "+split_basic_block,+split_basic_block_num=3,"
+     "+flatten,+flatten_mode=dominator,+flatten_loop_count=2,"
      "+mba,+indirect_branch,+alias_access,"
     "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void _sha_expand(uint32_t *w, const uint8_t *data) {
@@ -1818,8 +1818,8 @@ static __attribute__((noinline)) void _sha_expand(uint32_t *w, const uint8_t *da
     Keep this native for the same VMP register/IR reason as _sha_expand;
     selective CFG obfuscation remains explicitly bounded to this helper. */
 __attribute__((annotate(
-     "+split_basic_block,+split_basic_block_num=1,"
-     "+flatten,+flatten_mode=basic,+flatten_loop_count=1,"
+     "+split_basic_block,+split_basic_block_num=3,"
+     "+flatten,+flatten_mode=dominator,+flatten_loop_count=2,"
      "+mba,+indirect_branch,+alias_access,"
     "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void _sha_compress(uint32_t *h, const uint32_t *w) {
@@ -2546,8 +2546,8 @@ static void ph_direct_dex_destructor(void) {
  * ART mappings without adding another thread or changing the loader lifetime.
  */
 __attribute__((annotate(
-     "+split_basic_block,+split_basic_block_num=1,"
-     "+flatten,+flatten_mode=basic,+flatten_loop_count=1,"
+     "+split_basic_block,+split_basic_block_num=3,"
+     "+flatten,+flatten_mode=dominator,+flatten_loop_count=2,"
      "+mba,+indirect_branch,+alias_access,"
     "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) int ph_parse_art_map(
