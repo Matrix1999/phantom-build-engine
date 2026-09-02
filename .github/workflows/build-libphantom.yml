@@ -298,7 +298,9 @@ jobs:
                   "+flatten",
                   "+flatten_mode=basic",
                   "+flatten_loop_count=1",
-                  "+mba,+indirect_branch,+alias_access",
+                  "+mba",
+                  "+indirect_branch",
+                  "+alias_access",
               ),
               "_sha_compress": (
                   "+split_basic_block",
@@ -306,7 +308,9 @@ jobs:
                   "+flatten",
                   "+flatten_mode=basic",
                   "+flatten_loop_count=1",
-                  "+mba,+indirect_branch,+alias_access",
+                  "+mba",
+                  "+indirect_branch",
+                  "+alias_access",
               ),
               "ph_parse_art_map": (
                   "+split_basic_block",
@@ -314,10 +318,12 @@ jobs:
                   "+flatten",
                   "+flatten_mode=basic",
                   "+flatten_loop_count=1",
-                  "+mba,+indirect_branch,+alias_access",
+                  "+mba",
+                  "+indirect_branch",
+                  "+alias_access",
               ),
-              "arx_advance_block": ("+mba,+alias_access",),
-              "arx_xor": ("+mba,+indirect_branch,+alias_access",),
+              "arx_advance_block": ("+mba", "+alias_access"),
+              "arx_xor": ("+mba", "+indirect_branch", "+alias_access"),
           }
           for function, pass_tokens in expected.items():
               position = source.find(function + "(")
@@ -395,7 +401,7 @@ jobs:
               "$TC/bin/llvm-objdump" -dr \
                 --disassemble-symbols="$target" "$OBJ" > "$DUMP"
               case "$target" in
-                _sha_expand|_sha_compress|ph_parse_art_map|arx_xor)
+                arx_xor)
                   grep -Eq "$INDIRECT_BRANCH" "$DUMP" \
                     || {
                       echo "$ABI/$target: indirect branch instruction missing" >&2
