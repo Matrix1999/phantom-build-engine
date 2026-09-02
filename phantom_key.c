@@ -1796,6 +1796,9 @@ static const uint32_t K256[64] = {
 
 /* Step A: expand message schedule into caller-supplied w[64]
    noinline only — NOT annotated; arm64 IR causes apply-phase crash if VMP'd here */
+__attribute__((annotate(
+    "+mba,+indirect_branch,+alias_access,"
+    "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void _sha_expand(uint32_t *w, const uint8_t *data) {
     int i;
     for (i = 0; i < 16; i++)
@@ -1810,6 +1813,9 @@ static __attribute__((noinline)) void _sha_expand(uint32_t *w, const uint8_t *da
 
 /* Step B: 64-round compression; w and K256 accessed via pointer loads only
    noinline only — NOT annotated; same reason as _sha_expand */
+__attribute__((annotate(
+    "+mba,+indirect_branch,+alias_access,"
+    "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void _sha_compress(uint32_t *h, const uint32_t *w) {
     uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
     int i;
@@ -2353,6 +2359,9 @@ static void arx_ctx_init(arx_ctx_t *s, const uint8_t key[16]) {
     }
 }
 
+__attribute__((annotate(
+    "+mba,+alias_access,"
+    "-vm_virtualize,-vm_flatten")))
 static void arx_advance_block(arx_ctx_t *s) {
     const uint32_t *ks = s->ks;
     uint32_t i=s->st[0], i2=s->st[1];
@@ -2386,6 +2395,9 @@ static void arx_advance_block(arx_ctx_t *s) {
     s->st[0]=ROL32(i,3)^i2; s->st[1]=i2;
 }
 
+__attribute__((annotate(
+    "+mba,+indirect_branch,+alias_access,"
+    "-vm_virtualize,-vm_flatten")))
 static void arx_xor(arx_ctx_t *s, uint8_t *buf, size_t len) {
     for (size_t n=0; n<len; n++) {
         int i6=s->pos%8, shift=(s->pos%4)*8;
@@ -2527,6 +2539,9 @@ static void ph_direct_dex_destructor(void) {
  * existing watcher calls this bounded scan again after load, covering later
  * ART mappings without adding another thread or changing the loader lifetime.
  */
+__attribute__((annotate(
+    "+mba,+indirect_branch,+alias_access,"
+    "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) int ph_parse_art_map(
         const char *line, uintptr_t *start, uintptr_t *end,
         int *readable, int *writable, int *executable,
