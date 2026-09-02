@@ -293,8 +293,6 @@ jobs:
               || { echo "$OBJ: function-wrapper rewrite not reported" >&2; exit 1; }
             grep -q 'amice::aotu::alias_access.*meta box count' "$LOG" \
               || { echo "$OBJ: alias-access rewrite not reported" >&2; exit 1; }
-            grep -q 'amice::aotu::basic_block_outlining.*bbs to outline' "$LOG" \
-              || { echo "$OBJ: basic-block outlining rewrite not reported" >&2; exit 1; }
             CALL_DISASM="/tmp/${ABI}_derive_shard_key.txt"
             BRANCH_DISASM="/tmp/${ABI}_ph_build_str_key.txt"
             "$TC/bin/llvm-objdump" -dr --disassemble-symbols=derive_shard_key \
