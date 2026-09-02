@@ -196,6 +196,7 @@ static __attribute__((noinline)) void ph_pstring_unmask_vm(ph_pstring_ctx *ctx) 
     ctx->buf[ctx->ciphertext_len] = '\0';
 }
 
+__attribute__((annotate("+indirect_branch,-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) const char *ph_reveal_ns(
         uint32_t idx, const uint8_t *envelope, int envelope_len, char *buf) {
     ph_pstring_ctx ctx;
