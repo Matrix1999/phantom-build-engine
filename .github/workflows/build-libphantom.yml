@@ -82,6 +82,15 @@ jobs:
           cat > /tmp/smoke.c <<'CSRC'
           __attribute__((annotate("+vm_virtualize,-vm_flatten")))
           int foo(int x, int y) { int a=x^y; int b=a+x; if(a>0) return b; return b*y; }
+          static __attribute__((noinline)) int smoke_callee(int x) { return x ^ 0x35; }
+          __attribute__((annotate("+indirect_call,-vm_virtualize,-vm_flatten")))
+          int smoke_indirect_call(int x) { return smoke_callee(x) + 7; }
+          __attribute__((annotate("+indirect_branch,-vm_virtualize,-vm_flatten")))
+          int smoke_indirect_branch(int x) {
+            int y = 0;
+            for (int i = 0; i < 8; ++i) y += (x ^ i);
+            return y > 9 ? y : y - 3;
+          }
           CSRC
           for TARGET in aarch64-linux-android26 armv7a-linux-androideabi21; do
             SMOKE_LOG="/tmp/smoke_${TARGET}.log"
@@ -89,8 +98,11 @@ jobs:
             AMICE_VM_EMIT_MARKERS=true AMICE_VM_DUMP_BYTECODE=true \
             AMICE_VM_DUMP_LOWERING=true \
             AMICE_VM_FLATTEN=true \
+            AMICE_INDIRECT_CALL=false \
+            AMICE_INDIRECT_BRANCH=false \
+            AMICE_INDIRECT_BRANCH_FLAGS=encrypt_block_index,shuffle_table \
             AMICE_MBA=false \
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,Mba \
+            AMICE_PASS_ORDER=IndirectCall,IndirectBranch,VmVirtualize,VmFlatten,Mba \
             RUST_LOG=amice=debug \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
@@ -101,7 +113,14 @@ jobs:
               echo "❌ $TARGET — amice compiled but did not virtualize foo" >&2
               exit 1
             fi
+            "$TC/bin/llvm-nm" -a "/tmp/smoke_${TARGET}.o" \
+              | grep -q '\.amice_indirect_call_table' \
+              || { echo "❌ $TARGET — indirect-call table missing" >&2; exit 1; }
+            "$TC/bin/llvm-nm" -a "/tmp/smoke_${TARGET}.o" \
+              | grep -q 'global_indirect_branch_table' \
+              || { echo "❌ $TARGET — indirect-branch table missing" >&2; exit 1; }
             echo "✅ $TARGET — amice emitted VM markers"
+            echo "✅ $TARGET — selective indirect-call + indirect-branch tables emitted"
           done
 
       - name: Write linker version script
@@ -144,8 +163,11 @@ jobs:
             AMICE_VM_DUMP_BYTECODE=true
             AMICE_VM_DUMP_LOWERING=true
             AMICE_VM_FLATTEN=true
+            AMICE_INDIRECT_CALL=false
+            AMICE_INDIRECT_BRANCH=false
+            AMICE_INDIRECT_BRANCH_FLAGS=encrypt_block_index,shuffle_table
             AMICE_MBA=false
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,Mba
+            AMICE_PASS_ORDER=IndirectCall,IndirectBranch,VmVirtualize,VmFlatten,Mba
             RUST_LOG=amice=debug
 
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
@@ -192,6 +214,22 @@ jobs:
           cp /tmp/phantom_integrity.placeholder.inc "$INTEGRITY_INC"
           build_arm32
           echo "  OK $(wc -c < libphantom_arm.so) bytes; integrity placeholder present"
+
+      - name: Selective indirect call + branch audit
+        run: |
+          set -e
+          grep -q 'annotate("+mba,+indirect_branch")' phantom_cipher.h
+          grep -B1 'static __attribute__((noinline)) void derive_shard_key' phantom_key.c \
+            | grep -q 'annotate("+indirect_call")'
+          for OBJ in phantom_arm64.o phantom_arm32.o; do
+            SYMBOLS="/tmp/${OBJ}.symbols"
+            "$TC/bin/llvm-nm" -a "$OBJ" > "$SYMBOLS"
+            grep -q '\.amice_indirect_call_table' "$SYMBOLS" \
+              || { echo "$OBJ: indirect-call table missing" >&2; exit 1; }
+            grep -q 'global_indirect_branch_table' "$SYMBOLS" \
+              || { echo "$OBJ: indirect-branch table missing" >&2; exit 1; }
+            echo "✅ $OBJ — selective indirect-call + encrypted/shuffled indirect-branch tables present"
+          done
 
       - name: VMP section audit (arm64 + arm32)
         run: |

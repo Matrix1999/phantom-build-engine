@@ -2301,6 +2301,7 @@ static void arx_kdf(const uint8_t salt[16], const uint8_t pkg_hash[32], uint8_t 
  * SHA256(base_key || "PHSHARD1" || shard_index_be)[0:16].
  * The universal authenticated payload key remains unchanged and separate.
  */
+__attribute__((annotate("+indirect_call")))
 static __attribute__((noinline)) void derive_shard_key(
         const uint8_t base_key[16], int shard_index, uint8_t out[16]) {
     uint8_t material[28];
