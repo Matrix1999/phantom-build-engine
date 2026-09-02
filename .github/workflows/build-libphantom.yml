@@ -117,7 +117,7 @@ jobs:
       - name: Generate authenticated Phantom string envelopes
         run: |
           set -e
-          DIR="Ultra Dex2c Mega/src/main/cpp/phantom_source"
+          DIR="."
           python3 "$DIR/keygen_phantom_strings.py" > "$DIR/phantom_pstrings.inc.tmp"
           mv "$DIR/phantom_pstrings.inc.tmp" "$DIR/phantom_pstrings.inc"
           if grep -Eqi 'AES|CBC|PKCS7|PH_AES|MASTER_IV' \
