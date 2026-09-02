@@ -389,14 +389,19 @@ jobs:
               || { echo "$OBJ: alias-access rewrite not reported" >&2; exit 1; }
             CALL_DISASM="/tmp/${ABI}_derive_shard_key.txt"
             BRANCH_DISASM="/tmp/${ABI}_ph_build_str_key.txt"
+            REVEAL_DISASM="/tmp/${ABI}_ph_reveal_ns.txt"
             "$TC/bin/llvm-objdump" -dr --disassemble-symbols=derive_shard_key \
               "$OBJ" | tee "$CALL_DISASM"
             "$TC/bin/llvm-objdump" -dr --disassemble-symbols=ph_build_str_key \
               "$OBJ" | tee "$BRANCH_DISASM"
+            "$TC/bin/llvm-objdump" -dr --disassemble-symbols=ph_reveal_ns \
+              "$OBJ" | tee "$REVEAL_DISASM"
             grep -Eq "$CALL_PATTERN" "$CALL_DISASM" \
               || { echo "$OBJ: indirect call instruction missing" >&2; exit 1; }
             grep -Eq "$BRANCH_PATTERN" "$BRANCH_DISASM" \
               || { echo "$OBJ: indirect branch instruction missing" >&2; exit 1; }
+            grep -Eq "$BRANCH_PATTERN" "$REVEAL_DISASM" \
+              || { echo "$OBJ: ph_reveal_ns indirect branch instruction missing" >&2; exit 1; }
             echo "✅ $OBJ — selective indirect call + encrypted/shuffled indirect branch instructions present"
           done
 
