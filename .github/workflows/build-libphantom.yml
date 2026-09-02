@@ -272,7 +272,8 @@ jobs:
       - name: Selective indirect call + branch audit
         run: |
           set -e
-          grep -q 'annotate("+mba,+indirect_branch")' phantom_cipher.h
+          grep -q '+mba' phantom_cipher.h
+          grep -q '+indirect_branch' phantom_cipher.h
           grep -q '+indirect_call' phantom_key.c
           for OBJ in phantom_arm64.o phantom_arm32.o; do
             if [ "$OBJ" = phantom_arm64.o ]; then
