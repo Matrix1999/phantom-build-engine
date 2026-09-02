@@ -28,7 +28,7 @@ jobs:
       - name: Test XChaCha20-Poly1305 implementation
         run: |
           cc -std=c11 -O2 -Wall -Wextra \
-            "Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_chacha20poly1305_test.c" \
+            "phantom_chacha20poly1305_test.c" \
             -o /tmp/phantom_xchacha_test
           /tmp/phantom_xchacha_test
 
@@ -114,13 +114,27 @@ jobs:
           };
           EOF
 
+      - name: Generate authenticated Phantom string envelopes
+        run: |
+          set -e
+          DIR="Ultra Dex2c Mega/src/main/cpp/phantom_source"
+          python3 "$DIR/keygen_phantom_strings.py" > "$DIR/phantom_pstrings.inc.tmp"
+          mv "$DIR/phantom_pstrings.inc.tmp" "$DIR/phantom_pstrings.inc"
+          if grep -Eqi 'AES|CBC|PKCS7|PH_AES|MASTER_IV' \
+              "$DIR/phantom_cipher.h" "$DIR/keygen_phantom_strings.py" \
+              "$DIR/phantom_pstrings.inc" "$DIR/phantom_key.c"; then
+            echo "Stale Phantom AES-CBC string contract detected" >&2
+            exit 1
+          fi
+          grep -q 'XChaCha20-Poly1305 envelopes' "$DIR/phantom_pstrings.inc"
+
       - name: Build libphantom.so (arm64-v8a + armeabi-v7a)
         timeout-minutes: 30
         run: |
           set -e
-          SRC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
-          INTEGRITY_INC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_integrity.inc"
-          STAMPER="Ultra Dex2c Mega/src/main/cpp/phantom_source/stamp_phantom_integrity.py"
+          SRC="phantom_key.c"
+          INTEGRITY_INC="phantom_integrity.inc"
+          STAMPER="stamp_phantom_integrity.py"
           cp "$INTEGRITY_INC" /tmp/phantom_integrity.placeholder.inc
 
           AMICE_PASSES=(
@@ -180,7 +194,7 @@ jobs:
       - name: VMP section audit (arm64 + arm32)
         run: |
           set -e
-          PATTERN="detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
+          PATTERN="ph_reveal_ns|detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
             if [ "$OBJ" = "phantom_arm64.o" ]; then
               ABI="arm64"
@@ -220,6 +234,7 @@ jobs:
             echo ""
             echo "--- Required Phantom VM markers ($ABI) ---"
             for target in \
+              ph_reveal_ns \
               ph_load_begin \
               ph_load_advance \
               ph_load_fail \
@@ -302,7 +317,7 @@ jobs:
 
       - name: Strip + harden
         run: |
-          STAMPER="Ultra Dex2c Mega/src/main/cpp/phantom_source/stamp_phantom_integrity.py"
+          STAMPER="stamp_phantom_integrity.py"
           for SO in libphantom_arm64.so libphantom_arm.so; do
             "$TC/bin/llvm-strip" --strip-all "$SO"
             for SEC in .symtab .strtab .comment .note.android.ident .eh_frame .eh_frame_hdr; do
@@ -356,7 +371,7 @@ jobs:
           from pathlib import Path
 
           native = Path(
-              "Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
+              "phantom_key.c"
           ).read_text()
 
           if "uint32_t material[8];" in native or "ctx->material" in native:
@@ -424,7 +439,7 @@ jobs:
       - name: Reject stale plaintext DEX loader paths
         run: |
           set -e
-          SRC="Ultra Dex2c Mega/src/main/cpp/phantom_source/phantom_key.c"
+          SRC="phantom_key.c"
           if grep -Eq \
             'PH_USE_LEGACY_JAVA_DEX_BUFFERS|PHANTOM_ENABLE_LEGACY_DECRYPT_SHARD|nativeDecryptShard|nativeWipeShard|nativeWipeArtDex|NewByteArray|SetByteArrayRegion|ByteBuffer\.wrap|PH_ENABLE_ART_DEX_WIPE' \
             "$SRC"; then
@@ -437,8 +452,8 @@ jobs:
 
       - name: Encrypt blobs
         run: |
-          python3 "Ultra Dex2c Mega/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
-          python3 "Ultra Dex2c Mega/src/main/cpp/phantom_source/encrypt_blob.py" libphantom_arm.so  libphantom_arm.blob
+          python3 "encrypt_blob.py" libphantom_arm64.so libphantom_arm64.blob
+          python3 "encrypt_blob.py" libphantom_arm.so  libphantom_arm.blob
           ls -lh libphantom_arm64.blob libphantom_arm.blob
 
       - name: Install generated Phantom blobs into project assets
@@ -446,7 +461,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          ASSET_DIR="Ultra Dex2c Mega/src/main/assets/phantom"
+          ASSET_DIR="."
           mkdir -p "$ASSET_DIR"
           cp libphantom_arm64.blob "$ASSET_DIR/libphantom_arm64.blob"
           cp libphantom_arm.blob "$ASSET_DIR/libphantom_arm.blob"

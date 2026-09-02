@@ -14,9 +14,9 @@
  *   ChaCha20:  [12-byte nonce][ciphertext][16-byte Poly1305 tag]
  *   XChaCha20: [24-byte nonce][ciphertext][16-byte Poly1305 tag]
  *
- * ChaCha20-Poly1305 is used only for the outer DEX envelope.  The existing
- * native-only DEX loading, key reconstruction, anti-dumper checks, and wipe
- * paths are unchanged.
+ * XChaCha20-Poly1305 is used for the outer DEX envelope and Phantom's
+ * authenticated native-string envelopes. The native-only DEX loading, key
+ * reconstruction, anti-dumper checks, and wipe paths are unchanged.
  */
 
 static uint32_t ph_chacha_load32_le(const uint8_t *p) {
