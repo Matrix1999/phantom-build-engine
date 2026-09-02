@@ -269,6 +269,116 @@ jobs:
           build_arm32
           echo "  OK $(wc -c < libphantom_arm.so) bytes; integrity placeholder present"
 
+      - name: Selective Phantom helper transformation audit
+        run: |
+          set -euo pipefail
+          SRC="phantom_key.c"
+          AUDIT="phantom-helper-transforms.txt"
+          : > "$AUDIT"
+
+          python3 - "$SRC" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          source = Path(sys.argv[1]).read_text()
+          expected = {
+              "_sha_expand": "+mba,+indirect_branch,+alias_access",
+              "_sha_compress": "+mba,+indirect_branch,+alias_access",
+              "ph_parse_art_map": "+mba,+indirect_branch,+alias_access",
+              "arx_advance_block": "+mba,+alias_access",
+              "arx_xor": "+mba,+indirect_branch,+alias_access",
+          }
+          for function, passes in expected.items():
+              position = source.find(function + "(")
+              if position < 0:
+                  raise SystemExit(f"{function}: function missing")
+              declaration = source[max(0, position - 320):position]
+              if (
+                  "annotate(" not in declaration
+                  or passes not in declaration
+                  or "-vm_virtualize" not in declaration
+                  or "-vm_flatten" not in declaration
+              ):
+                  raise SystemExit(
+                      f"{function}: expected selective annotation missing"
+                  )
+              print(f"{function}: annotation {passes}; VMP excluded")
+          PY
+
+          BASELINE_FLAGS=(
+            --sysroot="$SYSROOT" -fPIC -O2 -g0 -std=c11
+            -Wformat=2 -Werror=format -Werror=implicit-function-declaration
+            -fno-unwind-tables -fno-asynchronous-unwind-tables
+            -fvisibility=hidden -ffunction-sections -fdata-sections
+            -fstack-protector-strong -D_FORTIFY_SOURCE=2
+            -D__ANDROID__ -DANDROID
+            -fno-inline
+          )
+
+          function_bytes() {
+            local target="$1"
+            local object="$2"
+            "$TC/bin/llvm-objdump" -dr \
+              --disassemble-symbols="$target" "$object" \
+              | awk '
+                  /<[[:alnum:]_]+>:/ { found=1; next }
+                  found && /^[[:space:]]*[0-9a-f]+:/ { print $2 }
+                '
+          }
+
+          for OBJ in phantom_arm64.o phantom_arm32.o; do
+            if [ "$OBJ" = phantom_arm64.o ]; then
+              ABI=arm64
+              TARGET=aarch64-linux-android26
+              INDIRECT_BRANCH='[[:space:]]br[[:space:]]+x[0-9]+'
+            else
+              ABI=arm32
+              TARGET=armv7a-linux-androideabi21
+              INDIRECT_BRANCH='[[:space:]](bx(\.w)?[[:space:]]+r([0-9]|1[0-2])|mov(\.w)?[[:space:]]+pc,[[:space:]]*r[0-9]+)'
+            fi
+
+            BASELINE="phantom_${ABI}_unprotected.o"
+            "$CLANG" --target="$TARGET" "${BASELINE_FLAGS[@]}" \
+              -c "$SRC" -o "$BASELINE"
+
+            for target in \
+                _sha_expand \
+                _sha_compress \
+                ph_parse_art_map \
+                arx_advance_block \
+                arx_xor; do
+              ACTUAL_BYTES=$(function_bytes "$target" "$OBJ" | tr '\n' ' ')
+              BASELINE_BYTES=$(function_bytes "$target" "$BASELINE" | tr '\n' ' ')
+              if [ -z "$ACTUAL_BYTES" ] || [ -z "$BASELINE_BYTES" ]; then
+                echo "$ABI/$target: function body was not emitted" >&2
+                exit 1
+              fi
+              if [ "$ACTUAL_BYTES" = "$BASELINE_BYTES" ]; then
+                echo "$ABI/$target: protected body matches unprotected baseline" >&2
+                exit 1
+              fi
+
+              DUMP="/tmp/${ABI}_${target}_helper.txt"
+              "$TC/bin/llvm-objdump" -dr \
+                --disassemble-symbols="$target" "$OBJ" > "$DUMP"
+              case "$target" in
+                _sha_expand|_sha_compress|ph_parse_art_map|arx_xor)
+                  grep -Eq "$INDIRECT_BRANCH" "$DUMP" \
+                    || {
+                      echo "$ABI/$target: indirect branch instruction missing" >&2
+                      exit 1
+                    }
+                  ;;
+              esac
+
+              actual_count=$(printf '%s\n' "$ACTUAL_BYTES" | wc -w)
+              baseline_count=$(printf '%s\n' "$BASELINE_BYTES" | wc -w)
+              echo "$ABI/$target: transformed bytes $actual_count vs baseline $baseline_count" \
+                | tee -a "$AUDIT"
+            done
+          done
+
       - name: Selective indirect call + branch audit
         run: |
           set -e
@@ -635,3 +745,4 @@ jobs:
             libphantom_arm.blob
             amice-vmp-arm64-report.txt
             amice-vmp-arm32-report.txt
+            phantom-helper-transforms.txt
