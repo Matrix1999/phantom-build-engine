@@ -2302,7 +2302,7 @@ static void arx_kdf(const uint8_t salt[16], const uint8_t pkg_hash[32], uint8_t 
  * The universal authenticated payload key remains unchanged and separate.
  */
 __attribute__((annotate(
-    "+indirect_call,+delay_offset_loading,+function_wrapper,"
+    "+indirect_call,+function_wrapper,"
     "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void derive_shard_key(
         const uint8_t base_key[16], int shard_index, uint8_t out[16]) {

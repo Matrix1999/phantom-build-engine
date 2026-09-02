@@ -91,11 +91,6 @@ jobs:
             for (int i = 0; i < 8; ++i) y += (x ^ i);
             return y > 9 ? y : y - 3;
           }
-          __attribute__((annotate("+delay_offset_loading,-vm_virtualize,-vm_flatten")))
-          int smoke_delay_offset(int x) {
-            int values[4] = {11, 23, 37, 49};
-            return values[x & 3];
-          }
           __attribute__((annotate("+alias_access,-vm_virtualize,-vm_flatten")))
           int smoke_alias_access(int x) {
             int a = x + 11, b = x ^ 23;
@@ -126,15 +121,13 @@ jobs:
             AMICE_FUNCTION_WRAPPER=false \
             AMICE_FUNCTION_WRAPPER_PROBABILITY=100 \
             AMICE_FUNCTION_WRAPPER_TIMES=1 \
-            AMICE_DELAY_OFFSET_LOADING=false \
-            AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true \
             AMICE_ALIAS_ACCESS=false \
             AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
             AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=false \
             AMICE_BASIC_BLOCK_OUTLINING=false \
             AMICE_BASIC_BLOCK_OUTLINING_MAX_EXTRACTOR_SIZE=1 \
             AMICE_MBA=false \
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,DelayOffsetLoading,AliasAccess,BasicBlockOutlining,IndirectCall,IndirectBranch,Mba \
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,BasicBlockOutlining,IndirectCall,IndirectBranch,Mba \
             RUST_LOG=amice=debug \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
@@ -150,8 +143,6 @@ jobs:
               || { echo "❌ $TARGET — indirect-call rewrite not reported" >&2; exit 1; }
             grep -q 'amice::aotu::function_wrapper.*creating wrapper' "$SMOKE_LOG" \
               || { echo "❌ $TARGET — function-wrapper rewrite not reported" >&2; exit 1; }
-            grep -q 'amice::aotu::delay_offset_loading.*pass done' "$SMOKE_LOG" \
-              || { echo "❌ $TARGET — delayed-offset pass did not complete" >&2; exit 1; }
             grep -q 'amice::aotu::alias_access.*meta box count' "$SMOKE_LOG" \
               || { echo "❌ $TARGET — alias-access rewrite not reported" >&2; exit 1; }
             grep -q 'amice::aotu::basic_block_outlining.*bbs to outline' "$SMOKE_LOG" \
@@ -222,8 +213,6 @@ jobs:
             AMICE_FUNCTION_WRAPPER=false
             AMICE_FUNCTION_WRAPPER_PROBABILITY=100
             AMICE_FUNCTION_WRAPPER_TIMES=1
-            AMICE_DELAY_OFFSET_LOADING=true
-            AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true
             AMICE_ALIAS_ACCESS=false
             AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
             AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=false
@@ -302,8 +291,6 @@ jobs:
               || { echo "$OBJ: indirect-call rewrite not reported" >&2; exit 1; }
             grep -q 'amice::aotu::function_wrapper.*creating wrapper' "$LOG" \
               || { echo "$OBJ: function-wrapper rewrite not reported" >&2; exit 1; }
-            grep -q 'amice::aotu::delay_offset_loading.*pass done' "$LOG" \
-              || { echo "$OBJ: delayed-offset pass did not complete" >&2; exit 1; }
             grep -q 'amice::aotu::alias_access.*meta box count' "$LOG" \
               || { echo "$OBJ: alias-access rewrite not reported" >&2; exit 1; }
             CALL_DISASM="/tmp/${ABI}_derive_shard_key.txt"
