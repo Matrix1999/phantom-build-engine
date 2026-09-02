@@ -48,6 +48,11 @@
 #include <dirent.h>
 #include <math.h>
 #include <sys/syscall.h>
+#include <android/log.h>
+
+#define D2C_GUARD_LOG_TAG "D2CGuard"
+#define GD_GUARD_DIAG(...) \
+    ((void)__android_log_print(ANDROID_LOG_ERROR, D2C_GUARD_LOG_TAG, __VA_ARGS__))
 #include "guard_xchacha20poly1305.h"
 // AMICE documents per-function VM virtualization through this Clang annotation.
 // Keep Android Keystore/JNI collection native; the decision and dispatch gates
@@ -97,19 +102,21 @@ static __attribute__((noinline)) void _lvm_toolkit_gate(long pid) {
 #endif
 }
 
-// Runtime diagnostics are intentionally compiled out for every build. The
-// guard must not disclose signer, TEE, anti-hook, or crash details through
-// adb/logcat. Keeping these as variadic no-ops also prevents their arguments
-// (including format strings and reason text) from reaching the native binary.
-#define GLOGI(...) ((void)0)
-#define GLOGE(...) ((void)0)
-#define CRASH_HERE(reason) crash_now()
+// Diagnostic build: report stage names and scalar outcomes only. Never log
+// keys, nonces, tags, plaintext strings, signer bytes, or decrypted payloads.
+// Filter with: adb logcat -s D2CGuard:I
+#define GLOGI(...) \
+    ((void)__android_log_print(ANDROID_LOG_INFO, D2C_GUARD_LOG_TAG, __VA_ARGS__))
+#define GLOGE(...) \
+    ((void)__android_log_print(ANDROID_LOG_ERROR, D2C_GUARD_LOG_TAG, __VA_ARGS__))
+#define CRASH_HERE(reason) do { \
+    GLOGE("fatal: %s", (reason)); \
+    crash_now(); \
+} while (0)
 
-// Legacy diagnostic call sites remain no-ops so no build flag can re-enable
-// signer, TEE, or guard messages through adb/logcat.
-#define TEE_DIAG(...) ((void)0)
-#define D2CG_INFO(...) ((void)0)
-#define D2CG_ERROR(...) ((void)0)
+#define TEE_DIAG(...) GLOGI("TEE-DIAG: " __VA_ARGS__)
+#define D2CG_INFO(...) GLOGI("D2CG: " __VA_ARGS__)
+#define D2CG_ERROR(...) GLOGE("D2CG: " __VA_ARGS__)
 
 // ════════════════════════════════════════════════════════════════════════════
 // Guard split key — split across volatile arrays (prevents static-analysis key
@@ -4150,7 +4157,7 @@ static D2C_AMICE_VMP void vm_gate_antik(const antik_ctx_t *c);
 
 __attribute__((constructor))
 static void d2c_boot(void) {
-    GLOGI("fonts_init: constructor entry");
+    GLOGI("startup[0]: constructor entry");
 
     // ARM64 disassembly of fonts_init() shows ONLY seven opaque indirect VM
     // calls and two process/thread spawns — zero named security functions,
@@ -4166,24 +4173,35 @@ static void d2c_boot(void) {
     //   spawn_background_watch() → vm_run_child_kill() — forked 5-s poll child
     // DPatch/libpandora — FIRST, before any hook can redirect fopen/openat.
     // No bl _cipher_map_layout_scan, no cbnz, no crash_now in ARM disasm.
+    GLOGI("startup[1]: map-scan begin");
     vm_gate_mapscan();
+    GLOGI("startup[1]: map-scan passed");
+    GLOGI("startup[2]: virtual-container check begin");
     vm_gate_vccheck();
+    GLOGI("startup[2]: virtual-container check passed");
+    GLOGI("startup[3]: APK metrics check begin");
     vm_run_startup();
+    GLOGI("startup[3]: APK metrics check passed");
     // Layer 3: SO self-integrity — opaque VM call, crash decision inside lvm_exec.
     // No cbnz branch here; no gvm_so_integrity or crash_now visible in ARM disasm.
+    GLOGI("startup[4]: native integrity check begin");
     vm_gate_so_integrity();
+    GLOGI("startup[4]: native integrity check passed");
     // The signer gate requires generated VMP registrations and a live JNIEnv, so
     // it runs from the JNI retry stage instead of this pre-Java constructor.
+    GLOGI("startup[5]: native environment checks begin");
     vm_run();
+    GLOGI("startup[5]: native environment checks passed");
 
-    GLOGI("fonts_init: launching background watchdogs");
+    GLOGI("startup[6]: launching background watchdogs");
     spawn_background_watch();
     pthread_t wdt;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_create(&wdt, &attr, watchdog_thread, NULL);
+    int wdt_rc = pthread_create(&wdt, &attr, watchdog_thread, NULL);
     pthread_attr_destroy(&attr);
+    GLOGI("startup[6]: constructor complete watchdog_rc=%d", wdt_rc);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -5001,14 +5019,20 @@ static bool has_started_activity(JNIEnv *env) {
 //             remaining lifecycle-sensitive killer-detection suite
 static void *d2c_retry(void *arg) {
     JavaVM *vm = static_cast<JavaVM *>(arg);
-    if (!vm) return nullptr;
+    if (!vm) {
+        GLOGE("jni-startup[0]: missing JavaVM");
+        return nullptr;
+    }
 
     const int MAX_ATTEMPTS = 300;      // ~9 s ceiling at 30 ms steps
     const int SLEEP_US     = 30 * 1000;
 
     // ── Phase 1: wait for Application context ────────────────────────────
+    GLOGI("jni-startup[1]: waiting for Application context");
     jobject gCtx = nullptr;
+    int context_attempts = 0;
     for (int i = 0; i < MAX_ATTEMPTS && !gCtx; i++) {
+        context_attempts = i + 1;
         JNIEnv *env = nullptr;
         if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK && env) {
             jobject ctx = get_context_via_activity_thread(env);
@@ -5020,7 +5044,11 @@ static void *d2c_retry(void *arg) {
         }
         if (!gCtx) usleep(SLEEP_US);
     }
-    if (!gCtx) return nullptr;
+    if (!gCtx) {
+        GLOGE("jni-startup[1]: Application context timeout attempts=%d", context_attempts);
+        return nullptr;
+    }
+    GLOGI("jni-startup[1]: Application context ready attempts=%d", context_attempts);
 
     // ── Phase 2: TEE must run as soon as Application exists ──────────────
     // Do not wait for ActivityThread.mActivities here. The prior placement
@@ -5028,6 +5056,7 @@ static void *d2c_retry(void *arg) {
     // visible, which allowed a re-signed diagnostic test APK to be used before
     // its attestation failure terminated the process.
     JNIEnv *tee_env = nullptr;
+    GLOGI("jni-startup[2]: signer gate begin");
     if (vm->AttachCurrentThread(&tee_env, nullptr) == JNI_OK && tee_env) {
         tee_ctx_t tctx;
         tctx.env = tee_env;
@@ -5035,30 +5064,51 @@ static void *d2c_retry(void *arg) {
         // SignerGate was bound after generated native registrations in JNI_OnLoad.
         // LSIGCHK now obtains its payload from the VMP interpreter on this thread.
         vm_gate_sigcheck(tee_env);
+        GLOGI("jni-startup[2]: signer gate passed");
         TEE_DIAG("startup TEE gate");
+        GLOGI("jni-startup[2]: hardware TEE gate begin");
         vm_gate_hwkey(&tctx);
+        GLOGI("jni-startup[2]: hardware TEE gate passed");
         if (tee_env->ExceptionCheck()) tee_env->ExceptionClear();
         vm->DetachCurrentThread();
+    } else {
+        GLOGE("jni-startup[2]: AttachCurrentThread failed");
     }
 
     // ── Phase 3: wait until first Activity is on-stack ───────────────────
+    GLOGI("jni-startup[3]: waiting for first Activity");
+    bool activity_ready = false;
+    int activity_attempts = 0;
     for (int i = 0; i < MAX_ATTEMPTS; i++) {
+        activity_attempts = i + 1;
         JNIEnv *env = nullptr;
         if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK && env) {
             bool ready = has_started_activity(env);
             vm->DetachCurrentThread();
-            if (ready) break;
+            if (ready) {
+                activity_ready = true;
+                break;
+            }
         }
         usleep(SLEEP_US);
+    }
+    if (activity_ready) {
+        GLOGI("jni-startup[3]: first Activity ready attempts=%d", activity_attempts);
+    } else {
+        GLOGE("jni-startup[3]: Activity wait timeout attempts=%d; continuing", activity_attempts);
     }
 
     // ── Phase 4: run remaining lifecycle-sensitive checks ────────────────
     JNIEnv *env = nullptr;
+    GLOGI("jni-startup[4]: lifecycle checks begin");
     if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK && env) {
         _d2c_measure(env, nullptr, gCtx);
         if (env->ExceptionCheck()) env->ExceptionClear();
         env->DeleteGlobalRef(gCtx);
         vm->DetachCurrentThread();
+        GLOGI("jni-startup[4]: lifecycle checks complete");
+    } else {
+        GLOGE("jni-startup[4]: AttachCurrentThread failed");
     }
     return nullptr;
 }
@@ -5073,14 +5123,18 @@ void d2c_apply(JNIEnv *env) {
     // directly here to avoid racing with PairIP init).
     JavaVM *vm = nullptr;
     if (env) env->GetJavaVM(&vm);
-    if (!vm) return;
+    if (!vm) {
+        GLOGE("d2c_apply: JavaVM unavailable");
+        return;
+    }
 
     pthread_t t;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_create(&t, &attr, d2c_retry, static_cast<void*>(vm));
+    int retry_rc = pthread_create(&t, &attr, d2c_retry, static_cast<void*>(vm));
     pthread_attr_destroy(&attr);
+    GLOGI("d2c_apply: retry thread rc=%d", retry_rc);
 }
 
 extern "C" __attribute__((visibility("default"), alias("d2c_apply")))
@@ -5091,11 +5145,17 @@ void fonts_apply_metrics(JNIEnv *env);
 #ifndef D2C_HAS_JNILOAD
 extern "C" JNIEXPORT jint JNICALL
 JNI_OnLoad(JavaVM *vm, void * /*reserved*/) {
+    GLOGI("JNI_OnLoad: entry");
     JNIEnv *env = nullptr;
-    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK)
+    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        GLOGE("JNI_OnLoad: GetEnv failed");
         return JNI_ERR;
+    }
+    GLOGI("JNI_OnLoad: registering natives");
     d2c_register(env);
+    GLOGI("JNI_OnLoad: starting Java-aware checks");
     d2c_apply(env);
+    GLOGI("JNI_OnLoad: complete");
     return JNI_VERSION_1_6;
 }
 #endif
