@@ -194,7 +194,7 @@ jobs:
       - name: VMP section audit (arm64 + arm32)
         run: |
           set -e
-          PATTERN="ph_reveal_ns|detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
+          PATTERN="ph_pstring_prepare_vm|ph_pstring_decrypt_vm|ph_pstring_finish_vm|detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
             if [ "$OBJ" = "phantom_arm64.o" ]; then
               ABI="arm64"
@@ -234,7 +234,9 @@ jobs:
             echo ""
             echo "--- Required Phantom VM markers ($ABI) ---"
             for target in \
-              ph_reveal_ns \
+              ph_pstring_prepare_vm \
+              ph_pstring_decrypt_vm \
+              ph_pstring_finish_vm \
               ph_load_begin \
               ph_load_advance \
               ph_load_fail \

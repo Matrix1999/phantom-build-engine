@@ -12,8 +12,8 @@
 //   • Per-string unique nonce — embedded in each authenticated envelope
 //   • AAD binds the Phantom string domain and index
 //   • Plaintext XOR 0x5A     — second layer post-decrypt
-//   • ph_reveal_ns() is virtualized without pre-flattening so it stays within
-//     Amice's VM register budget
+//   • String preparation, authenticated decrypt dispatch, and authentication
+//     policy/unmasking are separate VMP stages that stay within Amice's budget
 //
 // Usage:
 //   char buf[SP_BUF_SZ];
@@ -106,8 +106,8 @@ static __attribute__((noinline)) void ph_build_str_key(uint32_t idx, uint8_t *ke
 
 // ════════════════════════════════════════════════════════════════════════════
 // ph_reveal_ns — authenticate and decrypt one string envelope into buf.
-// Disable pre-flattening so the function remains within Amice's 32-register
-// VM budget while still requiring VM bytecode emission.
+// The work is split into small explicit VMP stages because the combined
+// XChaCha orchestration exceeds Amice's 32-register VM budget.
 // Envelope: [24-byte nonce][ciphertext][16-byte Poly1305 tag].
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -115,41 +115,68 @@ static __attribute__((noinline, noreturn)) void ph_pstring_auth_fail(void) {
     __builtin_trap();
 }
 
-__attribute__((annotate("+vm_virtualize,-vm_flatten")))
-static __attribute__((noinline)) const char *ph_reveal_ns(
-        uint32_t idx, const uint8_t *envelope, int envelope_len, char *buf) {
-    static const uint8_t aad_prefix[] = "PHANTOM-PSTRI";
-    uint8_t key[32], aad[(sizeof(aad_prefix) - 1u) + 4u];
+typedef struct {
+    uint32_t idx;
+    const uint8_t *envelope;
+    int envelope_len;
     int ciphertext_len;
-    int authentic = 0;
+    int authentic;
+    char *buf;
+    uint8_t key[32];
+    uint8_t aad[17];
+} ph_pstring_ctx;
 
-    if (!envelope || !buf || envelope_len < 40) {
-        if (buf) buf[0] = '\0';
-        ph_pstring_auth_fail();
-    }
+__attribute__((annotate("+vm_virtualize,-vm_flatten")))
+static __attribute__((noinline)) int ph_pstring_prepare_vm(ph_pstring_ctx *ctx) {
+    static const uint8_t prefix[13] = "PHANTOM-PSTRI";
+    if (!ctx || !ctx->envelope || !ctx->buf || ctx->envelope_len < 40) return 0;
+    ctx->ciphertext_len = ctx->envelope_len - 40;
+    ph_build_str_key(ctx->idx, ctx->key);
+    memcpy(ctx->aad, prefix, sizeof(prefix));
+    ctx->aad[13] = (uint8_t)ctx->idx;
+    ctx->aad[14] = (uint8_t)(ctx->idx >> 8);
+    ctx->aad[15] = (uint8_t)(ctx->idx >> 16);
+    ctx->aad[16] = (uint8_t)(ctx->idx >> 24);
+    return 1;
+}
 
-    ciphertext_len = envelope_len - 40;
-    ph_build_str_key(idx, key);
-    memcpy(aad, aad_prefix, sizeof(aad_prefix) - 1u);
-    aad[sizeof(aad_prefix) - 1u] = (uint8_t)idx;
-    aad[sizeof(aad_prefix)] = (uint8_t)(idx >> 8);
-    aad[sizeof(aad_prefix) + 1u] = (uint8_t)(idx >> 16);
-    aad[sizeof(aad_prefix) + 2u] = (uint8_t)(idx >> 24);
-    authentic = ph_xchacha20poly1305_decrypt(
-            key, envelope, aad, sizeof(aad),
-            envelope + 24, (size_t)ciphertext_len,
-            envelope + 24 + ciphertext_len, (uint8_t *)buf);
-    memset(key, 0, sizeof(key));
-    memset(aad, 0, sizeof(aad));
-    if (!authentic) {
-        memset(buf, 0, (size_t)ciphertext_len);
+__attribute__((annotate("+vm_virtualize,-vm_flatten")))
+static __attribute__((noinline)) void ph_pstring_decrypt_vm(ph_pstring_ctx *ctx) {
+    ctx->authentic = ph_xchacha20poly1305_decrypt(
+            ctx->key, ctx->envelope, ctx->aad, sizeof(ctx->aad),
+            ctx->envelope + 24, (size_t)ctx->ciphertext_len,
+            ctx->envelope + 24 + ctx->ciphertext_len, (uint8_t *)ctx->buf);
+}
+
+__attribute__((annotate("+vm_virtualize,-vm_flatten")))
+static __attribute__((noinline)) void ph_pstring_finish_vm(ph_pstring_ctx *ctx) {
+    memset(ctx->key, 0, sizeof(ctx->key));
+    memset(ctx->aad, 0, sizeof(ctx->aad));
+    if (!ctx->authentic) {
+        memset(ctx->buf, 0, (size_t)ctx->ciphertext_len);
         ph_pstring_auth_fail();
     }
     const uint8_t _mask = 0x5Au;   // amice MBA hides this literal
-    for (int i = 0; i < ciphertext_len; i++) {
-        buf[i] = (char)((uint8_t)buf[i] ^ _mask);
+    for (int i = 0; i < ctx->ciphertext_len; i++) {
+        ctx->buf[i] = (char)((uint8_t)ctx->buf[i] ^ _mask);
     }
-    buf[ciphertext_len] = '\0';
+    ctx->buf[ctx->ciphertext_len] = '\0';
+}
+
+static __attribute__((noinline)) const char *ph_reveal_ns(
+        uint32_t idx, const uint8_t *envelope, int envelope_len, char *buf) {
+    ph_pstring_ctx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.idx = idx;
+    ctx.envelope = envelope;
+    ctx.envelope_len = envelope_len;
+    ctx.buf = buf;
+    if (!ph_pstring_prepare_vm(&ctx)) {
+        if (buf) buf[0] = '\0';
+        ph_pstring_auth_fail();
+    }
+    ph_pstring_decrypt_vm(&ctx);
+    ph_pstring_finish_vm(&ctx);
     return buf;
 }
 
