@@ -452,8 +452,8 @@ jobs:
               | grep -v '^module' \
               | sort -u > "$ACTUAL"
             diff -u <(sort -u "phantom-vmp-baseline-${ABI}.txt") "$ACTUAL"
-            EXPECTED=$(wc -l < "phantom-vmp-baseline-${ABI}.txt")
-            ACTUAL_COUNT=$(wc -l < "$ACTUAL")
+            EXPECTED=$(grep -c '[^[:space:]]' "phantom-vmp-baseline-${ABI}.txt")
+            ACTUAL_COUNT=$(grep -c '[^[:space:]]' "$ACTUAL")
             [ "$ACTUAL_COUNT" -eq "$EXPECTED" ] \
               || { echo "$ABI: VMP metadata count changed ($EXPECTED -> $ACTUAL_COUNT)" >&2; exit 1; }
             echo "✅ $ABI — exact VMP metadata baseline preserved ($ACTUAL_COUNT targets)"
