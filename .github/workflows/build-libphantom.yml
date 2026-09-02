@@ -113,14 +113,27 @@ jobs:
               echo "❌ $TARGET — amice compiled but did not virtualize foo" >&2
               exit 1
             fi
-            "$TC/bin/llvm-nm" -a "/tmp/smoke_${TARGET}.o" \
-              | grep -q '\.amice_indirect_call_table' \
-              || { echo "❌ $TARGET — indirect-call table missing" >&2; exit 1; }
-            "$TC/bin/llvm-nm" -a "/tmp/smoke_${TARGET}.o" \
-              | grep -q 'global_indirect_branch_table' \
-              || { echo "❌ $TARGET — indirect-branch table missing" >&2; exit 1; }
+            grep -Eq 'amice::aotu::indirect_call.*found [1-9][0-9]* likely functions and [1-9][0-9]* call instructions' \
+              "$SMOKE_LOG" \
+              || { echo "❌ $TARGET — indirect-call rewrite not reported" >&2; exit 1; }
+            "$TC/bin/llvm-objdump" -dr --disassemble-symbols=smoke_indirect_call \
+              "/tmp/smoke_${TARGET}.o" > "/tmp/smoke_icall_${TARGET}.txt"
+            "$TC/bin/llvm-objdump" -dr --disassemble-symbols=smoke_indirect_branch \
+              "/tmp/smoke_${TARGET}.o" > "/tmp/smoke_ibranch_${TARGET}.txt"
+            if [ "$TARGET" = aarch64-linux-android26 ]; then
+              grep -Eq '[[:space:]]blr[[:space:]]+x[0-9]+' "/tmp/smoke_icall_${TARGET}.txt" \
+                || { echo "❌ $TARGET — indirect call instruction missing" >&2; exit 1; }
+              grep -Eq '[[:space:]]br[[:space:]]+x[0-9]+' "/tmp/smoke_ibranch_${TARGET}.txt" \
+                || { echo "❌ $TARGET — indirect branch instruction missing" >&2; exit 1; }
+            else
+              grep -Eq '[[:space:]]blx(\.w)?[[:space:]]+r[0-9]+' "/tmp/smoke_icall_${TARGET}.txt" \
+                || { echo "❌ $TARGET — indirect call instruction missing" >&2; exit 1; }
+              grep -Eq '[[:space:]](bx(\.w)?[[:space:]]+r([0-9]|1[0-2])|mov(\.w)?[[:space:]]+pc,[[:space:]]*r[0-9]+)' \
+                "/tmp/smoke_ibranch_${TARGET}.txt" \
+                || { echo "❌ $TARGET — indirect branch instruction missing" >&2; exit 1; }
+            fi
             echo "✅ $TARGET — amice emitted VM markers"
-            echo "✅ $TARGET — selective indirect-call + indirect-branch tables emitted"
+            echo "✅ $TARGET — selective indirect call + branch instructions emitted"
           done
 
       - name: Write linker version script
@@ -151,7 +164,7 @@ jobs:
       - name: Build libphantom.so (arm64-v8a + armeabi-v7a)
         timeout-minutes: 30
         run: |
-          set -e
+          set -eo pipefail
           SRC="phantom_key.c"
           INTEGRITY_INC="phantom_integrity.inc"
           STAMPER="stamp_phantom_integrity.py"
@@ -191,7 +204,8 @@ jobs:
 
           build_arm64() {
             env "${AMICE_PASSES[@]}" "$CLANG" --target=aarch64-linux-android26 \
-              "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o 2>&1
+              "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm64.o 2>&1 \
+              | tee /tmp/phantom_arm64_amice.log
             "$NDK_LINK_ARM64" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
               phantom_arm64.o "$SYSROOT/usr/lib/aarch64-linux-android/libz.a" \
               -o libphantom_arm64.so
@@ -199,7 +213,8 @@ jobs:
 
           build_arm32() {
             env "${AMICE_PASSES[@]}" "$CLANG" --target=armv7a-linux-androideabi21 \
-              "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1
+              "${COMMON_FLAGS[@]}" -c "$SRC" -o phantom_arm32.o 2>&1 \
+              | tee /tmp/phantom_arm32_amice.log
             "$NDK_LINK_ARM32" "${LDFLAGS[@]}" -Wl,-soname,libphantom.so \
               phantom_arm32.o "$SYSROOT/usr/lib/arm-linux-androideabi/libz.a" \
               -o libphantom_arm.so
@@ -222,13 +237,30 @@ jobs:
           grep -B1 'static __attribute__((noinline)) void derive_shard_key' phantom_key.c \
             | grep -q 'annotate("+indirect_call")'
           for OBJ in phantom_arm64.o phantom_arm32.o; do
-            SYMBOLS="/tmp/${OBJ}.symbols"
-            "$TC/bin/llvm-nm" -a "$OBJ" > "$SYMBOLS"
-            grep -q '\.amice_indirect_call_table' "$SYMBOLS" \
-              || { echo "$OBJ: indirect-call table missing" >&2; exit 1; }
-            grep -q 'global_indirect_branch_table' "$SYMBOLS" \
-              || { echo "$OBJ: indirect-branch table missing" >&2; exit 1; }
-            echo "✅ $OBJ — selective indirect-call + encrypted/shuffled indirect-branch tables present"
+            if [ "$OBJ" = phantom_arm64.o ]; then
+              ABI=arm64
+              CALL_PATTERN='[[:space:]]blr[[:space:]]+x[0-9]+'
+              BRANCH_PATTERN='[[:space:]]br[[:space:]]+x[0-9]+'
+            else
+              ABI=arm32
+              CALL_PATTERN='[[:space:]]blx(\.w)?[[:space:]]+r[0-9]+'
+              BRANCH_PATTERN='[[:space:]](bx(\.w)?[[:space:]]+r([0-9]|1[0-2])|mov(\.w)?[[:space:]]+pc,[[:space:]]*r[0-9]+)'
+            fi
+            LOG="/tmp/phantom_${ABI}_amice.log"
+            grep -Eq 'amice::aotu::indirect_call.*found [1-9][0-9]* likely functions and [1-9][0-9]* call instructions' \
+              "$LOG" \
+              || { echo "$OBJ: indirect-call rewrite not reported" >&2; exit 1; }
+            CALL_DISASM="/tmp/${ABI}_derive_shard_key.txt"
+            BRANCH_DISASM="/tmp/${ABI}_ph_build_str_key.txt"
+            "$TC/bin/llvm-objdump" -dr --disassemble-symbols=derive_shard_key \
+              "$OBJ" | tee "$CALL_DISASM"
+            "$TC/bin/llvm-objdump" -dr --disassemble-symbols=ph_build_str_key \
+              "$OBJ" | tee "$BRANCH_DISASM"
+            grep -Eq "$CALL_PATTERN" "$CALL_DISASM" \
+              || { echo "$OBJ: indirect call instruction missing" >&2; exit 1; }
+            grep -Eq "$BRANCH_PATTERN" "$BRANCH_DISASM" \
+              || { echo "$OBJ: indirect branch instruction missing" >&2; exit 1; }
+            echo "✅ $OBJ — selective indirect call + encrypted/shuffled indirect branch instructions present"
           done
 
       - name: VMP section audit (arm64 + arm32)
