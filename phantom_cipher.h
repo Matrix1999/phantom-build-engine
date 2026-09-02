@@ -97,7 +97,7 @@ static __attribute__((noinline)) uint32_t ph_ns_pstr_mix(uint32_t idx) {
 }
 
 __attribute__((annotate(
-    "+mba,+indirect_branch,+alias_access,+basic_block_outlining,"
+    "+mba,+indirect_branch,+alias_access,"
     "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void ph_build_str_key(uint32_t idx, uint8_t *key) {
     ph_build_key256(key);
