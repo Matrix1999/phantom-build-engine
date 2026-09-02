@@ -448,13 +448,11 @@ jobs:
               OBJ=phantom_arm32.o
             fi
             ACTUAL="/tmp/${ABI}_vmp_metadata.txt"
-            awk '{
-              for (i = 1; i <= NF; ++i) {
-                value = $i
-                sub(/^\.?amice\.vm\.meta\./, "", value)
-                if (value != $i && value !~ /^module/) print value
-              }
-            }' < <(readelf -SW "$OBJ") | sort -u > "$ACTUAL"
+            grep -oE 'amice\.vm\.meta\.[[:alnum:]_]+' \
+              "/tmp/${ABI}_phantom_sections.txt" \
+              | sed 's/^amice\.vm\.meta\.//' \
+              | grep -v '^module' \
+              | sort -u > "$ACTUAL"
             diff -u <(sort -u "phantom-vmp-baseline-${ABI}.txt") "$ACTUAL"
             EXPECTED=$(wc -l < "phantom-vmp-baseline-${ABI}.txt")
             ACTUAL_COUNT=$(wc -l < "$ACTUAL")
