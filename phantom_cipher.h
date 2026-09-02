@@ -12,9 +12,9 @@
 //   • Per-string unique nonce — embedded in each authenticated envelope
 //   • AAD binds the Phantom string domain and index
 //   • Plaintext XOR 0x5A     — second layer post-decrypt
-//   • String preparation, authenticated decrypt dispatch, authentication
-//     policy, and plaintext unmasking are separate VMP stages that stay within
-//     Amice's budget
+//   • String preparation, authenticated decrypt dispatch, key/AAD wiping,
+//     authentication policy, and plaintext unmasking are separate VMP stages
+//     that stay within Amice's budget
 //
 // Usage:
 //   char buf[SP_BUF_SZ];
@@ -150,9 +150,17 @@ static __attribute__((noinline)) void ph_pstring_decrypt_vm(ph_pstring_ctx *ctx)
 }
 
 __attribute__((annotate("+vm_virtualize,-vm_flatten")))
-static __attribute__((noinline)) void ph_pstring_auth_policy_vm(ph_pstring_ctx *ctx) {
+static __attribute__((noinline)) void ph_pstring_scrub_key_vm(ph_pstring_ctx *ctx) {
     memset(ctx->key, 0, sizeof(ctx->key));
+}
+
+__attribute__((annotate("+vm_virtualize,-vm_flatten")))
+static __attribute__((noinline)) void ph_pstring_scrub_aad_vm(ph_pstring_ctx *ctx) {
     memset(ctx->aad, 0, sizeof(ctx->aad));
+}
+
+__attribute__((annotate("+vm_virtualize,-vm_flatten")))
+static __attribute__((noinline)) void ph_pstring_auth_policy_vm(ph_pstring_ctx *ctx) {
     if (!ctx->authentic) {
         memset(ctx->buf, 0, (size_t)ctx->ciphertext_len);
         ph_pstring_auth_fail();
@@ -182,6 +190,8 @@ static __attribute__((noinline)) const char *ph_reveal_ns(
     }
     ph_pstring_decrypt_vm(&ctx);
     ph_pstring_auth_policy_vm(&ctx);
+    ph_pstring_scrub_key_vm(&ctx);
+    ph_pstring_scrub_aad_vm(&ctx);
     ph_pstring_unmask_vm(&ctx);
     return buf;
 }
