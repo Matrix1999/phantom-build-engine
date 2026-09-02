@@ -151,7 +151,7 @@ static __attribute__((noinline)) void ph_pstring_decrypt_vm(ph_pstring_ctx *ctx)
 
 __attribute__((annotate("+vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void ph_pstring_scrub_key_vm(ph_pstring_ctx *ctx) {
-    memset(ctx->key, 0, sizeof(ctx->key));
+    for (int i = 0; i < 32; i++) ctx->key[i] = 0;
 }
 
 __attribute__((annotate("+vm_virtualize,-vm_flatten")))
