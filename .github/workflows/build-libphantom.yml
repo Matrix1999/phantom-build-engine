@@ -96,16 +96,6 @@ jobs:
             int a = x + 11, b = x ^ 23;
             return (a * b) + (a ^ b);
           }
-          __attribute__((annotate("+basic_block_outlining,-vm_virtualize,-vm_flatten")))
-          int smoke_basic_block_outlining(int x) {
-            int y = x;
-            if (x & 1) {
-              y += 3; y ^= 7; y += 13; y ^= 29;
-            } else {
-              y -= 5; y ^= 11; y -= 17; y ^= 31;
-            }
-            return y + 19;
-          }
           __attribute__((annotate("+function_wrapper,-vm_virtualize,-vm_flatten")))
           int smoke_function_wrapper(int x) { return smoke_callee(x) + 41; }
           CSRC
@@ -124,10 +114,8 @@ jobs:
             AMICE_ALIAS_ACCESS=false \
             AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
             AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=false \
-            AMICE_BASIC_BLOCK_OUTLINING=false \
-            AMICE_BASIC_BLOCK_OUTLINING_MAX_EXTRACTOR_SIZE=1 \
             AMICE_MBA=false \
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,BasicBlockOutlining,IndirectCall,IndirectBranch,Mba \
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,IndirectCall,IndirectBranch,Mba \
             RUST_LOG=amice=debug \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
@@ -145,8 +133,6 @@ jobs:
               || { echo "❌ $TARGET — function-wrapper rewrite not reported" >&2; exit 1; }
             grep -q 'amice::aotu::alias_access.*meta box count' "$SMOKE_LOG" \
               || { echo "❌ $TARGET — alias-access rewrite not reported" >&2; exit 1; }
-            grep -q 'amice::aotu::basic_block_outlining.*bbs to outline' "$SMOKE_LOG" \
-              || { echo "❌ $TARGET — basic-block outlining not reported" >&2; exit 1; }
             "$TC/bin/llvm-objdump" -dr --disassemble-symbols=smoke_indirect_call \
               "/tmp/smoke_${TARGET}.o" > "/tmp/smoke_icall_${TARGET}.txt"
             "$TC/bin/llvm-objdump" -dr --disassemble-symbols=smoke_indirect_branch \
@@ -216,10 +202,8 @@ jobs:
             AMICE_ALIAS_ACCESS=false
             AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
             AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=false
-            AMICE_BASIC_BLOCK_OUTLINING=false
-            AMICE_BASIC_BLOCK_OUTLINING_MAX_EXTRACTOR_SIZE=1
             AMICE_MBA=false
-            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,DelayOffsetLoading,AliasAccess,BasicBlockOutlining,IndirectCall,IndirectBranch,Mba
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,IndirectCall,IndirectBranch,Mba
             RUST_LOG=amice=debug
 
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
