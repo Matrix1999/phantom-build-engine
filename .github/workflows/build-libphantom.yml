@@ -471,8 +471,12 @@ jobs:
           set -e
           ASSET_DIR="."
           mkdir -p "$ASSET_DIR"
-          cp libphantom_arm64.blob "$ASSET_DIR/libphantom_arm64.blob"
-          cp libphantom_arm.blob "$ASSET_DIR/libphantom_arm.blob"
+          if [ "$(realpath "$ASSET_DIR")" != "$(pwd)" ]; then
+            cp libphantom_arm64.blob "$ASSET_DIR/libphantom_arm64.blob"
+            cp libphantom_arm.blob "$ASSET_DIR/libphantom_arm.blob"
+          else
+            echo "Flattened repository: generated Phantom blobs are already in the asset directory"
+          fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
