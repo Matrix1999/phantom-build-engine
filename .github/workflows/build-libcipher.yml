@@ -123,8 +123,8 @@ jobs:
             -fvisibility=hidden \
             -ffunction-sections \
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
-            -I"Ultra Dex2c Mega/src/main/cpp/cipher_source" \
-            -c "Ultra Dex2c Mega/src/main/cpp/cipher_source/guard.cpp" -o guard_arm64.o 2>&1
+            -I"src/main/cpp/cipher_source" \
+            -c "src/main/cpp/cipher_source/guard.cpp" -o guard_arm64.o 2>&1
           "$TC/bin/llvm-objcopy" --strip-debug guard_arm64.o
           echo ""
           echo "── Compiler done ──"
@@ -226,8 +226,8 @@ jobs:
             -fvisibility=hidden \
             -ffunction-sections \
             -D__ANDROID__ -DANDROID -DD2C_HAS_JNILOAD \
-            -I"Ultra Dex2c Mega/src/main/cpp/cipher_source" \
-            -c "Ultra Dex2c Mega/src/main/cpp/cipher_source/guard.cpp" -o guard_arm32.o 2>&1
+            -I"src/main/cpp/cipher_source" \
+            -c "src/main/cpp/cipher_source/guard.cpp" -o guard_arm32.o 2>&1
           "$TC/bin/llvm-objcopy" --strip-debug guard_arm32.o
           echo ""
           echo "── Required TEE VM markers (armeabi-v7a) ──"
