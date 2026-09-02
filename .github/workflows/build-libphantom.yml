@@ -117,10 +117,10 @@ jobs:
             AMICE_VM_EMIT_MARKERS=true AMICE_VM_DUMP_BYTECODE=true \
             AMICE_VM_DUMP_LOWERING=true \
             AMICE_VM_FLATTEN=true \
-            AMICE_SPLIT_BASIC_BLOCK=false AMICE_SPLIT_BASIC_BLOCK_NUM=1 \
+            AMICE_SPLIT_BASIC_BLOCK=false AMICE_SPLIT_BASIC_BLOCK_NUM=3 \
             AMICE_FLATTEN=false AMICE_FLATTEN_FIX_STACK=true \
-            AMICE_FLATTEN_LOWER_SWITCH=true AMICE_FLATTEN_MODE=basic \
-            AMICE_FLATTEN_LOOP_COUNT=1 AMICE_FLATTEN_SKIP_BIG_FUNCTION=true \
+            AMICE_FLATTEN_LOWER_SWITCH=true AMICE_FLATTEN_MODE=dominator \
+            AMICE_FLATTEN_LOOP_COUNT=2 AMICE_FLATTEN_SKIP_BIG_FUNCTION=true \
             AMICE_FLATTEN_ALWAYS_INLINE=false \
             AMICE_INDIRECT_CALL=false \
             AMICE_INDIRECT_BRANCH=false \
@@ -211,12 +211,12 @@ jobs:
             AMICE_VM_DUMP_LOWERING=true
             AMICE_VM_FLATTEN=true
             AMICE_SPLIT_BASIC_BLOCK=false
-            AMICE_SPLIT_BASIC_BLOCK_NUM=1
+            AMICE_SPLIT_BASIC_BLOCK_NUM=3
             AMICE_FLATTEN=false
             AMICE_FLATTEN_FIX_STACK=true
             AMICE_FLATTEN_LOWER_SWITCH=true
-            AMICE_FLATTEN_MODE=basic
-            AMICE_FLATTEN_LOOP_COUNT=1
+            AMICE_FLATTEN_MODE=dominator
+            AMICE_FLATTEN_LOOP_COUNT=2
             AMICE_FLATTEN_SKIP_BIG_FUNCTION=true
             AMICE_FLATTEN_ALWAYS_INLINE=false
             AMICE_INDIRECT_CALL=false
@@ -294,30 +294,30 @@ jobs:
           expected = {
               "_sha_expand": (
                   "+split_basic_block",
-                  "+split_basic_block_num=1",
+                  "+split_basic_block_num=3",
                   "+flatten",
-                  "+flatten_mode=basic",
-                  "+flatten_loop_count=1",
+                  "+flatten_mode=dominator",
+                  "+flatten_loop_count=2",
                   "+mba",
                   "+indirect_branch",
                   "+alias_access",
               ),
               "_sha_compress": (
                   "+split_basic_block",
-                  "+split_basic_block_num=1",
+                  "+split_basic_block_num=3",
                   "+flatten",
-                  "+flatten_mode=basic",
-                  "+flatten_loop_count=1",
+                  "+flatten_mode=dominator",
+                  "+flatten_loop_count=2",
                   "+mba",
                   "+indirect_branch",
                   "+alias_access",
               ),
               "ph_parse_art_map": (
                   "+split_basic_block",
-                  "+split_basic_block_num=1",
+                  "+split_basic_block_num=3",
                   "+flatten",
-                  "+flatten_mode=basic",
-                  "+flatten_loop_count=1",
+                  "+flatten_mode=dominator",
+                  "+flatten_loop_count=2",
                   "+mba",
                   "+indirect_branch",
                   "+alias_access",
