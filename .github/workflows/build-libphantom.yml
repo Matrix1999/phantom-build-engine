@@ -120,7 +120,7 @@ jobs:
             AMICE_SPLIT_BASIC_BLOCK=false AMICE_SPLIT_BASIC_BLOCK_NUM=3 \
             AMICE_FLATTEN=false AMICE_FLATTEN_FIX_STACK=true \
             AMICE_FLATTEN_LOWER_SWITCH=true AMICE_FLATTEN_MODE=dominator \
-            AMICE_FLATTEN_LOOP_COUNT=2 AMICE_FLATTEN_SKIP_BIG_FUNCTION=true \
+            AMICE_FLATTEN_LOOP_COUNT=7 AMICE_FLATTEN_SKIP_BIG_FUNCTION=true \
             AMICE_FLATTEN_ALWAYS_INLINE=false \
             AMICE_INDIRECT_CALL=false \
             AMICE_INDIRECT_BRANCH=false \
@@ -216,7 +216,7 @@ jobs:
             AMICE_FLATTEN_FIX_STACK=true
             AMICE_FLATTEN_LOWER_SWITCH=true
             AMICE_FLATTEN_MODE=dominator
-            AMICE_FLATTEN_LOOP_COUNT=2
+            AMICE_FLATTEN_LOOP_COUNT=7
             AMICE_FLATTEN_SKIP_BIG_FUNCTION=true
             AMICE_FLATTEN_ALWAYS_INLINE=false
             AMICE_INDIRECT_CALL=false
@@ -297,7 +297,7 @@ jobs:
                   "+split_basic_block_num=3",
                   "+flatten",
                   "+flatten_mode=dominator",
-                  "+flatten_loop_count=2",
+                  "+flatten_loop_count=7",
                   "+mba",
                   "+indirect_branch",
                   "+alias_access",
@@ -307,7 +307,7 @@ jobs:
                   "+split_basic_block_num=3",
                   "+flatten",
                   "+flatten_mode=dominator",
-                  "+flatten_loop_count=2",
+                  "+flatten_loop_count=7",
                   "+mba",
                   "+indirect_branch",
                   "+alias_access",
@@ -317,7 +317,7 @@ jobs:
                   "+split_basic_block_num=3",
                   "+flatten",
                   "+flatten_mode=dominator",
-                  "+flatten_loop_count=2",
+                  "+flatten_loop_count=7",
                   "+mba",
                   "+indirect_branch",
                   "+alias_access",
