@@ -91,6 +91,28 @@ jobs:
             for (int i = 0; i < 8; ++i) y += (x ^ i);
             return y > 9 ? y : y - 3;
           }
+          __attribute__((annotate("+delay_offset_loading,-vm_virtualize,-vm_flatten")))
+          int smoke_delay_offset(int x) {
+            int values[4] = {11, 23, 37, 49};
+            return values[x & 3];
+          }
+          __attribute__((annotate("+alias_access,-vm_virtualize,-vm_flatten")))
+          int smoke_alias_access(int x) {
+            int a = x + 11, b = x ^ 23;
+            return (a * b) + (a ^ b);
+          }
+          __attribute__((annotate("+basic_block_outlining,-vm_virtualize,-vm_flatten")))
+          int smoke_basic_block_outlining(int x) {
+            int y = x;
+            if (x & 1) {
+              y += 3; y ^= 7; y += 13; y ^= 29;
+            } else {
+              y -= 5; y ^= 11; y -= 17; y ^= 31;
+            }
+            return y + 19;
+          }
+          __attribute__((annotate("+function_wrapper,-vm_virtualize,-vm_flatten")))
+          int smoke_function_wrapper(int x) { return smoke_callee(x) + 41; }
           CSRC
           for TARGET in aarch64-linux-android26 armv7a-linux-androideabi21; do
             SMOKE_LOG="/tmp/smoke_${TARGET}.log"
@@ -101,8 +123,18 @@ jobs:
             AMICE_INDIRECT_CALL=false \
             AMICE_INDIRECT_BRANCH=false \
             AMICE_INDIRECT_BRANCH_FLAGS=encrypt_block_index,shuffle_table \
+            AMICE_FUNCTION_WRAPPER=false \
+            AMICE_FUNCTION_WRAPPER_PROBABILITY=100 \
+            AMICE_FUNCTION_WRAPPER_TIMES=1 \
+            AMICE_DELAY_OFFSET_LOADING=false \
+            AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true \
+            AMICE_ALIAS_ACCESS=false \
+            AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true \
+            AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=false \
+            AMICE_BASIC_BLOCK_OUTLINING=false \
+            AMICE_BASIC_BLOCK_OUTLINING_MAX_EXTRACTOR_SIZE=1 \
             AMICE_MBA=false \
-            AMICE_PASS_ORDER=IndirectCall,IndirectBranch,VmVirtualize,VmFlatten,Mba \
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,DelayOffsetLoading,AliasAccess,BasicBlockOutlining,IndirectCall,IndirectBranch,Mba \
             RUST_LOG=amice=debug \
             LD_LIBRARY_PATH="$LLVM_LIBDIR" \
             "$CLANG" --target="$TARGET" --sysroot="$SYSROOT" -fPIC -O2 \
@@ -116,6 +148,14 @@ jobs:
             grep -Eq 'amice::aotu::indirect_call.*found [1-9][0-9]* likely functions and [1-9][0-9]* call instructions' \
               "$SMOKE_LOG" \
               || { echo "❌ $TARGET — indirect-call rewrite not reported" >&2; exit 1; }
+            grep -q 'amice::aotu::function_wrapper.*creating wrapper' "$SMOKE_LOG" \
+              || { echo "❌ $TARGET — function-wrapper rewrite not reported" >&2; exit 1; }
+            grep -q 'amice::aotu::alias_access.*meta box count' "$SMOKE_LOG" \
+              || { echo "❌ $TARGET — alias-access rewrite not reported" >&2; exit 1; }
+            grep -q 'amice::aotu::basic_block_outlining.*bbs to outline' "$SMOKE_LOG" \
+              || { echo "❌ $TARGET — basic-block outlining not reported" >&2; exit 1; }
+            grep -q 'amice::aotu::delay_offset_loading.*pass done' "$SMOKE_LOG" \
+              || { echo "❌ $TARGET — delayed-offset pass did not complete" >&2; exit 1; }
             "$TC/bin/llvm-objdump" -dr --disassemble-symbols=smoke_indirect_call \
               "/tmp/smoke_${TARGET}.o" > "/tmp/smoke_icall_${TARGET}.txt"
             "$TC/bin/llvm-objdump" -dr --disassemble-symbols=smoke_indirect_branch \
@@ -179,8 +219,18 @@ jobs:
             AMICE_INDIRECT_CALL=false
             AMICE_INDIRECT_BRANCH=false
             AMICE_INDIRECT_BRANCH_FLAGS=encrypt_block_index,shuffle_table
+            AMICE_FUNCTION_WRAPPER=false
+            AMICE_FUNCTION_WRAPPER_PROBABILITY=100
+            AMICE_FUNCTION_WRAPPER_TIMES=1
+            AMICE_DELAY_OFFSET_LOADING=false
+            AMICE_DELAY_OFFSET_LOADING_XOR_OFFSET=true
+            AMICE_ALIAS_ACCESS=false
+            AMICE_ALIAS_ACCESS_SHUFFLE_RAW_BOX=true
+            AMICE_ALIAS_ACCESS_LOOSE_RAW_BOX=false
+            AMICE_BASIC_BLOCK_OUTLINING=false
+            AMICE_BASIC_BLOCK_OUTLINING_MAX_EXTRACTOR_SIZE=1
             AMICE_MBA=false
-            AMICE_PASS_ORDER=IndirectCall,IndirectBranch,VmVirtualize,VmFlatten,Mba
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,DelayOffsetLoading,AliasAccess,BasicBlockOutlining,IndirectCall,IndirectBranch,Mba
             RUST_LOG=amice=debug
 
             LD_LIBRARY_PATH="$LLVM_LIBDIR"
@@ -250,6 +300,14 @@ jobs:
             grep -Eq 'amice::aotu::indirect_call.*found [1-9][0-9]* likely functions and [1-9][0-9]* call instructions' \
               "$LOG" \
               || { echo "$OBJ: indirect-call rewrite not reported" >&2; exit 1; }
+            grep -q 'amice::aotu::function_wrapper.*creating wrapper' "$LOG" \
+              || { echo "$OBJ: function-wrapper rewrite not reported" >&2; exit 1; }
+            grep -q 'amice::aotu::alias_access.*meta box count' "$LOG" \
+              || { echo "$OBJ: alias-access rewrite not reported" >&2; exit 1; }
+            grep -q 'amice::aotu::basic_block_outlining.*bbs to outline' "$LOG" \
+              || { echo "$OBJ: basic-block outlining rewrite not reported" >&2; exit 1; }
+            grep -q 'amice::aotu::delay_offset_loading.*pass done' "$LOG" \
+              || { echo "$OBJ: delayed-offset pass did not complete" >&2; exit 1; }
             CALL_DISASM="/tmp/${ABI}_derive_shard_key.txt"
             BRANCH_DISASM="/tmp/${ABI}_ph_build_str_key.txt"
             "$TC/bin/llvm-objdump" -dr --disassemble-symbols=derive_shard_key \
@@ -393,6 +451,29 @@ jobs:
             done
 
             echo ""
+          done
+
+          echo "--- Exact VMP metadata baseline comparison ---"
+          for ABI in arm64 arm32; do
+            if [ "$ABI" = arm64 ]; then
+              OBJ=phantom_arm64.o
+            else
+              OBJ=phantom_arm32.o
+            fi
+            ACTUAL="/tmp/${ABI}_vmp_metadata.txt"
+            awk '{
+              for (i = 1; i <= NF; ++i) {
+                value = $i
+                sub(/^\.?amice\.vm\.meta\./, "", value)
+                if (value != $i && value !~ /^module/) print value
+              }
+            }' < <(readelf -SW "$OBJ") | sort -u > "$ACTUAL"
+            diff -u <(sort -u "phantom-vmp-baseline-${ABI}.txt") "$ACTUAL"
+            EXPECTED=$(wc -l < "phantom-vmp-baseline-${ABI}.txt")
+            ACTUAL_COUNT=$(wc -l < "$ACTUAL")
+            [ "$ACTUAL_COUNT" -eq "$EXPECTED" ] \
+              || { echo "$ABI: VMP metadata count changed ($EXPECTED -> $ACTUAL_COUNT)" >&2; exit 1; }
+            echo "✅ $ABI — exact VMP metadata baseline preserved ($ACTUAL_COUNT targets)"
           done
 
       - name: Strip + harden
