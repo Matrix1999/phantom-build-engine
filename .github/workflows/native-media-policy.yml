@@ -15,6 +15,16 @@ jobs:
       - name: Check out native sources
         uses: actions/checkout@v4
 
+      - name: Cache Android native toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/android/sdk/ndk/27.2.12479018
+            /usr/local/lib/android/sdk/cmake/3.22.1
+          key: native-media-policy-${{ runner.os }}-ndk27d-cmake322-v1
+          restore-keys: |
+            native-media-policy-${{ runner.os }}-ndk27d-
+
       - name: Configure Android SDK
         run: |
           export ANDROID_SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
