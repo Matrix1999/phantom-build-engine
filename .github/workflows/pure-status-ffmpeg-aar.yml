@@ -78,6 +78,17 @@ jobs:
           echo "Native Android project staged:"
           find /tmp/project -maxdepth 2 -type f | sort | sed -n '1,120p'
 
+      - name: Restore FFmpegKitNext build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/project/native/ffmpeg-kit-next
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ffmpeg-kit-next-${{ runner.os }}-v9.0.0-api24-ndk27d-cache-v1
+          restore-keys: |
+            ffmpeg-kit-next-${{ runner.os }}-v9.0.0-api24-ndk27d-
+
       - name: Build the pinned local FFmpegKitNext AAR
         working-directory: /tmp/project
         run: |
