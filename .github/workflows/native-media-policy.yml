@@ -1,4 +1,4 @@
-name: Build native media policy
+name: Build native media policy (AMICE VMP)
 
 on:
   workflow_dispatch:
@@ -7,51 +7,176 @@ permissions:
   contents: read
 
 jobs:
-  native-media-policy:
-    name: Compile native media policy
+  build-native-media-policy:
+    name: Native media policy — ${{ matrix.target }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-linux-android26
+            abi: arm64-v8a
+            linker: aarch64-linux-android26-clang++
+          - target: armv7a-linux-androideabi21
+            abi: armeabi-v7a
+            linker: armv7a-linux-androideabi21-clang++
+
     steps:
-      - name: Check out native sources
+      - name: Checkout native media policy
         uses: actions/checkout@v4
 
-      - name: Cache Android native toolchain
+      - name: Install NDK r29
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r29
+          add-to-path: false
+
+      - name: Download matching AMICE plugin and LLVM runtime
+        env:
+          TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/amice-ndk-r29"
+          fetch_asset() {
+            local name="$1" dest="$2"
+            if [ -s "$HOME/.cache/amice-ndk-r29/$name" ]; then
+              cp "$HOME/.cache/amice-ndk-r29/$name" "$dest"
+              echo "Cache hit: $name"
+              return
+            fi
+            local asset_id
+            asset_id=$(curl -sf \
+              -H "Authorization: Bearer $TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$REPO/releases/tags/amice-ndk-r29" \
+              | jq -r --arg n "$name" '.assets[] | select(.name==$n) | .id')
+            test -n "$asset_id"
+            curl -Lf -s \
+              -H "Authorization: Bearer $TOKEN" \
+              -H 'Accept: application/octet-stream' \
+              "https://api.github.com/repos/$REPO/releases/assets/$asset_id" \
+              -o "$HOME/.cache/amice-ndk-r29/$name"
+            cp "$HOME/.cache/amice-ndk-r29/$name" "$dest"
+          }
+          fetch_asset 'libamice-android-ndk-r29-linux-x86_64.so' libamice.so
+          fetch_asset 'libLLVM.so' libLLVM.so
+          chmod 755 libamice.so libLLVM.so
+
+      - name: Cache AMICE release assets
         uses: actions/cache@v4
         with:
-          path: |
-            /usr/local/lib/android/sdk/ndk/27.2.12479018
-            /usr/local/lib/android/sdk/cmake/3.22.1
-          key: native-media-policy-${{ runner.os }}-ndk27d-cmake322-v1
+          path: ~/.cache/amice-ndk-r29
+          key: native-media-amice-ndk-r29-${{ runner.os }}-v2
           restore-keys: |
-            native-media-policy-${{ runner.os }}-ndk27d-
+            native-media-amice-ndk-r29-${{ runner.os }}-
 
-      - name: Configure Android SDK
+      - name: Fix libedit symlink for AMICE
         run: |
-          export ANDROID_SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "${GITHUB_ENV}"
-          echo "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin" >> "${GITHUB_PATH}"
-          yes | "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" --install \
-            "platforms;android-24" "ndk;27.2.12479018" "cmake;3.22.1"
+          LIBEDIT=$(find /usr/lib/x86_64-linux-gnu -name 'libedit.so.2*' | head -1)
+          test -n "$LIBEDIT"
+          sudo ln -sf "$LIBEDIT" /usr/lib/x86_64-linux-gnu/libedit.so.0
 
-      - name: Build arm64 native library
-        env:
-          ANDROID_NDK_VERSION: 27.2.12479018
+      - name: Resolve matching Android/AMICE toolchain
         run: |
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          export ANDROID_NDK_ROOT="${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}"
-          export PATH="${ANDROID_SDK_ROOT}/cmake/3.22.1/bin:${PATH}"
-          cmake -S app/src/main/cpp -B build/native-arm64 -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-24 \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/native-arm64 --parallel 2
-          test -f build/native-arm64/libpure_media_policy.so
+          NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}"
+          TC="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "TC=$TC"
+            echo "SYSROOT=$TC/sysroot"
+            echo "CLANGXX=$TC/bin/clang++"
+            echo "LINKER=${{ matrix.linker }}"
+            echo "LLVM_LIBDIR=$PWD"
+            echo "AMICE_PLUGIN=$PWD/libamice.so"
+          } >> "$GITHUB_ENV"
 
-      - name: Upload native library check artifact
+      - name: Smoke-test VMP virtualization and VM flattening markers
+        run: |
+          set -euo pipefail
+          cat > /tmp/amice_smoke.c <<'CSRC'
+          __attribute__((noinline, annotate("+vm_virtualize,+vm_flatten")))
+          int foo(int x, int y) { int a=x^y; int b=a+x; if(a>0) return b; return b*y; }
+          CSRC
+          SMOKE_LOG="/tmp/smoke_${{ matrix.abi }}.log"
+          AMICE_VM_VIRTUALIZE=true \
+          AMICE_VM_EMIT_MARKERS=true \
+          AMICE_VM_DUMP_BYTECODE=true \
+          AMICE_VM_DUMP_LOWERING=true \
+          AMICE_VM_FLATTEN=true \
+          AMICE_INDIRECT_CALL=false \
+          AMICE_INDIRECT_BRANCH=false \
+          AMICE_FUNCTION_WRAPPER=false \
+          AMICE_ALIAS_ACCESS=false \
+          AMICE_MBA=false \
+          AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,IndirectCall,IndirectBranch,Mba \
+          RUST_LOG=amice=debug \
+          LD_LIBRARY_PATH="$LLVM_LIBDIR" \
+          "$CLANGXX" --target="${{ matrix.target }}" --sysroot="$SYSROOT" \
+            -std=c++17 -fPIC -O2 -fpass-plugin="$AMICE_PLUGIN" \
+            -c /tmp/amice_smoke.c -o /tmp/amice_smoke.o 2>&1 | tee "$SMOKE_LOG"
+          ! grep -q 'skip function "foo"' "$SMOKE_LOG"
+          grep -q 'bytecode for "foo"' "$SMOKE_LOG"
+          grep -Eqi 'flatten|vm_flatten|VmFlatten' "$SMOKE_LOG"
+          echo "VMP virtualization and VM flattening markers passed for ${{ matrix.abi }}"
+
+      - name: Build native media policy with VMP and VM flattening enabled
+        run: |
+          set -euo pipefail
+          mkdir -p build/native/${{ matrix.abi }}
+          AMICE_PASSES=(
+            AMICE_VM_VIRTUALIZE=true
+            AMICE_VM_EMIT_MARKERS=true
+            AMICE_VM_DUMP_BYTECODE=true
+            AMICE_VM_DUMP_LOWERING=true
+            AMICE_VM_FLATTEN=true
+            AMICE_INDIRECT_CALL=false
+            AMICE_INDIRECT_BRANCH=false
+            AMICE_FUNCTION_WRAPPER=false
+            AMICE_ALIAS_ACCESS=false
+            AMICE_MBA=false
+            AMICE_PASS_ORDER=VmVirtualize,VmFlatten,FunctionWrapper,AliasAccess,IndirectCall,IndirectBranch,Mba
+            RUST_LOG=amice=debug
+            LD_LIBRARY_PATH="$LLVM_LIBDIR"
+          )
+          COMMON_FLAGS=(
+            --target="${{ matrix.target }}" --sysroot="$SYSROOT"
+            -fPIC -O1 -g0 -std=c++17
+            -fno-unwind-tables -fno-asynchronous-unwind-tables
+            -fvisibility=hidden -ffunction-sections -fdata-sections
+            -D__ANDROID__ -DANDROID
+            -fpass-plugin="$AMICE_PLUGIN"
+          )
+          LOG="build/native/${{ matrix.abi }}/amice.log"
+          env "${AMICE_PASSES[@]}" "$CLANGXX" "${COMMON_FLAGS[@]}" \
+            -c app/src/main/cpp/native_media_policy.cpp \
+            -o build/native/${{ matrix.abi }}/native_media_policy.o 2>&1 | tee "$LOG"
+          ! grep -Eqi 'skip function.*retryCrfBump' "$LOG"
+          grep -Eqi 'bytecode for.*retryCrfBump' "$LOG"
+          grep -Eqi 'flatten|vm_flatten|VmFlatten' "$LOG"
+          "$TC/bin/${{ matrix.linker }}" -shared -fPIC \
+            -Wl,--gc-sections -Wl,--build-id=none \
+            -Wl,-z,relro -Wl,-z,now \
+            build/native/${{ matrix.abi }}/native_media_policy.o -llog \
+            -o build/native/${{ matrix.abi }}/libpure_media_policy.so
+          test -s build/native/${{ matrix.abi }}/libpure_media_policy.so
+
+      - name: Audit AMICE VM marker sections and native artifact
+        run: |
+          set -euo pipefail
+          OBJ="build/native/${{ matrix.abi }}/native_media_policy.o"
+          SO="build/native/${{ matrix.abi }}/libpure_media_policy.so"
+          "$TC/bin/llvm-readelf" -S --wide "$OBJ" | tee "build/native/${{ matrix.abi }}/sections.txt"
+          grep -E 'amice\.vm|vm\.meta|vm\.bc|vm\.bytecode' \
+            "build/native/${{ matrix.abi }}/sections.txt"
+          "$TC/bin/llvm-readelf" -Ws "$SO" | grep -q 'Java_com_pure_status_pro_service_NativeMediaPolicy' || true
+          echo "AMICE VM marker section audit passed for ${{ matrix.abi }}"
+
+      - name: Upload VMP reports and native library
         uses: actions/upload-artifact@v4
         with:
-          name: pure-media-policy-native-arm64
-          path: build/native-arm64/libpure_media_policy.so
+          name: pure-media-policy-amice-${{ matrix.abi }}
+          path: build/native/${{ matrix.abi }}
           if-no-files-found: error
