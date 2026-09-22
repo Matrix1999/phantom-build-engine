@@ -22,7 +22,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             unzip zip wget curl jq python3 ninja-build \
-            autoconf automake libtool libtool-bin gettext autopoint pkg-config gperf
+            autoconf automake libtool libtool-bin gettext autopoint pkg-config gperf \
+            autogen bison meson nasm yasm libtasn1-dev perl rsync ruby \
+            doxygen gtk-doc-tools patch ragel texinfo groff which
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
