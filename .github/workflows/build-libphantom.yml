@@ -291,37 +291,11 @@ jobs:
           from pathlib import Path
 
           source = Path(sys.argv[1]).read_text()
+          vmp_enabled = {"_sha_expand", "_sha_compress", "ph_parse_art_map"}
           expected = {
-              "_sha_expand": (
-                  "+split_basic_block",
-                  "+split_basic_block_num=3",
-                  "+flatten",
-                  "+flatten_mode=dominator",
-                  "+flatten_loop_count=7",
-                  "+mba",
-                  "+indirect_branch",
-                  "+alias_access",
-              ),
-              "_sha_compress": (
-                  "+split_basic_block",
-                  "+split_basic_block_num=3",
-                  "+flatten",
-                  "+flatten_mode=dominator",
-                  "+flatten_loop_count=7",
-                  "+mba",
-                  "+indirect_branch",
-                  "+alias_access",
-              ),
-              "ph_parse_art_map": (
-                  "+split_basic_block",
-                  "+split_basic_block_num=3",
-                  "+flatten",
-                  "+flatten_mode=dominator",
-                  "+flatten_loop_count=7",
-                  "+mba",
-                  "+indirect_branch",
-                  "+alias_access",
-              ),
+              "_sha_expand": ("+vm_virtualize", "+vm_flatten"),
+              "_sha_compress": ("+vm_virtualize", "+vm_flatten"),
+              "ph_parse_art_map": ("+vm_virtualize", "+vm_flatten"),
               "arx_advance_block": ("+mba", "+alias_access"),
               "arx_xor": ("+mba", "+indirect_branch", "+alias_access"),
           }
@@ -333,15 +307,15 @@ jobs:
               if (
                   "annotate(" not in declaration
                   or any(token not in declaration for token in pass_tokens)
-                  or "-vm_virtualize" not in declaration
+              ):
+                  raise SystemExit(f"{function}: expected annotation missing")
+              if function not in vmp_enabled and (
+                  "-vm_virtualize" not in declaration
                   or "-vm_flatten" not in declaration
               ):
-                  raise SystemExit(
-                      f"{function}: expected selective annotation missing"
-                  )
-              print(
-                  f"{function}: annotation {', '.join(pass_tokens)}; VMP excluded"
-              )
+                  raise SystemExit(f"{function}: VMP must remain excluded")
+              mode = "VMP enabled" if function in vmp_enabled else "VMP excluded"
+              print(f"{function}: annotation {', '.join(pass_tokens)}; {mode}")
           PY
 
           BASELINE_FLAGS=(
