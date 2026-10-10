@@ -1794,13 +1794,10 @@ static const uint32_t K256[64] = {
      sha256_block  — thin noinline dispatcher; amice sees it as call_native thunk
      sha256        — driver: +vm_virtualize, calls sha256_block as call_native   */
 
-/* Step A: expand message schedule into caller-supplied w[64]
-   noinline only — NOT annotated; arm64 IR causes apply-phase crash if VMP'd here */
-__attribute__((annotate(
-    "+split_basic_block,+split_basic_block_num=3,"
-    "+flatten,+flatten_mode=dominator,+flatten_loop_count=7,"
-    "+mba,+indirect_branch,+alias_access,"
-    "-vm_virtualize,-vm_flatten")))
+/* Step A: expand message schedule into caller-supplied w[64].
+   VMP is enabled here for an explicit build experiment; prior notes report
+   an ARM64 apply-phase crash when this helper is virtualized. */
+__attribute__((annotate("+vm_virtualize,+vm_flatten")))
 static __attribute__((noinline)) void _sha_expand(uint32_t *w, const uint8_t *data) {
     int i;
     for (i = 0; i < 16; i++)
@@ -1813,13 +1810,10 @@ static __attribute__((noinline)) void _sha_expand(uint32_t *w, const uint8_t *da
     }
 }
 
-/* Step B: 64-round compression; w and K256 accessed via pointer loads only
-   noinline only — NOT annotated; same reason as _sha_expand */
-__attribute__((annotate(
-    "+split_basic_block,+split_basic_block_num=3,"
-    "+flatten,+flatten_mode=dominator,+flatten_loop_count=7,"
-    "+mba,+indirect_branch,+alias_access,"
-    "-vm_virtualize,-vm_flatten")))
+/* Step B: 64-round compression; w and K256 accessed via pointer loads only.
+   VMP is enabled here for an explicit build experiment; prior notes report
+   an ARM64 apply-phase crash when this helper is virtualized. */
+__attribute__((annotate("+vm_virtualize,+vm_flatten")))
 static __attribute__((noinline)) void _sha_compress(uint32_t *h, const uint32_t *w) {
     uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
     int i;
@@ -2657,11 +2651,7 @@ static void ph_direct_dex_destructor(void) {
  * existing watcher calls this bounded scan again after load, covering later
  * ART mappings without adding another thread or changing the loader lifetime.
  */
-__attribute__((annotate(
-    "+split_basic_block,+split_basic_block_num=3,"
-    "+flatten,+flatten_mode=dominator,+flatten_loop_count=7,"
-    "+mba,+indirect_branch,+alias_access,"
-    "-vm_virtualize,-vm_flatten")))
+__attribute__((annotate("+vm_virtualize,+vm_flatten")))
 static __attribute__((noinline)) int ph_parse_art_map(
         const char *line, uintptr_t *start, uintptr_t *end,
         int *readable, int *writable, int *executable,
