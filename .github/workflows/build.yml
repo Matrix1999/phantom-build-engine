@@ -634,7 +634,7 @@ jobs:
           fi
 
           if [ -f vendor/video_player_android/android/src/test/java/io/flutter/plugins/videoplayer/VideoPlayerQualityCapTest.java ]; then
-            (cd android && ./gradlew :video_player_android:testDebugUnitTest --no-daemon)
+            (cd android && bash ./gradlew :video_player_android:testDebugUnitTest --no-daemon)
           fi
           flutter build apk --$BUILD_MODE --target-platform android-arm,android-arm64 --no-pub --obfuscate --split-debug-info=/tmp/debug-symbols
           echo "BUILD_OUTPUT=/tmp/project/build/app/outputs/flutter-apk/app-${BUILD_MODE}.apk" >> $GITHUB_ENV
