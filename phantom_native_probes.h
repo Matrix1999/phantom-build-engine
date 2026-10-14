@@ -9,9 +9,11 @@
 #include "phantom_runtime_checks.h"
 
 #ifdef __clang__
-#define PH_PROBE_VM __attribute__((noinline, used, annotate("+vm_virtualize,+vm_flatten")))
+#define PH_PROBE_VM __attribute__((noinline, annotate("+vm_virtualize")))
+#define PH_PROBE_VM_FLAT __attribute__((noinline, annotate("+vm_virtualize,+vm_flatten")))
 #else
-#define PH_PROBE_VM __attribute__((noinline, used))
+#define PH_PROBE_VM __attribute__((noinline))
+#define PH_PROBE_VM_FLAT __attribute__((noinline))
 #endif
 
 /* These two instruction sequences must execute on the actual CPU. Lifting
@@ -151,7 +153,7 @@ static PH_PROBE_VM int ph_signal_route_vm(
            code == SI_TKILL && pid == state->pid;
 }
 
-static PH_PROBE_VM int ph_signal_context_vm(
+static PH_PROBE_VM_FLAT int ph_signal_context_vm(
         void *context, ph_probe_signal_state_t *state) {
     if (!context) return 0;
     ucontext_t *uc = (ucontext_t *)context;
@@ -178,14 +180,23 @@ static PH_PROBE_VM int ph_signal_context_vm(
     return 1;
 }
 
-/* Only arithmetic and preallocated state: no allocation, locks, logging, or
- * libc calls in the signal handler. It is a required VM bytecode target. */
-static PH_PROBE_VM void ph_probe_signal_handler_vm(
-        int signo, siginfo_t *info, void *context) {
-    ph_probe_signal_state_t *state = ph_probe_signal_state_native();
-    if (!info) return;
+/* All callback policy and context edits run as flattened VM bytecode. This
+ * dispatcher has an ordinary call use; the signal ABI trampoline below is the
+ * only function whose address is registered with sigaction. */
+static PH_PROBE_VM_FLAT void ph_signal_delivery_vm(
+        ph_probe_signal_state_t *state, int signo,
+        siginfo_t *info, void *context) {
+    if (!info || info->si_signo != signo) return;
     if (!ph_signal_route_vm(state, signo, info->si_code, info->si_pid)) return;
     if (ph_signal_context_vm(context, state)) state->delivered = 1;
+}
+
+/* POSIX requires a native, address-taken signal entry point. It makes no
+ * detection decisions and only forwards the delivered frame to VM bytecode. */
+static PH_RUNTIME_NATIVE void ph_probe_signal_handler_native(
+        int signo, siginfo_t *info, void *context) {
+    ph_signal_delivery_vm(ph_probe_signal_state_native(),
+                          signo, info, context);
 }
 
 /* OS ABI plumbing, not enforcement. A default-disposition, unblocked signal
@@ -230,7 +241,7 @@ static PH_RUNTIME_NATIVE ph_probe_signal_state_t *ph_probe_signal_round_native(v
     if (sigaddset(&blocked, state->signo) != 0 ||
         sigprocmask(SIG_SETMASK, &blocked, NULL) != 0) return state;
     action = previous;
-    action.sa_sigaction = ph_probe_signal_handler_vm;
+    action.sa_sigaction = ph_probe_signal_handler_native;
     action.sa_flags = SA_SIGINFO;
     sigemptyset(&action.sa_mask);
     if (sigaction(state->signo, &action, NULL) != 0) {
