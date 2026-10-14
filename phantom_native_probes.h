@@ -173,16 +173,10 @@ static PH_PROBE_VM unsigned int ph_signal_delivery_vm(
 }
 
 static PH_PROBE_VM_FLAT void ph_signal_context_apply_vm(
-        void *context, unsigned int accepted, unsigned int nonce) {
+        volatile uintptr_t *saved_return_register,
+        unsigned int accepted, unsigned int nonce) {
     if (accepted != 1u) return;
-    ucontext_t *uc = (ucontext_t *)context;
-#if defined(__aarch64__)
-    uc->uc_mcontext.regs[12] = nonce ^ 0xa5c39e17u;
-#elif defined(__arm__)
-    uc->uc_mcontext.arm_ip = nonce ^ 0xa5c39e17u;
-#elif defined(PH_PROBE_HOST_TEST) && defined(__x86_64__)
-    uc->uc_mcontext.gregs[REG_R12] = nonce ^ 0xa5c39e17u;
-#endif
+    *saved_return_register = (uintptr_t)(nonce ^ 0xa5c39e17u);
 }
 
 /* POSIX requires a native, address-taken signal entry point. It makes no
@@ -201,6 +195,7 @@ static PH_RUNTIME_NATIVE void ph_probe_signal_handler_native(
             (unsigned int)state->armed, signo, state->signo,
             info_signo, code, sender_pid, state->pid);
     uintptr_t actual_nonce = 0, actual_marker = 0, actual_pc = 0, sp = 0;
+    volatile uintptr_t *saved_return_register = NULL;
     if (context) {
         ucontext_t *uc = (ucontext_t *)context;
 #if defined(__aarch64__)
@@ -208,23 +203,29 @@ static PH_RUNTIME_NATIVE void ph_probe_signal_handler_native(
         actual_marker = (uintptr_t)uc->uc_mcontext.regs[13];
         actual_pc = (uintptr_t)uc->uc_mcontext.pc;
         sp = (uintptr_t)uc->uc_mcontext.sp;
+        saved_return_register =
+                (volatile uintptr_t *)&uc->uc_mcontext.regs[12];
 #elif defined(__arm__)
         actual_nonce = (uintptr_t)uc->uc_mcontext.arm_ip;
         actual_marker = (uintptr_t)uc->uc_mcontext.arm_r4;
         actual_pc = (uintptr_t)uc->uc_mcontext.arm_pc;
         sp = (uintptr_t)uc->uc_mcontext.arm_sp;
+        saved_return_register =
+                (volatile uintptr_t *)&uc->uc_mcontext.arm_ip;
 #elif defined(PH_PROBE_HOST_TEST) && defined(__x86_64__)
         actual_nonce = (uintptr_t)uc->uc_mcontext.gregs[REG_R12];
         actual_marker = (uintptr_t)uc->uc_mcontext.gregs[REG_R13];
         actual_pc = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
         sp = (uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
+        saved_return_register =
+                (volatile uintptr_t *)&uc->uc_mcontext.gregs[REG_R12];
 #endif
     }
     unsigned int frame_valid = ph_signal_frame_vm(
             actual_nonce, actual_marker, actual_pc, state->resume_pc,
             sp, state->nonce);
     unsigned int accepted = ph_signal_delivery_vm(route_valid, frame_valid);
-    ph_signal_context_apply_vm(context, accepted, state->nonce);
+    ph_signal_context_apply_vm(saved_return_register, accepted, state->nonce);
     state->delivered = (sig_atomic_t)accepted;
 }
 
