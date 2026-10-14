@@ -56,6 +56,7 @@
 #include <dirent.h>
 #include <ctype.h>
 #include <errno.h>
+#include <linux/futex.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -1621,6 +1622,32 @@ typedef enum {
 
 static volatile int g_ph_load_state = PH_LOAD_IDLE;
 
+/* Futex compare-and-sleep closes the request/wake race. Private futexes share
+ * memory across our two threads without introducing pthread/PLT imports.
+ * These syscall/atomic bridges deliberately remain outside the VM. */
+static PH_RUNTIME_NATIVE int ph_watch_wait_word(
+        unsigned int *word, unsigned int expected, unsigned int milliseconds) {
+    struct timespec timeout = {
+        (time_t)(milliseconds / 1000u),
+        (long)(milliseconds % 1000u) * 1000000L
+    };
+#if defined(__aarch64__)
+    return (int)raw_syscall_4(__NR_futex, (long)word,
+            FUTEX_WAIT_PRIVATE, expected, (long)&timeout);
+#else
+    return (int)syscall(__NR_futex, word, FUTEX_WAIT_PRIVATE, expected,
+            &timeout, NULL, 0);
+#endif
+}
+
+static PH_RUNTIME_NATIVE void ph_watch_wake_word(unsigned int *word) {
+#if defined(__aarch64__)
+    raw_syscall_3(__NR_futex, (long)word, FUTEX_WAKE_PRIVATE, 1);
+#else
+    syscall(__NR_futex, word, FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+#endif
+}
+
 static __attribute__((noinline)) bool ph_load_begin(void) {
     return __sync_bool_compare_and_swap(&g_ph_load_state,
                                         PH_LOAD_IDLE, PH_LOAD_ENVIRONMENT);
@@ -1638,13 +1665,9 @@ static __attribute__((noinline)) void ph_load_fail(void) {
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     (void)args;
-    struct timespec timereq;
-    timereq.tv_sec  = 1;
-    timereq.tv_nsec = 0;
     while (1) {
+        unsigned int checked_round = ph_watch_check_round(&g_ph_watcher);
         detect_general_dumper_before_decrypt();
-        /* A creation result alone is not evidence that this thread ran. */
-        ph_watch_ack(&g_ph_watcher, vm_gettid());
         /*
          * ART can create additional anonymous DEX views after the initial
          * class-loader construction. Re-run only the marker scrub here; the
@@ -1658,7 +1681,11 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
             cr_selinux();                         // re-check enforcement at runtime
             detect_root();                        // su binaries + Magisk mounts
         }
-        vm_nanosleep(&timereq, NULL);
+        /* A request arriving during this pass needs ANOTHER complete pass.
+         * Publish readiness only after all configured checks have finished. */
+        ph_watch_ack_checked(&g_ph_watcher, vm_gettid(), checked_round);
+        ph_watch_wake_word(&g_ph_watcher.completed_round);
+        ph_watch_wait_word(&g_ph_watcher.requested_round, checked_round, 1000u);
     }
     return NULL;
 }
@@ -1843,9 +1870,24 @@ static PH_RUNTIME_NATIVE void ph_require_watcher(void) {
     struct timespec pause = {0, 10000000}; /* 10 ms; 2-second startup budget */
     for (unsigned int i = 0; i < 200; ++i) {
         int ready = ph_watch_ready(&g_ph_watcher, caller_tid);
-        if (ready == 1) return;
+        if (ready == 1) break;
         if (ready < 0) nuke_app();
         vm_nanosleep(&pause, NULL);
+    }
+    if (ph_watch_ready(&g_ph_watcher, caller_tid) != 1) {
+        ph_watch_fail(&g_ph_watcher);
+        nuke_app();
+    }
+    unsigned int round = ph_watch_request(&g_ph_watcher, caller_tid);
+    if (!round) { ph_watch_fail(&g_ph_watcher); nuke_app(); }
+    ph_watch_wake_word(&g_ph_watcher.requested_round);
+    for (unsigned int i = 0; i < 200u; ++i) {
+        int ready = ph_watch_round_ready(&g_ph_watcher, caller_tid, round);
+        if (ready == 1) return;
+        if (ready < 0) { ph_watch_fail(&g_ph_watcher); nuke_app(); }
+        unsigned int completed = __atomic_load_n(
+                &g_ph_watcher.completed_round, __ATOMIC_ACQUIRE);
+        ph_watch_wait_word(&g_ph_watcher.completed_round, completed, 10u);
     }
     ph_watch_fail(&g_ph_watcher);
     nuke_app();

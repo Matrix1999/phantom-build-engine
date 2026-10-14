@@ -23,6 +23,8 @@ typedef struct {
     int state;
     long tid;
     unsigned int passes;
+    unsigned int requested_round;
+    unsigned int completed_round;
 } ph_watch_state_t;
 
 static PH_RUNTIME_NATIVE int ph_watch_begin(ph_watch_state_t *watch) {
@@ -58,6 +60,45 @@ static PH_RUNTIME_NATIVE int ph_watch_ready(
     long tid = __atomic_load_n(&watch->tid, __ATOMIC_RELAXED);
     unsigned int passes = __atomic_load_n(&watch->passes, __ATOMIC_RELAXED);
     return tid > 0 && tid != caller_tid && passes > 0 ? 1 : -1;
+}
+
+/* Snapshot BEFORE a pass begins, never after its checks have completed. */
+static PH_RUNTIME_NATIVE unsigned int ph_watch_check_round(
+        const ph_watch_state_t *watch) {
+    return __atomic_load_n(&watch->requested_round, __ATOMIC_ACQUIRE);
+}
+
+static PH_RUNTIME_NATIVE void ph_watch_ack_checked(
+        ph_watch_state_t *watch, long tid, unsigned int checked_round) {
+    ph_watch_ack(watch, tid);
+    if (checked_round != 0 &&
+        __atomic_load_n(&watch->state, __ATOMIC_ACQUIRE) == PH_WATCH_RUNNING &&
+        ph_watch_check_round(watch) == checked_round) {
+        __atomic_store_n(&watch->completed_round, checked_round, __ATOMIC_RELEASE);
+    }
+}
+
+/* Single loader, one outstanding request. Never wrap or silently reuse one. */
+static PH_RUNTIME_NATIVE unsigned int ph_watch_request(
+        ph_watch_state_t *watch, long caller_tid) {
+    if (ph_watch_ready(watch, caller_tid) != 1) return 0;
+    unsigned int previous = ph_watch_check_round(watch);
+    unsigned int completed = __atomic_load_n(
+            &watch->completed_round, __ATOMIC_ACQUIRE);
+    if (previous != completed || previous == UINT_MAX) return 0;
+    unsigned int next = previous + 1u;
+    return __atomic_compare_exchange_n(&watch->requested_round, &previous, next,
+            0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE) ? next : 0;
+}
+
+static PH_RUNTIME_NATIVE int ph_watch_round_ready(
+        const ph_watch_state_t *watch, long caller_tid, unsigned int round) {
+    if (!round || ph_watch_ready(watch, caller_tid) != 1 ||
+        ph_watch_check_round(watch) != round) return -1;
+    unsigned int completed = __atomic_load_n(
+            &watch->completed_round, __ATOMIC_ACQUIRE);
+    if (completed > round) return -1;
+    return completed == round ? 1 : 0;
 }
 
 /* DT_GNU_HASH has no nchain field. Derive the symbol bound without reading

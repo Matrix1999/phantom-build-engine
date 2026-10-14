@@ -1,14 +1,70 @@
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 #include "phantom_runtime_checks.h"
 
 static void *ack_worker(void *arg) {
     ph_watch_ack(arg, 22);
     return NULL;
+}
+
+typedef struct {
+    ph_watch_state_t watch;
+    int stop;
+} round_fixture;
+
+static void *round_worker(void *arg) {
+    round_fixture *fixture = arg;
+    long tid = syscall(SYS_gettid);
+    while (!__atomic_load_n(&fixture->stop, __ATOMIC_ACQUIRE)) {
+        unsigned int round = ph_watch_check_round(&fixture->watch);
+        ph_watch_ack_checked(&fixture->watch, tid, round);
+        syscall(SYS_futex, &fixture->watch.completed_round,
+                FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+        struct timespec timeout = {1, 0};
+        syscall(SYS_futex, &fixture->watch.requested_round,
+                FUTEX_WAIT_PRIVATE, round, &timeout, NULL, 0);
+    }
+    return NULL;
+}
+
+static void test_real_rounds(void) {
+    round_fixture fixture = {0};
+    assert(ph_watch_begin(&fixture.watch));
+    pthread_t worker;
+    assert(pthread_create(&worker, NULL, round_worker, &fixture) == 0);
+    long caller = syscall(SYS_gettid);
+    struct timespec pause = {0, 1000000};
+    for (unsigned int i = 0; i < 2000u &&
+         ph_watch_ready(&fixture.watch, caller) == 0; ++i)
+        nanosleep(&pause, NULL);
+    assert(ph_watch_ready(&fixture.watch, caller) == 1);
+    for (unsigned int expected = 1; expected <= 8u; ++expected) {
+        unsigned int round = ph_watch_request(&fixture.watch, caller);
+        assert(round == expected);
+        syscall(SYS_futex, &fixture.watch.requested_round,
+                FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+        for (unsigned int i = 0; i < 200u &&
+             ph_watch_round_ready(&fixture.watch, caller, round) == 0; ++i) {
+            struct timespec timeout = {0, 10000000};
+            unsigned int completed = __atomic_load_n(
+                    &fixture.watch.completed_round, __ATOMIC_ACQUIRE);
+            syscall(SYS_futex, &fixture.watch.completed_round,
+                    FUTEX_WAIT_PRIVATE, completed, &timeout, NULL, 0);
+        }
+        assert(ph_watch_round_ready(&fixture.watch, caller, round) == 1);
+    }
+    __atomic_store_n(&fixture.stop, 1, __ATOMIC_RELEASE);
+    syscall(SYS_futex, &fixture.watch.requested_round,
+            FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+    assert(pthread_join(worker, NULL) == 0);
 }
 
 int main(void) {
@@ -38,6 +94,34 @@ int main(void) {
         assert(ph_watch_ready(&no_ack, 11) == 0);
     ph_watch_fail(&no_ack);
     assert(ph_watch_ready(&no_ack, 11) == -1);
+    ph_watch_state_t rounds = {0};
+    assert(ph_watch_begin(&rounds));
+    unsigned int prior_pass = ph_watch_check_round(&rounds);
+    ph_watch_ack_checked(&rounds, 22, prior_pass);
+    unsigned int first = ph_watch_request(&rounds, 11);
+    assert(first == 1);
+    assert(ph_watch_request(&rounds, 11) == 0); /* No overlapping round. */
+    ph_watch_ack_checked(&rounds, 22, prior_pass);
+    assert(ph_watch_round_ready(&rounds, 11, first) == 0);
+    ph_watch_ack_checked(&rounds, 22, first);
+    assert(ph_watch_round_ready(&rounds, 11, first) == 1);
+    unsigned int second = ph_watch_request(&rounds, 11);
+    assert(second == 2);
+    ph_watch_ack_checked(&rounds, 22, first); /* Old response is not reusable. */
+    assert(ph_watch_round_ready(&rounds, 11, second) == 0);
+    assert(ph_watch_round_ready(&rounds, 22, second) == -1);
+    assert(ph_watch_round_ready(&rounds, 11, first) == -1);
+    assert(ph_watch_round_ready(&rounds, 11, 0) == -1);
+    ph_watch_fail(&rounds);
+    ph_watch_ack_checked(&rounds, 22, second);
+    assert(ph_watch_round_ready(&rounds, 11, second) == -1);
+    ph_watch_state_t overflow = {0};
+    assert(ph_watch_begin(&overflow));
+    ph_watch_ack(&overflow, 22);
+    overflow.requested_round = UINT_MAX;
+    overflow.completed_round = UINT_MAX;
+    assert(ph_watch_request(&overflow, 11) == 0);
+    test_real_rounds();
     uint32_t count = 0;
     uint32_t gnu64[] = {1, 2, 1, 0, 0, 0, 2, 0, 1};
     assert(ph_gnu_symbol_count(gnu64, sizeof(gnu64), 8, &count));

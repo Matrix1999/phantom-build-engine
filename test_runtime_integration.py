@@ -84,6 +84,21 @@ static jmp_buf killed;
 static int open_result = 100, interrupted = 0, empty_read = 0;
 static const char *status = "Name: app\nTRACER_PID 0\n";
 static int sleeps = 0, ack_after = -1;
+static int round_waits = 0, round_ack_after = 1, request_wakes = 0;
+static void ph_watch_wake_word(unsigned int *word) {
+    if (word == &g_ph_watcher.requested_round) ++request_wakes;
+}
+static int ph_watch_wait_word(unsigned int *word, unsigned int expected,
+        unsigned int milliseconds) {
+    (void)expected;
+    assert(word == &g_ph_watcher.completed_round);
+    assert(milliseconds == 10u);
+    ++round_waits;
+    if (round_waits == round_ack_after)
+        ph_watch_ack_checked(&g_ph_watcher, 22,
+                             ph_watch_check_round(&g_ph_watcher));
+    return 0;
+}
 static int spawn_calls = 0, spawn_result = 0, early_ack = 0;
 static void *detect_frida_loop(void *arg) { return arg; }
 static int vm_pthread_create(pthread_t *t, const pthread_attr_t *attr,
@@ -155,6 +170,15 @@ int main(void) {
     sleeps = 0; ack_after = 3;
     ph_require_watcher();
     assert(sleeps == 3);
+    assert(round_waits == 1 && request_wakes == 1);
+    assert(g_ph_watcher.completed_round == 1);
+    round_waits = 0;
+    ph_require_watcher();
+    assert(round_waits == 1 && g_ph_watcher.completed_round == 2);
+    round_waits = 0; round_ack_after = -1;
+    expected_reject(ph_require_watcher);
+    assert(round_waits == 200);
+    assert(ph_watch_ready(&g_ph_watcher, 11) == -1);
     ph_watch_fail(&g_ph_watcher);
     expected_reject(ph_require_watcher);
     memset(&g_ph_watcher, 0, sizeof(g_ph_watcher));
