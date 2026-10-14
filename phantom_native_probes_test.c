@@ -11,12 +11,19 @@ static void test_policy(void) {
     for (unsigned int i = 0; i < 10000; ++i)
         assert((i ^ 0xa5c39e17u) != i);
     ph_probe_signal_state_t state = {0};
-    assert(!ph_signal_result_vm(&state));
-    state.armed = 1; state.signo = SIGURG; state.received_signo = SIGURG;
+    assert(!ph_signal_result_vm(0, 0, 0, 0));
+    unsigned int route_valid = ph_signal_route_vm(
+            1, SIGURG, SIGURG, SIGURG, SI_TKILL, 12, 12);
+    assert(route_valid == 1u);
+    assert(ph_signal_route_vm(
+            1, SIGURG, SIGURG, SIGURG, SI_USER, 12, 12) == 0u);
+    assert(ph_signal_route_vm(
+            1, SIGURG, SIGURG, SIGURG, SI_TKILL, 13, 12) == 0u);
+    assert(ph_signal_route_vm(
+            0, SIGURG, SIGURG, SIGURG, SI_TKILL, 12, 12) == 0u);
+
+    state.armed = 1; state.signo = SIGURG;
     state.pid = 12; state.nonce = 1234;
-    siginfo_t info;
-    memset(&info, 0, sizeof(info));
-    info.si_signo = SIGURG; info.si_code = SI_TKILL; info.si_pid = 12;
 #if defined(__x86_64__)
     ucontext_t uc;
     memset(&uc, 0, sizeof(uc));
@@ -25,22 +32,38 @@ static void test_policy(void) {
     uc.uc_mcontext.gregs[REG_R13] = state.nonce ^ 0x5au;
     uc.uc_mcontext.gregs[REG_RIP] = state.resume_pc;
     uc.uc_mcontext.gregs[REG_RSP] = (greg_t)(uintptr_t)&uc;
-    ph_signal_delivery_vm(&state, &info, &uc);
-    assert(state.delivered);
+    unsigned int frame_valid = ph_signal_frame_vm(
+            (uintptr_t)uc.uc_mcontext.gregs[REG_R12],
+            (uintptr_t)uc.uc_mcontext.gregs[REG_R13],
+            (uintptr_t)uc.uc_mcontext.gregs[REG_RIP], state.resume_pc,
+            (uintptr_t)uc.uc_mcontext.gregs[REG_RSP], state.nonce);
+    assert(frame_valid == 1u);
+    unsigned int accepted = ph_signal_delivery_vm(route_valid, frame_valid);
+    assert(accepted == 1u);
+    ph_signal_context_apply_vm(&uc, accepted, state.nonce);
     assert((unsigned int)uc.uc_mcontext.gregs[REG_R12] ==
            (state.nonce ^ 0xa5c39e17u));
-    state.delivered = 0;
-    info.si_code = SI_USER;
-    ph_signal_delivery_vm(&state, &info, &uc);
-    assert(!state.delivered);
+    assert(ph_signal_delivery_vm(0u, frame_valid) == 0u);
+    assert(ph_signal_frame_vm(
+            (uintptr_t)uc.uc_mcontext.gregs[REG_R12],
+            (uintptr_t)uc.uc_mcontext.gregs[REG_R13],
+            (uintptr_t)uc.uc_mcontext.gregs[REG_RIP], state.resume_pc,
+            (uintptr_t)uc.uc_mcontext.gregs[REG_RSP], state.nonce) == 0u);
+    state.delivered = accepted;
 #endif
     state.setup_ok = state.delivered = 1;
     state.token = state.nonce ^ 0xa5c39e17u;
-    assert(ph_signal_result_vm(&state));
+    assert(ph_signal_result_vm(
+            state.setup_ok, (unsigned int)state.delivered,
+            state.token, state.nonce) == 1u);
     ++state.nonce;
-    assert(!ph_signal_result_vm(&state)); /* No replay into another round. */
+    assert(ph_signal_result_vm(
+            state.setup_ok, (unsigned int)state.delivered,
+            state.token, state.nonce) == 0u); /* No replay into another round. */
     state.setup_ok = 0;
-    assert(!ph_signal_result_vm(&state));
+    assert(ph_signal_result_vm(
+            state.setup_ok, (unsigned int)state.delivered,
+            state.token, state.nonce) == 0u);
     puts("VM policy negative/replay cases: PASS");
 }
 
@@ -59,7 +82,9 @@ static void test_signal_rounds(void) {
     assert(sigaction(SIGURG, &user_action, NULL) == 0);
     for (int i = 0; i < 16; ++i) {
         ph_probe_signal_state_t *state = ph_probe_signal_round_native();
-        assert(state && ph_signal_result_vm(state));
+        assert(state && ph_signal_result_vm(
+                state->setup_ok, (unsigned int)state->delivered,
+                state->token, state->nonce));
         assert(state->token != state->nonce); /* Kernel restored modified context. */
         assert(state->signo != SIGURG); /* Never replace the installed handler. */
         assert(!state->armed);
