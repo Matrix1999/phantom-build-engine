@@ -621,29 +621,34 @@ __attribute__((noreturn)) static void nuke_app(void) {
     __builtin_unreachable();
 }
 
-/* The ISA and POSIX setup bridges return measurements; these flattened VM
- * gates make every allow/deny decision. */
-static PH_PROBE_VM_FLAT void ph_probe_atomic_gate_vm(unsigned int status) {
-    if (status != 1u) nuke_app();
+/* VM bytecode decides whether each measurement is acceptable. The native ABI
+ * bridge performs only the fail-stop action after receiving that VM decision. */
+static PH_PROBE_VM unsigned int ph_probe_atomic_gate_vm(unsigned int status) {
+    return (unsigned int)(status == 1u);
 }
 
-static PH_PROBE_VM_FLAT void ph_probe_signal_gate_vm(unsigned int accepted) {
-    if (accepted != 1u) nuke_app();
+static PH_PROBE_VM unsigned int ph_probe_signal_gate_vm(unsigned int accepted) {
+    return (unsigned int)(accepted == 1u);
 }
 
 static PH_RUNTIME_NATIVE void ph_probe_atomic_gate_native(void) {
-    ph_probe_atomic_gate_vm(ph_probe_atomic_capture_native());
+    unsigned int accepted =
+            ph_probe_atomic_gate_vm(ph_probe_atomic_capture_native());
+    if (accepted != 1u) nuke_app();
 }
 
 static PH_RUNTIME_NATIVE void ph_probe_signal_gate_native(void) {
     ph_probe_signal_state_t *state = ph_probe_signal_round_native();
     if (!state) {
-        ph_probe_signal_gate_vm(0);
+        if (ph_probe_signal_gate_vm(0) != 1u) nuke_app();
         return;
     }
-    unsigned int accepted = (unsigned int)ph_signal_result_vm(state);
+    unsigned int accepted = ph_signal_result_vm(
+            state->setup_ok, (unsigned int)state->delivered,
+            state->token, state->nonce);
+    accepted = ph_probe_signal_gate_vm(accepted);
     ph_probe_signal_finish_native();
-    ph_probe_signal_gate_vm(accepted);
+    if (accepted != 1u) nuke_app();
 }
 
 /* Enforcement is virtualized; only the tiny ISA probes and POSIX signal ABI
