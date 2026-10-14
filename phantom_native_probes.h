@@ -308,13 +308,13 @@ static PH_RUNTIME_NATIVE unsigned int ph_probe_atomic_capture_native(void) {
     return ph_probe_exclusive_native(&word);
 }
 
-static PH_PROBE_VM_FLAT unsigned int ph_signal_result_vm(
+static PH_PROBE_VM unsigned int ph_signal_result_vm(
         unsigned int setup_ok, unsigned int delivered,
         unsigned int token, unsigned int nonce) {
-    if (setup_ok != 1u) return 0u;
-    if (delivered != 1u) return 0u;
-    if (token != (nonce ^ 0xa5c39e17u)) return 0u;
-    return 1u;
+    unsigned int valid = (unsigned int)(setup_ok == 1u);
+    valid &= (unsigned int)(delivered == 1u);
+    valid &= (unsigned int)(token == (nonce ^ 0xa5c39e17u));
+    return valid;
 }
 
 #endif
