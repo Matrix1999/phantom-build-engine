@@ -621,23 +621,34 @@ __attribute__((noreturn)) static void nuke_app(void) {
     __builtin_unreachable();
 }
 
+/* The ISA and POSIX setup bridges return measurements; these flattened VM
+ * gates make every allow/deny decision. */
+static PH_PROBE_VM_FLAT void ph_probe_atomic_gate_vm(unsigned int status) {
+    if (status != 1u) nuke_app();
+}
+
+static PH_PROBE_VM_FLAT void ph_probe_signal_gate_vm(unsigned int accepted) {
+    if (accepted != 1u) nuke_app();
+}
+
+static PH_RUNTIME_NATIVE void ph_probe_atomic_gate_native(void) {
+    ph_probe_atomic_gate_vm(ph_probe_atomic_capture_native());
+}
+
+static PH_RUNTIME_NATIVE void ph_probe_signal_gate_native(void) {
+    ph_probe_signal_state_t *state = ph_probe_signal_round_native();
+    if (!state) {
+        ph_probe_signal_gate_vm(0);
+        return;
+    }
+    unsigned int accepted = (unsigned int)ph_signal_result_vm(state);
+    ph_probe_signal_finish_native();
+    ph_probe_signal_gate_vm(accepted);
+}
+
 /* Enforcement is virtualized; only the tiny ISA probes and POSIX signal ABI
  * setup are native bridges. Fail closed on an unsupported kernel/service,
  * but never change the payload cipher or its established gate ordering. */
-static PH_PROBE_VM void ph_probe_atomic_gate_vm(void) {
-    if (!ph_probe_atomic_ok_vm(ph_probe_atomic_capture_native()))
-        nuke_app();
-}
-
-static PH_PROBE_VM void ph_probe_signal_gate_vm(void) {
-    ph_probe_signal_state_t *state = ph_probe_signal_round_native();
-    if (!state) nuke_app();
-    int allowed = ph_signal_result_vm(state);
-    ph_probe_signal_finish_native();
-    if (!allowed) nuke_app();
-}
-
-
 // ?
 // Original anti-Frida detection functions
 // ?
@@ -1512,7 +1523,7 @@ static __attribute__((noinline)) void detect_riru_zygisk(void) {
  */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_general_dumper_before_decrypt(void) {
-    ph_probe_atomic_gate_vm();
+    ph_probe_atomic_gate_native();
     PH_LOGI("pre-decrypt gate: begin");
     /*
      * Re-apply the process-memory seal on every decrypt boundary. If it
@@ -2902,7 +2913,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
     PH_LOGI("nativeLoadShards: load state entered");
     ph_require_watcher();
     detect_general_dumper_before_decrypt();
-    ph_probe_signal_gate_vm();
+    ph_probe_signal_gate_native();
     PH_LOGI("nativeLoadShards: pre-decrypt gate passed");
     detect_java_xposed_bridge(env, j_parent_cl);
     PH_LOGI("nativeLoadShards: class-loader probe passed");
@@ -3064,7 +3075,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
              */
             detect_general_dumper_before_decrypt();
             ph_require_watcher();
-            ph_probe_signal_gate_vm();
+            ph_probe_signal_gate_native();
 
             uint8_t *enc_buf = NULL, *aead_buf = NULL;
             uint8_t *inter_buf = NULL, *plain_buf = NULL;
