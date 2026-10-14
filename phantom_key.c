@@ -6,7 +6,7 @@
 //
 // Security model:
 // * Inner per-APK key derived from (salt, sha256(pkg_name)) via ARX KDF.
-// * Outer DEX payload envelope uses a per-build XChaCha20-Poly1305 root key.
+// * Outer DEX payload envelope uses one universal XChaCha20-Poly1305 root key.
 //   HChaCha20 derives a nonce-specific subkey inside VMP-marked Phantom code, so
 //   the universal root key never crosses a normal native call boundary.
 // * Key NEVER crosses the JNI boundary -- lives only on the C stack, zeroed on return.
@@ -55,6 +55,7 @@
 #include <elf.h>
 #include <dirent.h>
 #include <ctype.h>
+#include <errno.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -67,6 +68,7 @@
 #include "phantom_cipher.h"
 #include "phantom_pstrings.inc"
 #include "phantom_integrity.inc"
+#include "phantom_runtime_checks.h"
 
 /*
  * Phantom is intentionally silent. Keep the call sites as compile-time
@@ -84,6 +86,8 @@
 #define MAX_LINE   512
 #define MAX_LENGTH 256
 #define MAX_SZ     (80 * 1024 * 1024)
+
+static ph_watch_state_t g_ph_watcher = {0};
 
 
 // ── Detection string constants ────────────────────────────────────────────────
@@ -335,10 +339,34 @@ __attribute__((always_inline)) static inline int my_connect(int fd, const struct
    dl_iterate_phdr is already imported for hook_phdr_cb, so no new entry.    */
 typedef struct { const char *lib; const char *sym; void *addr; } _ph_res_t;
 
+static PH_RUNTIME_NATIVE size_t ph_loaded_bytes(
+        const struct dl_phdr_info *info, uintptr_t address) {
+    if (!info || !info->dlpi_phdr || info->dlpi_phnum > 256) return 0;
+    for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
+        const ElfW(Phdr) *ph = &info->dlpi_phdr[i];
+        if (ph->p_type != PT_LOAD || !(ph->p_flags & PF_R)) continue;
+        uintptr_t start = (uintptr_t)info->dlpi_addr + ph->p_vaddr;
+        uintptr_t end = start + ph->p_memsz;
+        if (end > start && address >= start && address < end)
+            return (size_t)(end - address);
+    }
+    return 0;
+}
+
+static PH_RUNTIME_NATIVE uintptr_t ph_dynamic_pointer(
+        const struct dl_phdr_info *info, ElfW(Addr) value) {
+    /* Android/linker revisions can expose relocated or base-relative d_ptr. */
+    if (ph_loaded_bytes(info, (uintptr_t)value)) return (uintptr_t)value;
+    uintptr_t rebased = (uintptr_t)info->dlpi_addr + value;
+    if (rebased >= value && ph_loaded_bytes(info, rebased)) return rebased;
+    return 0;
+}
+
 static int _ph_res_cb(struct dl_phdr_info *info, size_t sz, void *ud) {
     (void)sz;
     _ph_res_t *ctx = (void *)ud;
-    if (!info->dlpi_name) return 0;
+    if (!info || !ctx || !info->dlpi_name ||
+        !info->dlpi_phdr || info->dlpi_phnum > 256) return 0;
     /* match soname suffix */
     const char *n = info->dlpi_name;
     size_t nl = 0; while (n[nl]) nl++;
@@ -349,26 +377,54 @@ static int _ph_res_cb(struct dl_phdr_info *info, size_t sz, void *ud) {
     ElfW(Sym)  *sym  = NULL;
     const char *str  = NULL;
     uint32_t   *hash = NULL;
+    uint32_t   *gnu_hash = NULL;
+    size_t str_bytes = 0;
 
     for (ElfW(Half) i = 0; i < info->dlpi_phnum; i++) {
         if (info->dlpi_phdr[i].p_type != PT_DYNAMIC) continue;
         ElfW(Dyn) *dyn = (ElfW(Dyn)*)(base + info->dlpi_phdr[i].p_vaddr);
-        for (; dyn->d_tag != DT_NULL; dyn++) {
-            if      (dyn->d_tag == DT_SYMTAB) sym  = (ElfW(Sym) *)dyn->d_un.d_ptr;
-            else if (dyn->d_tag == DT_STRTAB) str  = (const char*)dyn->d_un.d_ptr;
-            else if (dyn->d_tag == DT_HASH)   hash = (uint32_t   *)dyn->d_un.d_ptr;
+        size_t dyn_bytes = ph_loaded_bytes(info, (uintptr_t)dyn);
+        if (dyn_bytes > info->dlpi_phdr[i].p_memsz)
+            dyn_bytes = info->dlpi_phdr[i].p_memsz;
+        for (size_t j = 0; j < dyn_bytes / sizeof(*dyn); ++j, ++dyn) {
+            if (dyn->d_tag == DT_NULL) break;
+            if      (dyn->d_tag == DT_SYMTAB) sym = (ElfW(Sym) *)
+                ph_dynamic_pointer(info, dyn->d_un.d_ptr);
+            else if (dyn->d_tag == DT_STRTAB) str = (const char *)
+                ph_dynamic_pointer(info, dyn->d_un.d_ptr);
+            else if (dyn->d_tag == DT_HASH) hash = (uint32_t *)
+                ph_dynamic_pointer(info, dyn->d_un.d_ptr);
+            else if (dyn->d_tag == DT_GNU_HASH) gnu_hash = (uint32_t *)
+                ph_dynamic_pointer(info, dyn->d_un.d_ptr);
+            else if (dyn->d_tag == DT_STRSZ) str_bytes = dyn->d_un.d_val;
         }
         break;
     }
-    if (!sym || !str || !hash) return 0;
+    if (!sym || !str || !str_bytes ||
+        str_bytes > ph_loaded_bytes(info, (uintptr_t)str)) return 0;
 
-    uint32_t nchain = hash[1];
+    uint32_t nchain = 0;
+    if (hash && ph_loaded_bytes(info, (uintptr_t)hash) >= 8)
+        nchain = hash[1];
+    else if (gnu_hash && !ph_gnu_symbol_count(gnu_hash,
+            ph_loaded_bytes(info, (uintptr_t)gnu_hash),
+            sizeof(ElfW(Addr)), &nchain)) return 0;
+    if (!nchain || nchain > 1048576u ||
+        nchain > ph_loaded_bytes(info, (uintptr_t)sym) / sizeof(*sym))
+        return 0;
     const char *want = ctx->sym;
     size_t wl = 0; while (want[wl]) wl++;
     for (uint32_t i = 0; i < nchain; i++) {
-        if (!sym[i].st_name || !sym[i].st_value) continue;
+        if (!sym[i].st_name || !sym[i].st_value ||
+            sym[i].st_shndx == SHN_UNDEF ||
+            sym[i].st_name >= str_bytes ||
+            wl + 1u > str_bytes - sym[i].st_name) continue;
         if (my_strncmp(str + sym[i].st_name, want, wl + 1) == 0) {
             ctx->addr = (void *)(base + (ElfW(Addr))sym[i].st_value);
+            if (!ph_loaded_bytes(info, (uintptr_t)ctx->addr)) {
+                ctx->addr = NULL;
+                continue;
+            }
             return 1;
         }
     }
@@ -381,8 +437,9 @@ static int _ph_res_cb(struct dl_phdr_info *info, size_t sz, void *ud) {
 static __attribute__((noinline)) int vm_pthread_create(
         pthread_t *t, const pthread_attr_t *attr,
         void *(*fn)(void *), void *arg) {
-    static volatile void *_cached = NULL;
-    if (!_cached) {
+    static void *_cached = NULL;
+    void *cached = __atomic_load_n(&_cached, __ATOMIC_ACQUIRE);
+    if (!cached) {
         char _lib[8];
         _lib[0]='l';_lib[1]='i';_lib[2]='b';_lib[3]='c';
         _lib[4]='.';_lib[5]='s';_lib[6]='o';_lib[7]='\0';
@@ -392,11 +449,12 @@ static __attribute__((noinline)) int vm_pthread_create(
         _sym[10]='e';_sym[11]='a';_sym[12]='t';_sym[13]='e';_sym[14]='\0';
         _ph_res_t ctx = { _lib, _sym, NULL };
         dl_iterate_phdr(_ph_res_cb, &ctx);
-        _cached = ctx.addr;
+        cached = ctx.addr;
+        __atomic_store_n(&_cached, cached, __ATOMIC_RELEASE);
     }
-    if (!_cached) return -1;
+    if (!cached) return -1;
     typedef int (*_pth_t)(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
-    return ((_pth_t)(void *)_cached)(t, attr, fn, arg);
+    return ((_pth_t)cached)(t, attr, fn, arg);
 }
 
 /* vm_prctl — raw syscall via existing raw_syscall_5 (arm64) / syscall() (arm32).
@@ -569,20 +627,20 @@ static __attribute__((noinline)) void detect_ptrace(void) {
     PH_XCHACHA(_ss, PROC_SELFSTATUS);
     int fd = vm_openat(AT_FDCWD, _ss, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_ss, SP_BUF_SZ);
-    if (fd >= 0) {
-        ssize_t bytes = vm_read(fd, buf, sizeof(buf) - 1);
-        if (bytes > 0) {
-            buf[bytes] = '\0';
-            PH_XCHACHA(_tp, TRACER_PID);
-            char *tracer = my_strstr(buf, _tp);
-            PH_ZERO(_tp, SP_BUF_SZ);
-            if (tracer) {
-                int pid = my_atoi(tracer + 10);
-                if (pid > 0) { vm_close(fd); PH_NUKE("ptrace — TracerPid=%d", pid); nuke_app(); }
-            }
-        }
-        vm_close(fd);
-    }
+    if (fd < 0) nuke_app();
+    ssize_t bytes = vm_read(fd, buf, sizeof(buf) - 1);
+    /* A signal can interrupt either a raw ARM64 read or the ARM32 wrapper. */
+    for (unsigned int retry = 0; retry < 3u &&
+            (bytes == -EINTR || (bytes == -1 && errno == EINTR)); ++retry)
+        bytes = vm_read(fd, buf, sizeof(buf) - 1);
+    vm_close(fd);
+    if (bytes <= 0 || bytes >= (ssize_t)sizeof(buf)) nuke_app();
+    buf[bytes] = '\0';
+    PH_XCHACHA(_tp, TRACER_PID);
+    int tracer_pid = -1;
+    int valid = ph_tracer_pid(buf, (size_t)bytes, _tp, &tracer_pid);
+    PH_ZERO(_tp, SP_BUF_SZ);
+    if (!valid || tracer_pid != 0) nuke_app();
 }
 
 
@@ -622,20 +680,34 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
     ssize_t nread;
     while ((nread = vm_getdents64(dfd, dirbuf, sizeof(dirbuf))) > 0) {
         for (ssize_t off = 0; off < nread; ) {
+            if ((size_t)(nread - off) < 24u) {
+                vm_close(dfd);
+                nuke_app();
+            }
             struct ph_dirent64 *de = (struct ph_dirent64 *)(dirbuf + off);
+            if (de->d_reclen < 24u || de->d_reclen > nread - off) {
+                vm_close(dfd);
+                nuke_app();
+            }
             off += de->d_reclen;
             if (de->d_name[0] == '.' && (de->d_name[1] == '\0' ||
                 (de->d_name[1] == '.' && de->d_name[2] == '\0'))) continue;
+            if (!ph_task_name_valid(de->d_name,
+                    de->d_reclen - offsetof(struct ph_dirent64, d_name))) {
+                vm_close(dfd);
+                nuke_app();
+            }
 
             // ── 1. comm file — raw thread name ──────────────────────────────
             {
                 char comm_path[MAX_LENGTH] = "";
                 PH_XCHACHA(_ctask, PROC_TASK);
                 PH_XCHACHA(_comm_sfx, COMM_SUFFIX);
-                my_path_cat3(comm_path, MAX_LENGTH,
+                int path_ok = ph_task_path(comm_path, sizeof(comm_path),
                              _ctask, de->d_name, _comm_sfx);
                 PH_ZERO(_comm_sfx, SP_BUF_SZ);
                 PH_ZERO(_ctask, SP_BUF_SZ);
+                if (!path_ok) { vm_close(dfd); nuke_app(); }
                 int fd = vm_openat(AT_FDCWD, comm_path, O_RDONLY | O_CLOEXEC, 0);
                 if (fd >= 0) {
                     char name[MAX_LENGTH] = "";
@@ -655,10 +727,11 @@ static __attribute__((noinline)) void detect_frida_threads(void) {
                 char status_path[MAX_LENGTH] = "";
                 PH_XCHACHA(_stask, PROC_TASK);
                 PH_XCHACHA(_stat_sfx, STATUS_SUFFIX);
-                my_path_cat3(status_path, MAX_LENGTH,
+                int path_ok = ph_task_path(status_path, sizeof(status_path),
                              _stask, de->d_name, _stat_sfx);
                 PH_ZERO(_stat_sfx, SP_BUF_SZ);
                 PH_ZERO(_stask, SP_BUF_SZ);
+                if (!path_ok) { vm_close(dfd); nuke_app(); }
                 int fd = vm_openat(AT_FDCWD, status_path, O_RDONLY | O_CLOEXEC, 0);
                 if (fd >= 0) {
                     char buf[1024] = "";
@@ -1426,7 +1499,7 @@ static __attribute__((noinline)) void detect_general_dumper_before_decrypt(void)
      */
     int seal_rc = vm_prctl(PR_SET_DUMPABLE, 0);
     PH_LOGI("pre-decrypt gate: dumpable seal rc=%d", seal_rc);
-    if (seal_rc == 0 && vm_prctl(PR_GET_DUMPABLE, 0) != 0) {
+    if (!ph_dumpability_ok(seal_rc, vm_prctl(PR_GET_DUMPABLE, 0))) {
         PH_NUKE("process became dumpable");
         nuke_app();
     }
@@ -1570,6 +1643,8 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     timereq.tv_nsec = 0;
     while (1) {
         detect_general_dumper_before_decrypt();
+        /* A creation result alone is not evidence that this thread ran. */
+        ph_watch_ack(&g_ph_watcher, vm_gettid());
         /*
          * ART can create additional anonymous DEX views after the initial
          * class-loader construction. Re-run only the marker scrub here; the
@@ -1745,8 +1820,28 @@ static __attribute__((noinline)) void check_rooted(void) {
    no bl pthread_create exists at any fixed binary offset an attacker can NOP. */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void vm_spawn_watcher(void) {
+    if (!ph_watch_begin(&g_ph_watcher)) return;
     pthread_t t;
-    vm_pthread_create(&t, NULL, detect_frida_loop, NULL);
+    if (vm_pthread_create(&t, NULL, detect_frida_loop, NULL) != 0)
+        ph_watch_fail(&g_ph_watcher);
+}
+
+/*
+ * Wait at the JNI boundary, not in the ELF constructor. A child may need the
+ * Android linker lock while System.load still holds it in the constructor.
+ * The bounded wait also prevents an unavailable watcher hanging startup.
+ */
+static PH_RUNTIME_NATIVE void ph_require_watcher(void) {
+    long caller_tid = vm_gettid();
+    struct timespec pause = {0, 10000000}; /* 10 ms; 2-second startup budget */
+    for (unsigned int i = 0; i < 200; ++i) {
+        int ready = ph_watch_ready(&g_ph_watcher, caller_tid);
+        if (ready == 1) return;
+        if (ready < 0) nuke_app();
+        vm_nanosleep(&pause, NULL);
+    }
+    ph_watch_fail(&g_ph_watcher);
+    nuke_app();
 }
 
 __attribute__((constructor))
@@ -1794,10 +1889,11 @@ static const uint32_t K256[64] = {
      sha256_block  — thin noinline dispatcher; amice sees it as call_native thunk
      sha256        — driver: +vm_virtualize, calls sha256_block as call_native   */
 
-/* Step A: expand message schedule into caller-supplied w[64].
-   VMP is enabled here for an explicit build experiment; prior notes report
-   an ARM64 apply-phase crash when this helper is virtualized. */
-__attribute__((annotate("+vm_virtualize,+vm_flatten")))
+/* Step A: expand message schedule into caller-supplied w[64]
+   noinline only — NOT annotated; arm64 IR causes apply-phase crash if VMP'd here */
+__attribute__((annotate(
+    "+mba,+indirect_branch,+alias_access,"
+    "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void _sha_expand(uint32_t *w, const uint8_t *data) {
     int i;
     for (i = 0; i < 16; i++)
@@ -1810,10 +1906,11 @@ static __attribute__((noinline)) void _sha_expand(uint32_t *w, const uint8_t *da
     }
 }
 
-/* Step B: 64-round compression; w and K256 accessed via pointer loads only.
-   VMP is enabled here for an explicit build experiment; prior notes report
-   an ARM64 apply-phase crash when this helper is virtualized. */
-__attribute__((annotate("+vm_virtualize,+vm_flatten")))
+/* Step B: 64-round compression; w and K256 accessed via pointer loads only
+   noinline only — NOT annotated; same reason as _sha_expand */
+__attribute__((annotate(
+    "+mba,+indirect_branch,+alias_access,"
+    "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) void _sha_compress(uint32_t *h, const uint32_t *w) {
     uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
     int i;
@@ -2048,7 +2145,7 @@ static inline void put_le32(uint8_t *b, int off, uint32_t v) {
 }
 
 /*
- * Per-build outer payload key (rotate with rotate_envelope_key.py).
+ * Universal outer payload key.
  *
  * The root words, HChaCha state, and derived subkey stay inside the VM-only
  * key path. The small helpers below deliberately keep each lowering unit
@@ -2060,16 +2157,16 @@ __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) int stage_bridge(
         uint8_t subkey[32],
         uint8_t nonce[12],
-        uint8_t aad[52],
+        uint8_t aad[4],
         const uint8_t *ciphertext,
         size_t ciphertext_len,
         const uint8_t tag[16],
         uint8_t *plaintext) {
     int ok = ph_chacha20poly1305_decrypt(
-            subkey, nonce, aad, 52, ciphertext, ciphertext_len, tag, plaintext);
+            subkey, nonce, aad, 4, ciphertext, ciphertext_len, tag, plaintext);
     ph_secure_zero(subkey, 32);
     ph_secure_zero(nonce, 12);
-    ph_secure_zero(aad, 52);
+    ph_secure_zero(aad, 4);
     return ok;
 }
 
@@ -2096,14 +2193,14 @@ typedef struct {
         s->word[4u + i] = v - add;                                            \
     }
 
-PH_DEFINE_ROOT_STAGE(0, 0xfe14cd50u)
-PH_DEFINE_ROOT_STAGE(1, 0x5b435cf0u)
-PH_DEFINE_ROOT_STAGE(2, 0x3fb6f8aau)
-PH_DEFINE_ROOT_STAGE(3, 0xbdc10136u)
-PH_DEFINE_ROOT_STAGE(4, 0xea75e10bu)
-PH_DEFINE_ROOT_STAGE(5, 0xc923d182u)
-PH_DEFINE_ROOT_STAGE(6, 0x45bfde77u)
-PH_DEFINE_ROOT_STAGE(7, 0x40d8b06cu)
+PH_DEFINE_ROOT_STAGE(0, 0x8bb1bb95u)
+PH_DEFINE_ROOT_STAGE(1, 0x893e5bf8u)
+PH_DEFINE_ROOT_STAGE(2, 0xc33ecd2bu)
+PH_DEFINE_ROOT_STAGE(3, 0xec495222u)
+PH_DEFINE_ROOT_STAGE(4, 0x66578f23u)
+PH_DEFINE_ROOT_STAGE(5, 0x16111f8fu)
+PH_DEFINE_ROOT_STAGE(6, 0x020f84aau)
+PH_DEFINE_ROOT_STAGE(7, 0xedb5b00fu)
 #undef PH_DEFINE_ROOT_STAGE
 
 __attribute__((annotate("+vm_virtualize")))
@@ -2263,8 +2360,6 @@ static __attribute__((noinline)) void stage_apply(
 
 static __attribute__((noinline)) int stage_decrypt(
         int shard_index,
-        const uint8_t clean_salt[16],
-        const uint8_t pkg_hash[32],
         const uint8_t *full_nonce,
         const uint8_t *ciphertext,
         size_t ciphertext_len,
@@ -2273,7 +2368,7 @@ static __attribute__((noinline)) int stage_decrypt(
     ph_hchacha_state_t state = {{0}};
     uint8_t subkey[32];
     uint8_t nonce[12] = {0};
-    uint8_t aad[52];
+    uint8_t aad[4];
     stage_apply(&state);
     stage_hchacha_vm(&state, full_nonce, subkey);
     ph_secure_zero(&state, sizeof(state));
@@ -2282,8 +2377,6 @@ static __attribute__((noinline)) int stage_decrypt(
     aad[1] = (uint8_t)((uint32_t)shard_index >> 16);
     aad[2] = (uint8_t)((uint32_t)shard_index >> 8);
     aad[3] = (uint8_t)shard_index;
-    memcpy(aad + 4, clean_salt, 16);
-    memcpy(aad + 20, pkg_hash, 32);
     return stage_bridge(
             subkey, nonce, aad, ciphertext, ciphertext_len, tag, plaintext);
 }
@@ -2307,7 +2400,7 @@ static void arx_kdf(const uint8_t salt[16], const uint8_t pkg_hash[32], uint8_t 
 /*
  * Per-shard compatibility-layer key. The packer mirrors:
  * SHA256(base_key || "PHSHARD1" || shard_index_be)[0:16].
- * The per-build authenticated payload key remains separate.
+ * The universal authenticated payload key remains unchanged and separate.
  */
 __attribute__((annotate(
     "+indirect_call,+function_wrapper,"
@@ -2414,85 +2507,6 @@ static void arx_xor(arx_ctx_t *s, uint8_t *buf, size_t len) {
 // zlib inflate helper
 // ?
 
-/* Maximum accepted size for any intermediate decompressed shard.
- * Adjust only with corresponding host-side limits and device memory testing. */
-#define PH_MAX_INFLATE_BYTES ((size_t)128u * 1024u * 1024u)
-#define PH_MAX_ENCRYPTED_SHARD_BYTES ((size_t)128u * 1024u * 1024u)
-
-
-/*
- * Bounded two-pass inflation for the inner DEX layer.
- * Pass one counts the decoded bytes using a small scratch buffer; pass two
- * writes those bytes straight into the final native mapping. This avoids
- * creating and copying an extra whole-DEX heap allocation.
- *
- * This is a memory-lifetime improvement, not an anti-emulation security
- * boundary. ART must still receive an intact DEX buffer.
- */
-static __attribute__((noinline)) int ph_inflate_measure(
-        const uint8_t *src, size_t src_len, size_t limit, size_t *decoded_len) {
-    if (!src || !decoded_len || src_len == 0 || src_len > UINT_MAX) return 0;
-    *decoded_len = 0;
-    z_stream zs;
-    memset(&zs, 0, sizeof(zs));
-    if (inflateInit(&zs) != Z_OK) return 0;
-    zs.next_in = (Bytef *)src;
-    zs.avail_in = (uInt)src_len;
-    uint8_t scratch[16384];
-    size_t total = 0;
-    int ok = 0;
-    for (;;) {
-        zs.next_out = scratch;
-        zs.avail_out = (uInt)sizeof(scratch);
-        uLong input_before = zs.total_in;
-        int ret = inflate(&zs, Z_NO_FLUSH);
-        size_t wrote = sizeof(scratch) - (size_t)zs.avail_out;
-        if (wrote > limit - total) break;
-        total += wrote;
-        ph_secure_zero(scratch, sizeof(scratch));
-        if (ret == Z_STREAM_END) {
-            ok = (total > 0 && zs.avail_in == 0);
-            break;
-        }
-        if (ret != Z_OK || (wrote == 0 && zs.total_in == input_before)) break;
-    }
-    ph_secure_zero(scratch, sizeof(scratch));
-    inflateEnd(&zs);
-    if (ok) *decoded_len = total;
-    return ok;
-}
-
-static __attribute__((noinline)) int ph_inflate_exact(
-        const uint8_t *src, size_t src_len, void *dst, size_t dst_len) {
-    if (!src || !dst || src_len == 0 || dst_len == 0 ||
-        src_len > UINT_MAX || dst_len > UINT_MAX) return 0;
-    z_stream zs;
-    memset(&zs, 0, sizeof(zs));
-    if (inflateInit(&zs) != Z_OK) return 0;
-    zs.next_in = (Bytef *)src;
-    zs.avail_in = (uInt)src_len;
-    zs.next_out = (Bytef *)dst;
-    zs.avail_out = (uInt)dst_len;
-    int ret = inflate(&zs, Z_FINISH);
-    int ok = (ret == Z_STREAM_END && zs.total_out == dst_len && zs.avail_in == 0);
-    inflateEnd(&zs);
-    return ok;
-}
-
-/* Reject clearly malformed DEX before passing it to ART. */
-static __attribute__((noinline)) int ph_dex_header_sane(
-        const uint8_t *dex, size_t len) {
-    if (!dex || len < 112u || len > UINT_MAX) return 0;
-    if (memcmp(dex, "dex\n", 4u) != 0 || dex[7] != 0 ||
-        dex[4] != '0' || dex[5] < '3' || dex[5] > '4' ||
-        dex[6] < '0' || dex[6] > '9') return 0;
-    if (le32(dex, 32) != len || le32(dex, 36) < 112u ||
-        le32(dex, 36) > len || le32(dex, 40) != 0x12345678u) return 0;
-    uLong actual = adler32(0L, Z_NULL, 0);
-    actual = adler32(actual, dex + 12u, (uInt)(len - 12u));
-    return (uint32_t)actual == le32(dex, 8);
-}
-
 static uint8_t *inflate_alloc(const uint8_t *in, size_t in_len, size_t *out_len) {
     z_stream zs;
     uint8_t *buf, *tmp;
@@ -2507,15 +2521,11 @@ static uint8_t *inflate_alloc(const uint8_t *in, size_t in_len, size_t *out_len)
     if (ret != Z_OK) {
         return NULL;
     }
-    /* Keep decompression bounded even for authenticated but malformed payloads.
-     * zlib's avail_in/avail_out are uInt, not size_t. */
-    if (in_len == 0 || in_len > (size_t)UINT_MAX ||
-        in_len > (SIZE_MAX - 4096u) / 4u) {
+    if (in_len > (SIZE_MAX - 4096u) / 4u) {
         inflateEnd(&zs);
         return NULL;
     }
-    cap = in_len * 4u + 4096u;
-    if (cap > PH_MAX_INFLATE_BYTES) cap = PH_MAX_INFLATE_BYTES;
+    cap = in_len * 4 + 4096;
     buf = (uint8_t *)malloc(cap);
     if (!buf) {
         inflateEnd(&zs);
@@ -2535,14 +2545,13 @@ static uint8_t *inflate_alloc(const uint8_t *in, size_t in_len, size_t *out_len)
             return NULL;
         }
         used = cap - zs.avail_out;
-        if (cap >= PH_MAX_INFLATE_BYTES || cap > SIZE_MAX / 2u) {
+        if (cap > SIZE_MAX / 2u) {
             ph_secure_zero(buf, used);
             free(buf);
             inflateEnd(&zs);
             return NULL;
         }
-        cap *= 2u;
-        if (cap > PH_MAX_INFLATE_BYTES) cap = PH_MAX_INFLATE_BYTES;
+        cap *= 2;
         tmp  = (uint8_t *)realloc(buf, cap);
         if (!tmp) {
             ph_secure_zero(buf, used);
@@ -2598,32 +2607,6 @@ static __attribute__((noinline)) void ph_wipe_unmap_direct(
     vm_munmap(base, map_len);
 }
 
-
-/* Decode directly into the final backing store; never materialize a whole
- * additional plaintext DEX allocation in the native heap. */
-static __attribute__((noinline)) void *ph_inflate_direct_dex(
-        const uint8_t *encoded, size_t encoded_len,
-        size_t *decoded_len, size_t *mapped_len) {
-    if (!decoded_len || !mapped_len) return NULL;
-    *decoded_len = 0;
-    *mapped_len = 0;
-    size_t n = 0;
-    if (!ph_inflate_measure(encoded, encoded_len, MAX_SZ, &n) ||
-        n > (size_t)INT32_MAX || n > SIZE_MAX - 4095u) return NULL;
-    size_t m = (n + 4095u) & ~(size_t)4095u;
-    if (!ph_stage_policy_vm(n, m)) return NULL;
-    void *mapping = vm_mmap_private_rw(m);
-    if (mapping == MAP_FAILED) return NULL;
-    if (!ph_inflate_exact(encoded, encoded_len, mapping, n) ||
-        !ph_dex_header_sane((const uint8_t *)mapping, n)) {
-        ph_wipe_unmap_direct(mapping, m);
-        return NULL;
-    }
-    *decoded_len = n;
-    *mapped_len = m;
-    return mapping;
-}
-
 static __attribute__((noinline)) void ph_release_direct_dex_maps(void) {
     unsigned int count = g_direct_dex_count;
     if (count > PH_MAX_DIRECT_DEX_MAPS) count = PH_MAX_DIRECT_DEX_MAPS;
@@ -2651,7 +2634,9 @@ static void ph_direct_dex_destructor(void) {
  * existing watcher calls this bounded scan again after load, covering later
  * ART mappings without adding another thread or changing the loader lifetime.
  */
-__attribute__((annotate("+vm_virtualize,+vm_flatten")))
+__attribute__((annotate(
+    "+mba,+indirect_branch,+alias_access,"
+    "-vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) int ph_parse_art_map(
         const char *line, uintptr_t *start, uintptr_t *end,
         int *readable, int *writable, int *executable,
@@ -2845,6 +2830,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         return NULL;
     }
     PH_LOGI("nativeLoadShards: load state entered");
+    ph_require_watcher();
     detect_general_dumper_before_decrypt();
     PH_LOGI("nativeLoadShards: pre-decrypt gate passed");
     detect_java_xposed_bridge(env, j_parent_cl);
@@ -3006,9 +2992,10 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
              * attaches while a multi-shard load is still in progress.
              */
             detect_general_dumper_before_decrypt();
+            ph_require_watcher();
 
             uint8_t *enc_buf = NULL, *aead_buf = NULL;
-            uint8_t *inter_buf = NULL;
+            uint8_t *inter_buf = NULL, *plain_buf = NULL;
             size_t   aead_len = 0, inter_len = 0, plain_len = 0;
 
             jbyteArray j_enc = (jbyteArray)(*env)->GetObjectArrayElement(env, j_enc_shards, i);
@@ -3018,7 +3005,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
                 goto cleanup;
             }
             jint enc_len = (*env)->GetArrayLength(env, j_enc);
-            if (enc_len <= 40 || (size_t)enc_len > PH_MAX_ENCRYPTED_SHARD_BYTES) {
+            if (enc_len < 40) {
                 PH_LOGE("nativeLoadShards: shard %d invalid encrypted length=%d", i, enc_len);
                 (*env)->DeleteLocalRef(env, j_enc);
                 goto cleanup;
@@ -3062,8 +3049,6 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             }
             int stage_ok = stage_decrypt(
                     i,
-                    salt,
-                    pkg_hash,
                     enc_buf,
                     enc_buf + 24,
                     aead_len,
@@ -3099,19 +3084,42 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
               ph_secure_zero(shard_key, sizeof(shard_key));
               memset(&arx, 0, sizeof(arx)); }
 
-            /* Inner inflate directly into its lifetime-managed backing mapping.
-             * We measure first with bounded scratch memory, then decode once
-             * into the final map; no extra full plaintext heap buffer exists. */
-            size_t map_len = 0;
-            void *dex_map = ph_inflate_direct_dex(
-                    inter_buf, inter_len, &plain_len, &map_len);
-            ph_secure_zero(inter_buf, inter_len);
-            free(inter_buf);
-            inter_buf = NULL;
-            if (!dex_map) {
-                PH_LOGE("nativeLoadShards: shard %d DEX inflation or validation failed", i);
+            /* Inner inflate */
+            plain_buf = inflate_alloc(inter_buf, inter_len, &plain_len);
+            ph_secure_zero(inter_buf, inter_len); free(inter_buf);
+            if (!plain_buf) {
+                PH_LOGE("nativeLoadShards: shard %d inner inflate failed", i);
                 goto cleanup;
             }
+
+            if (plain_len > (size_t)INT32_MAX) {
+                PH_LOGE("nativeLoadShards: shard %d plaintext too large=%zu", i, plain_len);
+                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+                goto cleanup;
+            }
+            PH_LOGI("nativeLoadShards: shard %d plaintext length=%zu", i, plain_len);
+
+            /*
+             * Plaintext moves from the temporary inflate
+             * allocation into a private native mapping, not a Java byte[].
+             */
+            size_t map_len = (plain_len + 4095u) & ~(size_t)4095u;
+            if (!ph_stage_policy_vm(plain_len, map_len)) {
+                PH_LOGE("nativeLoadShards: shard %d stage policy rejected data=%zu map=%zu",
+                        i, plain_len, map_len);
+                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+                goto cleanup;
+            }
+            void *dex_map = vm_mmap_private_rw(map_len);
+            if (dex_map == MAP_FAILED) {
+                PH_LOGE("nativeLoadShards: shard %d native mapping failed length=%zu",
+                        i, map_len);
+                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+                goto cleanup;
+            }
+            memcpy(dex_map, plain_buf, plain_len);
+            ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+            plain_buf = NULL;
             vm_madvise(dex_map, map_len, MADV_DONTDUMP);
 #ifdef MADV_DONTFORK
             vm_madvise(dex_map, map_len, MADV_DONTFORK);

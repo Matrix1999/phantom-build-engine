@@ -37,8 +37,8 @@ BLOB_MAGIC = b"PHB3"
 BLOB_NONCE_BYTES = 16
 BLOB_TAG_BYTES = 32
 BLOB_ROOT = bytes.fromhex(
-    "e47cf0469877e22e16ee81c0a5f61b4c"
-    "d756b494990c0f4753402eb902501e1a"
+    "6e2c4fb192a7d03c55f17a8b0ce39d74"
+    "2d9817e643b5ca109f26d84ab7c351ee"
 )
 assert len(BLOB_ROOT) == 32
 
