@@ -40,12 +40,15 @@ static void test_policy(void) {
     assert(frame_valid == 1u);
     unsigned int accepted = ph_signal_delivery_vm(route_valid, frame_valid);
     assert(accepted == 1u);
-    ph_signal_context_apply_vm(&uc, accepted, state.nonce);
-    assert((unsigned int)uc.uc_mcontext.gregs[REG_R12] ==
+    volatile uintptr_t *saved_return_register =
+            (volatile uintptr_t *)&uc.uc_mcontext.gregs[REG_R12];
+    ph_signal_context_apply_vm(
+            saved_return_register, accepted, state.nonce);
+    assert((unsigned int)*saved_return_register ==
            (state.nonce ^ 0xa5c39e17u));
     assert(ph_signal_delivery_vm(0u, frame_valid) == 0u);
     assert(ph_signal_frame_vm(
-            (uintptr_t)uc.uc_mcontext.gregs[REG_R12],
+            (uintptr_t)*saved_return_register,
             (uintptr_t)uc.uc_mcontext.gregs[REG_R13],
             (uintptr_t)uc.uc_mcontext.gregs[REG_RIP], state.resume_pc,
             (uintptr_t)uc.uc_mcontext.gregs[REG_RSP], state.nonce) == 0u);
