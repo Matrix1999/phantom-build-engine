@@ -122,7 +122,6 @@ typedef struct {
     volatile sig_atomic_t armed;
     volatile sig_atomic_t delivered;
     int signo;
-    volatile sig_atomic_t received_signo;
     pid_t pid;
     unsigned int nonce;
     unsigned int token;
@@ -140,37 +139,50 @@ static PH_RUNTIME_NATIVE ph_probe_signal_state_t *ph_probe_signal_state_native(v
 
 /* Flattened bytecode validates the complete kernel-delivered frame and edits
  * the saved return register. The native entry only forwards the ABI values. */
-static PH_PROBE_VM_FLAT void ph_signal_delivery_vm(
-        ph_probe_signal_state_t *state, siginfo_t *info, void *context) {
-    if (!state) return;
-    if (!info) return;
-    if (!state->armed) return;
-    if (state->received_signo != state->signo) return;
-    if (info->si_signo != state->signo) return;
-    if (info->si_code != SI_TKILL) return;
-    if (info->si_pid != state->pid) return;
-    if (!context) return;
+static PH_PROBE_VM unsigned int ph_signal_route_vm(
+        unsigned int armed, int signo, int expected_signo, int info_signo,
+        int code, pid_t sender_pid, pid_t expected_pid) {
+    unsigned int valid = (unsigned int)(armed == 1u);
+    valid &= (unsigned int)(signo == expected_signo);
+    valid &= (unsigned int)(info_signo == expected_signo);
+    valid &= (unsigned int)(code == SI_TKILL);
+    valid &= (unsigned int)(sender_pid == expected_pid);
+    return valid;
+}
+
+static PH_PROBE_VM unsigned int ph_signal_frame_vm(
+        uintptr_t actual_nonce, uintptr_t actual_marker, uintptr_t actual_pc,
+        uintptr_t expected_pc, uintptr_t sp, unsigned int nonce) {
+    unsigned int valid = (unsigned int)(actual_nonce == (uintptr_t)nonce);
+    valid &= (unsigned int)(actual_marker ==
+                            ((uintptr_t)nonce ^ (uintptr_t)0x5au));
+    valid &= (unsigned int)(actual_pc == expected_pc);
+    valid &= (unsigned int)(sp != 0u);
+#if defined(__aarch64__)
+    valid &= (unsigned int)((sp & 15u) == 0u);
+#elif defined(__arm__)
+    valid &= (unsigned int)((sp & 7u) == 0u);
+#endif
+    return valid;
+}
+
+static PH_PROBE_VM unsigned int ph_signal_delivery_vm(
+        unsigned int route_valid, unsigned int frame_valid) {
+    return (unsigned int)(route_valid == 1u) &
+           (unsigned int)(frame_valid == 1u);
+}
+
+static PH_PROBE_VM_FLAT void ph_signal_context_apply_vm(
+        void *context, unsigned int accepted, unsigned int nonce) {
+    if (accepted != 1u) return;
     ucontext_t *uc = (ucontext_t *)context;
 #if defined(__aarch64__)
-    if (uc->uc_mcontext.regs[12] != state->nonce) return;
-    if (uc->uc_mcontext.regs[13] != (state->nonce ^ 0x5au)) return;
-    if (uc->uc_mcontext.pc != state->resume_pc) return;
-    if (!uc->uc_mcontext.sp || (uc->uc_mcontext.sp & 15u)) return;
-    uc->uc_mcontext.regs[12] = state->nonce ^ 0xa5c39e17u;
+    uc->uc_mcontext.regs[12] = nonce ^ 0xa5c39e17u;
 #elif defined(__arm__)
-    if (uc->uc_mcontext.arm_ip != state->nonce) return;
-    if (uc->uc_mcontext.arm_r4 != (state->nonce ^ 0x5au)) return;
-    if (uc->uc_mcontext.arm_pc != state->resume_pc) return;
-    if (!uc->uc_mcontext.arm_sp || (uc->uc_mcontext.arm_sp & 7u)) return;
-    uc->uc_mcontext.arm_ip = state->nonce ^ 0xa5c39e17u;
+    uc->uc_mcontext.arm_ip = nonce ^ 0xa5c39e17u;
 #elif defined(PH_PROBE_HOST_TEST) && defined(__x86_64__)
-    if ((uint64_t)uc->uc_mcontext.gregs[REG_R12] != state->nonce) return;
-    if ((uint64_t)uc->uc_mcontext.gregs[REG_R13] != (state->nonce ^ 0x5au)) return;
-    if ((uintptr_t)uc->uc_mcontext.gregs[REG_RIP] != state->resume_pc) return;
-    if (!uc->uc_mcontext.gregs[REG_RSP]) return;
-    uc->uc_mcontext.gregs[REG_R12] = state->nonce ^ 0xa5c39e17u;
+    uc->uc_mcontext.gregs[REG_R12] = nonce ^ 0xa5c39e17u;
 #endif
-    state->delivered = 1;
 }
 
 /* POSIX requires a native, address-taken signal entry point. It makes no
@@ -178,8 +190,42 @@ static PH_PROBE_VM_FLAT void ph_signal_delivery_vm(
 static PH_RUNTIME_NATIVE void ph_probe_signal_handler_native(
         int signo, siginfo_t *info, void *context) {
     ph_probe_signal_state_t *state = ph_probe_signal_state_native();
-    state->received_signo = signo;
-    ph_signal_delivery_vm(state, info, context);
+    int info_signo = 0, code = 0;
+    pid_t sender_pid = 0;
+    if (info) {
+        info_signo = info->si_signo;
+        code = info->si_code;
+        sender_pid = info->si_pid;
+    }
+    unsigned int route_valid = ph_signal_route_vm(
+            (unsigned int)state->armed, signo, state->signo,
+            info_signo, code, sender_pid, state->pid);
+    uintptr_t actual_nonce = 0, actual_marker = 0, actual_pc = 0, sp = 0;
+    if (context) {
+        ucontext_t *uc = (ucontext_t *)context;
+#if defined(__aarch64__)
+        actual_nonce = (uintptr_t)uc->uc_mcontext.regs[12];
+        actual_marker = (uintptr_t)uc->uc_mcontext.regs[13];
+        actual_pc = (uintptr_t)uc->uc_mcontext.pc;
+        sp = (uintptr_t)uc->uc_mcontext.sp;
+#elif defined(__arm__)
+        actual_nonce = (uintptr_t)uc->uc_mcontext.arm_ip;
+        actual_marker = (uintptr_t)uc->uc_mcontext.arm_r4;
+        actual_pc = (uintptr_t)uc->uc_mcontext.arm_pc;
+        sp = (uintptr_t)uc->uc_mcontext.arm_sp;
+#elif defined(PH_PROBE_HOST_TEST) && defined(__x86_64__)
+        actual_nonce = (uintptr_t)uc->uc_mcontext.gregs[REG_R12];
+        actual_marker = (uintptr_t)uc->uc_mcontext.gregs[REG_R13];
+        actual_pc = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
+        sp = (uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
+#endif
+    }
+    unsigned int frame_valid = ph_signal_frame_vm(
+            actual_nonce, actual_marker, actual_pc, state->resume_pc,
+            sp, state->nonce);
+    unsigned int accepted = ph_signal_delivery_vm(route_valid, frame_valid);
+    ph_signal_context_apply_vm(context, accepted, state->nonce);
+    state->delivered = (sig_atomic_t)accepted;
 }
 
 /* OS ABI plumbing, not enforcement. A default-disposition, unblocked signal
@@ -261,12 +307,13 @@ static PH_RUNTIME_NATIVE unsigned int ph_probe_atomic_capture_native(void) {
     return ph_probe_exclusive_native(&word);
 }
 
-static PH_PROBE_VM_FLAT int ph_signal_result_vm(ph_probe_signal_state_t *state) {
-    if (!state) return 0;
-    if (!state->setup_ok) return 0;
-    if (!state->delivered) return 0;
-    if (state->token != (state->nonce ^ 0xa5c39e17u)) return 0;
-    return 1;
+static PH_PROBE_VM_FLAT unsigned int ph_signal_result_vm(
+        unsigned int setup_ok, unsigned int delivered,
+        unsigned int token, unsigned int nonce) {
+    if (setup_ok != 1u) return 0u;
+    if (delivered != 1u) return 0u;
+    if (token != (nonce ^ 0xa5c39e17u)) return 0u;
+    return 1u;
 }
 
 #endif
