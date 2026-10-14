@@ -122,7 +122,8 @@ typedef struct {
     volatile sig_atomic_t armed;
     volatile sig_atomic_t delivered;
     int signo;
-    long pid;
+    volatile sig_atomic_t received_signo;
+    pid_t pid;
     unsigned int nonce;
     unsigned int token;
     unsigned int setup_ok;
@@ -137,66 +138,48 @@ static PH_RUNTIME_NATIVE ph_probe_signal_state_t *ph_probe_signal_state_native(v
     return &g_ph_probe_signal;
 }
 
-static PH_PROBE_VM int ph_probe_atomic_ok_vm(unsigned int status) {
-    return status == 1u;
-}
-
-static PH_PROBE_VM unsigned int ph_signal_mix_vm(unsigned int nonce) {
-    unsigned int token = ((nonce << 7) | (nonce >> 25)) ^ 0xa5c39e17u;
-    /* A no-op syscall must never accidentally produce the accepted token. */
-    return token == nonce ? token ^ 1u : token;
-}
-
-static PH_PROBE_VM int ph_signal_route_vm(
-        ph_probe_signal_state_t *state, int signo, int code, long pid) {
-    return state->armed && signo == state->signo &&
-           code == SI_TKILL && pid == state->pid;
-}
-
-static PH_PROBE_VM_FLAT int ph_signal_context_vm(
-        void *context, ph_probe_signal_state_t *state) {
-    if (!context) return 0;
+/* Flattened bytecode validates the complete kernel-delivered frame and edits
+ * the saved return register. The native entry only forwards the ABI values. */
+static PH_PROBE_VM_FLAT void ph_signal_delivery_vm(
+        ph_probe_signal_state_t *state, siginfo_t *info, void *context) {
+    if (!state) return;
+    if (!info) return;
+    if (!state->armed) return;
+    if (state->received_signo != state->signo) return;
+    if (info->si_signo != state->signo) return;
+    if (info->si_code != SI_TKILL) return;
+    if (info->si_pid != state->pid) return;
+    if (!context) return;
     ucontext_t *uc = (ucontext_t *)context;
 #if defined(__aarch64__)
-    if (uc->uc_mcontext.regs[12] != state->nonce ||
-        uc->uc_mcontext.regs[13] != (state->nonce ^ 0x5au) ||
-        uc->uc_mcontext.pc != state->resume_pc || !uc->uc_mcontext.sp ||
-        (uc->uc_mcontext.sp & 15u)) return 0;
-    uc->uc_mcontext.regs[12] = ph_signal_mix_vm(state->nonce);
+    if (uc->uc_mcontext.regs[12] != state->nonce) return;
+    if (uc->uc_mcontext.regs[13] != (state->nonce ^ 0x5au)) return;
+    if (uc->uc_mcontext.pc != state->resume_pc) return;
+    if (!uc->uc_mcontext.sp || (uc->uc_mcontext.sp & 15u)) return;
+    uc->uc_mcontext.regs[12] = state->nonce ^ 0xa5c39e17u;
 #elif defined(__arm__)
-    if (uc->uc_mcontext.arm_ip != state->nonce ||
-        uc->uc_mcontext.arm_r4 != (state->nonce ^ 0x5au) ||
-        uc->uc_mcontext.arm_pc != state->resume_pc || !uc->uc_mcontext.arm_sp ||
-        (uc->uc_mcontext.arm_sp & 7u)) return 0;
-    uc->uc_mcontext.arm_ip = ph_signal_mix_vm(state->nonce);
+    if (uc->uc_mcontext.arm_ip != state->nonce) return;
+    if (uc->uc_mcontext.arm_r4 != (state->nonce ^ 0x5au)) return;
+    if (uc->uc_mcontext.arm_pc != state->resume_pc) return;
+    if (!uc->uc_mcontext.arm_sp || (uc->uc_mcontext.arm_sp & 7u)) return;
+    uc->uc_mcontext.arm_ip = state->nonce ^ 0xa5c39e17u;
 #elif defined(PH_PROBE_HOST_TEST) && defined(__x86_64__)
-    if ((uint64_t)uc->uc_mcontext.gregs[REG_R12] != state->nonce ||
-        (uint64_t)uc->uc_mcontext.gregs[REG_R13] != (state->nonce ^ 0x5au) ||
-        (uintptr_t)uc->uc_mcontext.gregs[REG_RIP] != state->resume_pc ||
-        !uc->uc_mcontext.gregs[REG_RSP])
-        return 0;
-    uc->uc_mcontext.gregs[REG_R12] = ph_signal_mix_vm(state->nonce);
+    if ((uint64_t)uc->uc_mcontext.gregs[REG_R12] != state->nonce) return;
+    if ((uint64_t)uc->uc_mcontext.gregs[REG_R13] != (state->nonce ^ 0x5au)) return;
+    if ((uintptr_t)uc->uc_mcontext.gregs[REG_RIP] != state->resume_pc) return;
+    if (!uc->uc_mcontext.gregs[REG_RSP]) return;
+    uc->uc_mcontext.gregs[REG_R12] = state->nonce ^ 0xa5c39e17u;
 #endif
-    return 1;
-}
-
-/* All callback policy and context edits run as flattened VM bytecode. This
- * dispatcher has an ordinary call use; the signal ABI trampoline below is the
- * only function whose address is registered with sigaction. */
-static PH_PROBE_VM_FLAT void ph_signal_delivery_vm(
-        ph_probe_signal_state_t *state, int signo,
-        siginfo_t *info, void *context) {
-    if (!info || info->si_signo != signo) return;
-    if (!ph_signal_route_vm(state, signo, info->si_code, info->si_pid)) return;
-    if (ph_signal_context_vm(context, state)) state->delivered = 1;
+    state->delivered = 1;
 }
 
 /* POSIX requires a native, address-taken signal entry point. It makes no
  * detection decisions and only forwards the delivered frame to VM bytecode. */
 static PH_RUNTIME_NATIVE void ph_probe_signal_handler_native(
         int signo, siginfo_t *info, void *context) {
-    ph_signal_delivery_vm(ph_probe_signal_state_native(),
-                          signo, info, context);
+    ph_probe_signal_state_t *state = ph_probe_signal_state_native();
+    state->received_signo = signo;
+    ph_signal_delivery_vm(state, info, context);
 }
 
 /* OS ABI plumbing, not enforcement. A default-disposition, unblocked signal
@@ -278,9 +261,12 @@ static PH_RUNTIME_NATIVE unsigned int ph_probe_atomic_capture_native(void) {
     return ph_probe_exclusive_native(&word);
 }
 
-static PH_PROBE_VM int ph_signal_result_vm(ph_probe_signal_state_t *state) {
-    return state->setup_ok && state->delivered &&
-           state->token == ph_signal_mix_vm(state->nonce);
+static PH_PROBE_VM_FLAT int ph_signal_result_vm(ph_probe_signal_state_t *state) {
+    if (!state) return 0;
+    if (!state->setup_ok) return 0;
+    if (!state->delivered) return 0;
+    if (state->token != (state->nonce ^ 0xa5c39e17u)) return 0;
+    return 1;
 }
 
 #endif
