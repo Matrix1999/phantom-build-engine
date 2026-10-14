@@ -621,6 +621,11 @@ jobs:
               exit 1
             fi
           fi
+          if [ -f test/source_sheet_widget_test.dart ]; then
+            echo "Running actual Flutter quality-sheet interaction regressions"
+            flutter test --no-pub --reporter expanded test/source_sheet_widget_test.dart
+          fi
+
           flutter build apk --$BUILD_MODE --target-platform android-arm,android-arm64 --no-pub --obfuscate --split-debug-info=/tmp/debug-symbols
           echo "BUILD_OUTPUT=/tmp/project/build/app/outputs/flutter-apk/app-${BUILD_MODE}.apk" >> $GITHUB_ENV
 
@@ -882,6 +887,16 @@ jobs:
           echo "Final APK: $(du -sh $FINAL | cut -f1)"
 
       # ── 12. Upload artifact ───────────────────────────────────────────────────
+      - name: Upload quality-sheet test screenshot
+        if: always() && inputs.job_id != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-sheet-${{ inputs.job_id }}
+          path: /tmp/adiza-quality-sheet-regression.png
+          if-no-files-found: ignore
+          retention-days: 1
+
       - name: Upload APK artifact
         id: upload_apk
         continue-on-error: true
