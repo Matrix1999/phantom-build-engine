@@ -44,6 +44,9 @@
 // Includes
 // ?
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
 #include <jni.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -70,6 +73,7 @@
 #include "phantom_pstrings.inc"
 #include "phantom_integrity.inc"
 #include "phantom_runtime_checks.h"
+#include "phantom_native_probes.h"
 
 /*
  * Phantom is intentionally silent. Keep the call sites as compile-time
@@ -615,6 +619,22 @@ __attribute__((noreturn)) static void nuke_app(void) {
     volatile int *p = (volatile int *)0;
     *p = 0xDEAD;
     __builtin_unreachable();
+}
+
+/* Enforcement is virtualized; only the tiny ISA probes and POSIX signal ABI
+ * setup are native bridges. Fail closed on an unsupported kernel/service,
+ * but never change the payload cipher or its established gate ordering. */
+static PH_PROBE_VM void ph_probe_atomic_gate_vm(void) {
+    if (!ph_probe_atomic_ok_vm(ph_probe_atomic_capture_native()))
+        nuke_app();
+}
+
+static PH_PROBE_VM void ph_probe_signal_gate_vm(void) {
+    ph_probe_signal_state_t *state = ph_probe_signal_round_native();
+    if (!state) nuke_app();
+    int allowed = ph_signal_result_vm(state);
+    ph_probe_signal_finish_native();
+    if (!allowed) nuke_app();
 }
 
 
@@ -1492,6 +1512,7 @@ static __attribute__((noinline)) void detect_riru_zygisk(void) {
  */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_general_dumper_before_decrypt(void) {
+    ph_probe_atomic_gate_vm();
     PH_LOGI("pre-decrypt gate: begin");
     /*
      * Re-apply the process-memory seal on every decrypt boundary. If it
@@ -2881,6 +2902,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
     PH_LOGI("nativeLoadShards: load state entered");
     ph_require_watcher();
     detect_general_dumper_before_decrypt();
+    ph_probe_signal_gate_vm();
     PH_LOGI("nativeLoadShards: pre-decrypt gate passed");
     detect_java_xposed_bridge(env, j_parent_cl);
     PH_LOGI("nativeLoadShards: class-loader probe passed");
@@ -3042,6 +3064,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
              */
             detect_general_dumper_before_decrypt();
             ph_require_watcher();
+            ph_probe_signal_gate_vm();
 
             uint8_t *enc_buf = NULL, *aead_buf = NULL;
             uint8_t *inter_buf = NULL, *plain_buf = NULL;
