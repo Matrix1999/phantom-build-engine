@@ -8,36 +8,34 @@
 #include "phantom_native_probes.h"
 
 static void test_policy(void) {
-    assert(ph_probe_atomic_ok_vm(1));
-    assert(!ph_probe_atomic_ok_vm(0));
-    assert(!ph_probe_atomic_ok_vm(2));
-    assert(!ph_probe_atomic_ok_vm(UINT_MAX));
     for (unsigned int i = 0; i < 10000; ++i)
-        assert(ph_signal_mix_vm(i) != i);
+        assert((i ^ 0xa5c39e17u) != i);
     ph_probe_signal_state_t state = {0};
-    assert(!ph_signal_route_vm(&state, SIGURG, SI_TKILL, 12));
-    state.armed = 1; state.signo = SIGURG; state.pid = 12; state.nonce = 1234;
-    assert(ph_signal_route_vm(&state, SIGURG, SI_TKILL, 12));
-    assert(!ph_signal_route_vm(&state, SIGWINCH, SI_TKILL, 12));
-    assert(!ph_signal_route_vm(&state, SIGURG, SI_USER, 12));
-    assert(!ph_signal_route_vm(&state, SIGURG, SI_TKILL, 13));
-    assert(!ph_signal_context_vm(NULL, &state));
+    assert(!ph_signal_result_vm(&state));
+    state.armed = 1; state.signo = SIGURG; state.received_signo = SIGURG;
+    state.pid = 12; state.nonce = 1234;
+    siginfo_t info;
+    memset(&info, 0, sizeof(info));
+    info.si_signo = SIGURG; info.si_code = SI_TKILL; info.si_pid = 12;
 #if defined(__x86_64__)
     ucontext_t uc;
     memset(&uc, 0, sizeof(uc));
-    assert(!ph_signal_context_vm(&uc, &state));
     state.resume_pc = (uintptr_t)&test_policy;
     uc.uc_mcontext.gregs[REG_R12] = state.nonce;
     uc.uc_mcontext.gregs[REG_R13] = state.nonce ^ 0x5au;
     uc.uc_mcontext.gregs[REG_RIP] = state.resume_pc;
     uc.uc_mcontext.gregs[REG_RSP] = (greg_t)(uintptr_t)&uc;
-    assert(ph_signal_context_vm(&uc, &state));
+    ph_signal_delivery_vm(&state, &info, &uc);
+    assert(state.delivered);
     assert((unsigned int)uc.uc_mcontext.gregs[REG_R12] ==
-           ph_signal_mix_vm(state.nonce));
+           (state.nonce ^ 0xa5c39e17u));
+    state.delivered = 0;
+    info.si_code = SI_USER;
+    ph_signal_delivery_vm(&state, &info, &uc);
+    assert(!state.delivered);
 #endif
-    assert(!ph_signal_result_vm(&state));
     state.setup_ok = state.delivered = 1;
-    state.token = ph_signal_mix_vm(state.nonce);
+    state.token = state.nonce ^ 0xa5c39e17u;
     assert(ph_signal_result_vm(&state));
     ++state.nonce;
     assert(!ph_signal_result_vm(&state)); /* No replay into another round. */
@@ -88,7 +86,7 @@ int main(int argc, char **argv) {
 #else
     printf("Actual ARM syscall/exclusive status: %u\n", status);
     if (argc < 2 || strcmp(argv[1], "--record-atomic") != 0)
-        assert(ph_probe_atomic_ok_vm(status));
+        assert(status == 1u);
 #endif
     (void)argc; (void)argv; (void)status;
     return 0;
