@@ -623,10 +623,17 @@ jobs:
           fi
           if [ -f test/source_sheet_widget_test.dart ]; then
             echo "Running actual Flutter quality-sheet interaction regressions"
+            dart test/playback_sources_test.dart
+            dart test/download_validation_test.dart
+            javac -d /tmp/adiza-dash-test android/app/src/main/java/com/adiza/moviezbox/offline/DashManifest.java android/app/src/main/java/com/adiza/moviezbox/offline/DashTransfer.java test/DashDownloadCheck.java
+            java -cp /tmp/adiza-dash-test DashDownloadCheck
             flutter test --no-pub --reporter expanded test/source_sheet_widget_test.dart
           fi
 
           flutter build apk --$BUILD_MODE --target-platform android-arm,android-arm64 --no-pub --obfuscate --split-debug-info=/tmp/debug-symbols
+          if [ -f vendor/video_player_android/android/src/test/java/io/flutter/plugins/videoplayer/VideoPlayerQualityCapTest.java ]; then
+            (cd android && ./gradlew :video_player_android:testDebugUnitTest --no-daemon)
+          fi
           echo "BUILD_OUTPUT=/tmp/project/build/app/outputs/flutter-apk/app-${BUILD_MODE}.apk" >> $GITHUB_ENV
 
       # ── 10b. BUILD: React Native ─────────────────────────────────────────────
