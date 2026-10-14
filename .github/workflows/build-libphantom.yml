@@ -7,7 +7,9 @@ on:
 # Keep this Phantom build aligned with the established offline protection process.
 # Build the checked-in phantom_key.c/phantom_cipher.h source for BOTH Android
 # ABIs (arm64-v8a and armeabi-v7a). Preserve the exact VMP target baselines:
-# 55 targets on ARM64 and 72 targets on ARM32. Do not broaden obfuscation,
+# 56 targets on ARM64 and 72 targets on ARM32. The checked dumpability gate
+# now also lowers on ARM64; dual-ABI logs confirmed all prior targets remain.
+# Do not broaden obfuscation,
 # move protection onto JNI/ABI-sensitive functions, or change the offline
 # source/blob flow without a separate cross-ABI experiment and audit.
 # Always retain the Amice logs, object disassembly checks, stripped-artifact

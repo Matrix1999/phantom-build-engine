@@ -1,4 +1,5 @@
 check_rooted
+detect_general_dumper_before_decrypt
 nuke_app
 ph_load_advance
 ph_load_begin
