@@ -74,6 +74,7 @@ int main(void) {
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <pthread.h>
 #include "phantom_runtime_checks.h"
 #define PH_XCHACHA(var, token) char var[64] = #token
 #define PH_ZERO(var, size) memset(var, 0, size)
@@ -83,6 +84,16 @@ static jmp_buf killed;
 static int open_result = 100, interrupted = 0, empty_read = 0;
 static const char *status = "Name: app\nTRACER_PID 0\n";
 static int sleeps = 0, ack_after = -1;
+static int spawn_calls = 0, spawn_result = 0, early_ack = 0;
+static void *detect_frida_loop(void *arg) { return arg; }
+static int vm_pthread_create(pthread_t *t, const pthread_attr_t *attr,
+        void *(*fn)(void *), void *arg) {
+    (void)t; (void)attr; (void)arg;
+    assert(fn == detect_frida_loop);
+    ++spawn_calls;
+    if (early_ack) ph_watch_ack(&g_ph_watcher, 22);
+    return spawn_result;
+}
 static void nuke_app(void) { longjmp(killed, 1); }
 static long vm_gettid(void) { return 11; }
 static int vm_nanosleep(const struct timespec *t, struct timespec *remain) {
@@ -115,6 +126,8 @@ static ssize_t vm_read(int fd, void *buf, size_t bytes) {
                         '== 0 ? "TracerPid:" : "")')
     gate += "\n\n" + function(source, "detect_ptrace")
     gate += "\n\n" + function(source, "ph_require_watcher")
+    gate += "\n\n" + function(source, "ph_spawn_watcher_checked")
+    gate += "\n\n" + function(source, "vm_spawn_watcher")
     gate += r'''
 static void expected_reject(void (*fn)(void)) {
     if (setjmp(killed) == 0) { fn(); assert(!"expected rejection"); }
@@ -149,6 +162,23 @@ int main(void) {
     sleeps = 0; ack_after = -1;
     expected_reject(ph_require_watcher);
     assert(sleeps == 200);
+    assert(ph_watch_ready(&g_ph_watcher, 11) == -1);
+    memset(&g_ph_watcher, 0, sizeof(g_ph_watcher));
+    spawn_calls = 0; spawn_result = 0; early_ack = 0;
+    vm_spawn_watcher();
+    assert(spawn_calls == 1);
+    assert(ph_watch_ready(&g_ph_watcher, 11) == 0);
+    vm_spawn_watcher();
+    assert(spawn_calls == 1);
+    ph_watch_ack(&g_ph_watcher, 22);
+    assert(ph_watch_ready(&g_ph_watcher, 11) == 1);
+    memset(&g_ph_watcher, 0, sizeof(g_ph_watcher));
+    spawn_result = 1; early_ack = 0;
+    vm_spawn_watcher();
+    assert(ph_watch_ready(&g_ph_watcher, 11) == -1);
+    memset(&g_ph_watcher, 0, sizeof(g_ph_watcher));
+    spawn_result = 1; early_ack = 1;
+    vm_spawn_watcher();
     assert(ph_watch_ready(&g_ph_watcher, 11) == -1);
     puts("Actual essential gate/watcher wait bodies: PASS");
     return 0;

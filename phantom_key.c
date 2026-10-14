@@ -1808,6 +1808,16 @@ static __attribute__((noinline)) void check_rooted(void) {
     cr_buildprop();
 }
 
+/* Keep atomics, the pthread out-parameter and callback address in a native
+ * bridge. Keeping these live across multiple call_native operations can
+ * exhaust Amice's VM registers on both ABIs. */
+static PH_RUNTIME_NATIVE void ph_spawn_watcher_checked(void) {
+    if (!ph_watch_begin(&g_ph_watcher)) return;
+    pthread_t t;
+    if (vm_pthread_create(&t, NULL, detect_frida_loop, NULL) != 0)
+        ph_watch_fail(&g_ph_watcher);
+}
+
 /* vm_spawn_watcher — VMP-virtualized so the constructor body shows zero named
    PLT imports in ARM64 disassembly.
    Before this fix, detect_frida_init compiled to:
@@ -1820,10 +1830,7 @@ static __attribute__((noinline)) void check_rooted(void) {
    no bl pthread_create exists at any fixed binary offset an attacker can NOP. */
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void vm_spawn_watcher(void) {
-    if (!ph_watch_begin(&g_ph_watcher)) return;
-    pthread_t t;
-    if (vm_pthread_create(&t, NULL, detect_frida_loop, NULL) != 0)
-        ph_watch_fail(&g_ph_watcher);
+    ph_spawn_watcher_checked();
 }
 
 /*
