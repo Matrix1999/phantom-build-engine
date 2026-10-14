@@ -7,8 +7,8 @@ on:
 # Keep this Phantom build aligned with the established offline protection process.
 # Build the checked-in Phantom sources for BOTH Android ABIs (arm64-v8a and
 # armeabi-v7a). Preserve every existing VMP target (56 ARM64, 72 ARM32) and
-# explicitly account for the four new native-probe VM targets. Expected totals
-# are therefore 60 ARM64 and 76 ARM32; the audit compares exact target sets.
+# explicitly account for the seven new native-probe VM targets. Expected totals
+# are therefore 63 ARM64 and 79 ARM32; the audit compares exact target sets.
 # Do not broaden obfuscation,
 # move protection onto JNI/ABI-sensitive functions, or change the offline
 # source/blob flow without a separate cross-ABI experiment and audit.
@@ -433,15 +433,15 @@ jobs:
           set -e
           ADDED_TARGETS=(
             ph_probe_atomic_gate_vm
+            ph_signal_route_vm
+            ph_signal_frame_vm
             ph_signal_delivery_vm
+            ph_signal_context_apply_vm
             ph_signal_result_vm
             ph_probe_signal_gate_vm
           )
           FLATTEN_TARGETS=(
-            ph_probe_atomic_gate_vm
-            ph_signal_delivery_vm
-            ph_signal_result_vm
-            ph_probe_signal_gate_vm
+            ph_signal_context_apply_vm
           )
           PATTERN="ph_pstring_prepare_vm|ph_pstring_decrypt_vm|ph_pstring_auth_policy_vm|ph_pstring_scrub_key[0-3]_vm|ph_pstring_scrub_aad_vm|ph_pstring_unmask_vm|detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
@@ -502,7 +502,10 @@ jobs:
               ph_self_compare_word \
               ph_self_enforcement_policy \
               ph_probe_atomic_gate_vm \
+              ph_signal_route_vm \
+              ph_signal_frame_vm \
               ph_signal_delivery_vm \
+              ph_signal_context_apply_vm \
               ph_signal_result_vm \
               ph_probe_signal_gate_vm \
               nuke_app \
@@ -621,7 +624,7 @@ jobs:
             ACTUAL_COUNT=$(grep -c '[^[:space:]]' "$ACTUAL")
             [ "$ACTUAL_COUNT" -eq "$EXPECTED_COUNT" ] \
               || { echo "$ABI: VMP metadata count changed ($EXPECTED_COUNT -> $ACTUAL_COUNT)" >&2; exit 1; }
-            echo "✅ $ABI — exact baseline plus four probe targets ($ACTUAL_COUNT targets)"
+            echo "✅ $ABI — exact baseline plus seven probe targets ($ACTUAL_COUNT targets)"
           done
 
       - name: Strip + harden
