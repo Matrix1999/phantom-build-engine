@@ -384,13 +384,16 @@ jobs:
       - name: Patch package name and app name
         working-directory: /tmp/project
         run: |
-          # Patch AndroidManifest
-          find . -name "AndroidManifest.xml" | while read f; do
-            OLD=$(grep -oP 'package="\K[^"]+' "$f" | head -1)
-            if [ -n "$OLD" ] && [ "$OLD" != "$PACKAGE_NAME" ]; then
-              sed -i "s|package=\"${OLD}\"|package=\"${PACKAGE_NAME}\"|g" "$f"
-              echo "Patched $f: $OLD → $PACKAGE_NAME"
-            fi
+          # Patch application manifests only; preserve vendored library namespaces.
+          for APP_SRC in android/app/src app/src; do
+            if [ ! -d "$APP_SRC" ]; then continue; fi
+            find "$APP_SRC" -name "AndroidManifest.xml" | while IFS= read -r f; do
+              OLD=$(grep -oP 'package="\K[^"]+' "$f" | head -1 || true)
+              if [ -n "$OLD" ] && [ "$OLD" != "$PACKAGE_NAME" ]; then
+                sed -i "s|package=\"${OLD}\"|package=\"${PACKAGE_NAME}\"|g" "$f"
+                echo "Patched $f: $OLD → $PACKAGE_NAME"
+              fi
+            done
           done
           # Patch build.gradle applicationId
           find . -name "build.gradle" | while read f; do
