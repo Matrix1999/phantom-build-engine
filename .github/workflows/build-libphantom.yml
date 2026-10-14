@@ -5,10 +5,10 @@ on:
 
 # FUTURE-AGENT GUARDRAIL:
 # Keep this Phantom build aligned with the established offline protection process.
-# Build the checked-in phantom_key.c/phantom_cipher.h source for BOTH Android
-# ABIs (arm64-v8a and armeabi-v7a). Preserve the exact VMP target baselines:
-# 56 targets on ARM64 and 72 targets on ARM32. The checked dumpability gate
-# now also lowers on ARM64; dual-ABI logs confirmed all prior targets remain.
+# Build the checked-in Phantom sources for BOTH Android ABIs (arm64-v8a and
+# armeabi-v7a). Preserve every existing VMP target (56 ARM64, 72 ARM32) and
+# explicitly account for the eight new native-probe VM targets. Expected totals
+# are therefore 64 ARM64 and 80 ARM32; the audit compares exact target sets.
 # Do not broaden obfuscation,
 # move protection onto JNI/ABI-sensitive functions, or change the offline
 # source/blob flow without a separate cross-ABI experiment and audit.
@@ -43,6 +43,9 @@ jobs:
           cc -std=c11 -O2 -Wall -Wextra -Werror -pthread \
             phantom_runtime_checks_test.c -o /tmp/phantom_runtime_checks_test
           /tmp/phantom_runtime_checks_test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-function -pthread \
+            phantom_native_probes_test.c -o /tmp/phantom_native_probes_test
+          /tmp/phantom_native_probes_test
           python3 test_runtime_integration.py --out /tmp/phantom-host-integration
 
       - name: Test XChaCha20-Poly1305 implementation
@@ -428,6 +431,22 @@ jobs:
       - name: VMP section audit (arm64 + arm32)
         run: |
           set -e
+          ADDED_TARGETS=(
+            ph_probe_atomic_ok_vm
+            ph_probe_atomic_gate_vm
+            ph_signal_mix_vm
+            ph_signal_route_vm
+            ph_signal_context_vm
+            ph_probe_signal_handler_vm
+            ph_signal_result_vm
+            ph_probe_signal_gate_vm
+          )
+          FLATTEN_TARGETS=(
+            ph_probe_atomic_gate_vm
+            ph_signal_context_vm
+            ph_probe_signal_handler_vm
+            ph_probe_signal_gate_vm
+          )
           PATTERN="ph_pstring_prepare_vm|ph_pstring_decrypt_vm|ph_pstring_auth_policy_vm|ph_pstring_scrub_key[0-3]_vm|ph_pstring_scrub_aad_vm|ph_pstring_unmask_vm|detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
             if [ "$OBJ" = "phantom_arm64.o" ]; then
@@ -437,6 +456,7 @@ jobs:
             fi
             SECTION_REPORT="amice-vmp-${ABI}-report.txt"
             SECTION_FILE="/tmp/${ABI}_phantom_sections.txt"
+            AMICE_LOG="/tmp/phantom_${ABI}_amice.log"
 
             echo "======================================================"
             echo "$OBJ - VMP protection audit"
@@ -485,6 +505,14 @@ jobs:
               ph_self_finalize_digest \
               ph_self_compare_word \
               ph_self_enforcement_policy \
+              ph_probe_atomic_ok_vm \
+              ph_probe_atomic_gate_vm \
+              ph_signal_mix_vm \
+              ph_signal_route_vm \
+              ph_signal_context_vm \
+              ph_probe_signal_handler_vm \
+              ph_signal_result_vm \
+              ph_probe_signal_gate_vm \
               nuke_app \
               sha256_block \
               vm_dl_iterate_phdr \
@@ -497,6 +525,28 @@ jobs:
                 echo "❌ Missing AMICE marker for ${target}" >&2
                 exit 1
               fi
+            done
+
+            echo ""
+            echo "--- Native-probe VM bytecode + flatten targets ($ABI) ---"
+            for target in "${ADDED_TARGETS[@]}"; do
+              if grep -q "amice\.vm\.bytecode\.${target}" "$SECTION_FILE" && \
+                  grep -q "amice\.vm\.meta\.${target}" "$SECTION_FILE"; then
+                echo "✅ ${target} has explicit Amice VM bytecode + metadata"
+              else
+                echo "❌ ${target} is not an explicit Amice VM function" >&2
+                exit 1
+              fi
+            done
+            for target in "${FLATTEN_TARGETS[@]}"; do
+              if ! grep -Eq "\(VmFlatten\) fun: \"${target}\" opcodes: .*JmpIf" \
+                  "$AMICE_LOG" || \
+                  grep -Eq "vm_flatten.*function \"${target}\" verify failed" \
+                  "$AMICE_LOG"; then
+                echo "❌ ${target} lacks verified flattened VM control flow" >&2
+                exit 1
+              fi
+              echo "✅ ${target} flattened control flow verified"
             done
 
             echo ""
@@ -565,17 +615,21 @@ jobs:
               OBJ=phantom_arm32.o
             fi
             ACTUAL="/tmp/${ABI}_vmp_metadata.txt"
+            EXPECTED="/tmp/${ABI}_vmp_expected.txt"
             grep -oE 'amice\.vm\.meta\.[[:alnum:]_]+' \
               "/tmp/${ABI}_phantom_sections.txt" \
               | sed 's/^amice\.vm\.meta\.//' \
               | grep -v '^module' \
               | sort -u > "$ACTUAL"
-            diff -u <(sort -u "phantom-vmp-baseline-${ABI}.txt") "$ACTUAL"
-            EXPECTED=$(grep -c '[^[:space:]]' "phantom-vmp-baseline-${ABI}.txt")
+            cat "phantom-vmp-baseline-${ABI}.txt" > "$EXPECTED"
+            printf '%s\n' "${ADDED_TARGETS[@]}" >> "$EXPECTED"
+            sort -u -o "$EXPECTED" "$EXPECTED"
+            diff -u "$EXPECTED" "$ACTUAL"
+            EXPECTED_COUNT=$(grep -c '[^[:space:]]' "$EXPECTED")
             ACTUAL_COUNT=$(grep -c '[^[:space:]]' "$ACTUAL")
-            [ "$ACTUAL_COUNT" -eq "$EXPECTED" ] \
-              || { echo "$ABI: VMP metadata count changed ($EXPECTED -> $ACTUAL_COUNT)" >&2; exit 1; }
-            echo "✅ $ABI — exact VMP metadata baseline preserved ($ACTUAL_COUNT targets)"
+            [ "$ACTUAL_COUNT" -eq "$EXPECTED_COUNT" ] \
+              || { echo "$ABI: VMP metadata count changed ($EXPECTED_COUNT -> $ACTUAL_COUNT)" >&2; exit 1; }
+            echo "✅ $ABI — exact baseline plus eight probe targets ($ACTUAL_COUNT targets)"
           done
 
       - name: Strip + harden
