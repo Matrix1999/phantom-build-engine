@@ -17,7 +17,8 @@
 //
 // LAYER 1  nativeLoadShards()
 // Decrypts and loads DEX buffers inside one JNI call so no plaintext DEX byte[]
-// is returned to Java code. Successful native mappings remain live for ART.
+// is returned to Java code. Read-only native mappings remain live for ART's
+// class-loader lifetime and are wiped during genuine library teardown.
 //
 // LAYER 2  detect_frida_loop()  [1 s cadence, background thread]
 // Frida/ptrace heuristics, TracerPid scans, self-observable proc-fd dump
@@ -74,6 +75,7 @@
 #include "phantom_integrity.inc"
 #include "phantom_runtime_checks.h"
 #include "phantom_native_probes.h"
+#include "phantom_os_consistency.h"
 
 /*
  * Phantom is intentionally silent. Keep the call sites as compile-time
@@ -83,6 +85,30 @@
 #define PH_LOGI(...) ((void)0)
 #define PH_LOGE(...) ((void)0)
 #define PH_NUKE(...) nuke_app()
+
+/*
+ * This runs only on the JNI entry thread. GetEnv must return that same
+ * thread-local JNIEnv; this does not attach/detach threads or retain JNI refs.
+ */
+static PH_RUNTIME_NATIVE ph_os_probe_result_t
+ph_probe_jni_environment_native(JNIEnv *env) {
+    if (!env) return PH_OS_PROBE_INCONSISTENT;
+
+    jint version = (*env)->GetVersion(env);
+    if (version < JNI_VERSION_1_6) return PH_OS_PROBE_UNSUPPORTED;
+
+    JavaVM *vm = NULL;
+    if ((*env)->GetJavaVM(env, &vm) != JNI_OK || !vm)
+        return PH_OS_PROBE_UNSUPPORTED;
+
+    void *current_env = NULL;
+    jint status = (*vm)->GetEnv(vm, &current_env, JNI_VERSION_1_6);
+    if (status == JNI_EVERSION) return PH_OS_PROBE_UNSUPPORTED;
+    if (status != JNI_OK || !current_env)
+        return PH_OS_PROBE_INCONSISTENT;
+    return current_env == (void *)env
+            ? PH_OS_PROBE_OK : PH_OS_PROBE_INCONSISTENT;
+}
 
 // ?
 // Anti-dump / Anti-Frida -- constants & types
@@ -129,6 +155,11 @@ static __attribute__((noinline)) void ph_secure_zero(void *ptr, size_t len) {
     memset(ptr, 0, len);
     __asm__ volatile("" : : "r"(ptr) : "memory");
 }
+
+#define PHANTOM_INFLATE_SECURE_ZERO ph_secure_zero
+#include "phantom_inflate.h"
+#undef PHANTOM_INFLATE_SECURE_ZERO
+
 // ?
 // Inline string helpers (avoid libc hooks)
 // ?
@@ -937,7 +968,6 @@ static __attribute__((noinline)) void detect_frida_namedpipe(void) {
 
 /* Defined after the SHA-256 implementation. */
 static __attribute__((noinline)) void detect_phantom_self_integrity(void);
-static __attribute__((noinline)) void ph_scrub_art_dex_markers(void);
 
 /*
  * Self-observable procfs dump artifacts.
@@ -1185,8 +1215,13 @@ typedef struct {
     ph_exec_segment_t seg[PH_MAX_EXEC_SEGMENTS];
     unsigned int count;
     unsigned int skipped;
+    uintptr_t page_mask;
     int invalid;
 } ph_linker_map_ctx_t;
+
+static PH_RUNTIME_NATIVE long ph_runtime_page_size(void) {
+    return sysconf(_SC_PAGESIZE);
+}
 
 __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) int ph_collect_exec_segments_cb(
@@ -1244,7 +1279,11 @@ static __attribute__((noinline)) int ph_collect_exec_segments_cb(
             return 1;
         }
 
-        uintptr_t page_mask = (uintptr_t)4095;
+        uintptr_t page_mask = ctx->page_mask;
+        if (page_mask == 0 || raw_end > UINTPTR_MAX - page_mask) {
+            ctx->skipped++;
+            continue;
+        }
         ph_exec_segment_t *out = &ctx->seg[ctx->count++];
         out->start = raw_start & ~page_mask;
         out->end = (raw_end + page_mask) & ~page_mask;
@@ -1298,6 +1337,13 @@ __attribute__((annotate("+vm_virtualize")))
 static __attribute__((noinline)) void detect_linker_maps_consistency(void) {
     ph_linker_map_ctx_t ctx;
     my_memset(&ctx, 0, sizeof(ctx));
+    long page_bytes = ph_runtime_page_size();
+    uintptr_t page_size = page_bytes > 0 ? (uintptr_t)page_bytes : 0;
+    if (page_size == 0 || (page_size & (page_size - 1u)) != 0u) {
+        PH_NUKE("invalid page size during linker/map check");
+        nuke_app();
+    }
+    ctx.page_mask = page_size - 1u;
     vm_dl_iterate_phdr(ph_collect_exec_segments_cb, &ctx);
     if (ctx.invalid) {
         PH_NUKE("invalid linker ELF metadata");
@@ -1704,15 +1750,6 @@ static __attribute__((noinline)) void *detect_frida_loop(void *args) {
     while (1) {
         unsigned int checked_round = ph_watch_check_round(&g_ph_watcher);
         detect_general_dumper_before_decrypt();
-        /*
-         * ART can create additional anonymous DEX views after the initial
-         * class-loader construction. Re-run only the marker scrub here; the
-         * existing gate above already performs the integrity and tracing
-         * checks. Successful mappings remain live for lazy ART resolution.
-         */
-        if (g_ph_load_state == PH_LOAD_COMPLETE) {
-            ph_scrub_art_dex_markers();
-        }
         if (g_block_rooted) {
             cr_selinux();                         // re-check enforcement at runtime
             detect_root();                        // su binaries + Magisk mounts
@@ -2592,74 +2629,12 @@ static void arx_xor(arx_ctx_t *s, uint8_t *buf, size_t len) {
 // zlib inflate helper
 // ?
 
-static uint8_t *inflate_alloc(const uint8_t *in, size_t in_len, size_t *out_len) {
-    z_stream zs;
-    uint8_t *buf, *tmp;
-    size_t cap, used;
-    int ret;
-    if (!in || !out_len) {
-        return NULL;
-    }
-    *out_len = 0;
-    memset(&zs, 0, sizeof(zs));
-    ret = inflateInit(&zs);
-    if (ret != Z_OK) {
-        return NULL;
-    }
-    if (in_len > (SIZE_MAX - 4096u) / 4u) {
-        inflateEnd(&zs);
-        return NULL;
-    }
-    cap = in_len * 4 + 4096;
-    buf = (uint8_t *)malloc(cap);
-    if (!buf) {
-        inflateEnd(&zs);
-        return NULL;
-    }
-    zs.next_in   = (Bytef *)in;
-    zs.avail_in  = (uInt)in_len;
-    zs.next_out  = (Bytef *)buf;
-    zs.avail_out = (uInt)cap;
-    for (;;) {
-        ret = inflate(&zs, Z_FINISH);
-        if (ret == Z_STREAM_END) break;
-        if (ret != Z_OK && ret != Z_BUF_ERROR) {
-            ph_secure_zero(buf, cap);
-            free(buf);
-            inflateEnd(&zs);
-            return NULL;
-        }
-        used = cap - zs.avail_out;
-        if (cap > SIZE_MAX / 2u) {
-            ph_secure_zero(buf, used);
-            free(buf);
-            inflateEnd(&zs);
-            return NULL;
-        }
-        cap *= 2;
-        tmp  = (uint8_t *)realloc(buf, cap);
-        if (!tmp) {
-            ph_secure_zero(buf, used);
-            free(buf);
-            inflateEnd(&zs);
-            return NULL;
-        }
-        buf = tmp;
-        zs.next_out  = (Bytef *)(buf + used);
-        zs.avail_out = (uInt)(cap - used);
-    }
-    *out_len = cap - zs.avail_out;
-    inflateEnd(&zs);
-    return buf;
-}
-
 /*
  * Direct DEX backing store.
  *
- * ART may lazily resolve classes from InMemoryDexClassLoader after its
- * constructor returns, so successful direct mappings must remain valid for the
- * class-loader lifetime. They are read-only and MADV_DONTDUMP; failed loads and
- * library teardown securely wipe and unmap them.
+ * Successful read-only input mappings remain live for the class-loader
+ * lifetime because later/lazy ART behavior must not be assumed. All mappings
+ * are tracked for safe cleanup at genuine teardown; failed unmaps are retained.
  */
 #define PH_MAX_DIRECT_DEX_MAPS 64
 typedef struct {
@@ -2672,52 +2647,19 @@ static ph_direct_dex_map_t g_direct_dex_maps[PH_MAX_DIRECT_DEX_MAPS];
 static volatile unsigned int g_direct_dex_count = 0;
 
 __attribute__((annotate("+vm_virtualize,-vm_flatten")))
-static __attribute__((noinline)) int ph_stage_policy_vm(size_t data_len, size_t map_len) {
+static __attribute__((noinline)) int ph_stage_policy_vm(
+        size_t data_len, size_t map_len, size_t page_size) {
     if (data_len < 112) return 0;
     if (data_len > MAX_SZ) return 0;
-    size_t padded_len = data_len + 4095u;
-    if (padded_len < data_len) return 0;
-    padded_len &= ~(size_t)4095u;
+    size_t padded_len = 0;
+    if (!ph_round_up_to_page(data_len, page_size, &padded_len)) return 0;
     if (map_len != padded_len) return 0;
     return 1;
 }
 
-static __attribute__((noinline)) void ph_wipe_unmap_direct(
-        void *base, size_t map_len) {
-    if (!base || base == MAP_FAILED || map_len == 0) return;
-    if (vm_mprotect(base, map_len, PROT_READ | PROT_WRITE) == 0) {
-        ph_secure_zero(base, map_len);
-        vm_madvise(base, map_len, MADV_DONTNEED);
-    }
-    vm_munmap(base, map_len);
-}
-
-static __attribute__((noinline)) void ph_release_direct_dex_maps(void) {
-    unsigned int count = g_direct_dex_count;
-    if (count > PH_MAX_DIRECT_DEX_MAPS) count = PH_MAX_DIRECT_DEX_MAPS;
-    for (unsigned int i = 0; i < count; ++i) {
-        ph_wipe_unmap_direct(g_direct_dex_maps[i].base,
-                             g_direct_dex_maps[i].map_len);
-        g_direct_dex_maps[i].base = NULL;
-        g_direct_dex_maps[i].map_len = 0;
-        g_direct_dex_maps[i].data_len = 0;
-    }
-    g_direct_dex_count = 0;
-}
-
-__attribute__((destructor))
-static void ph_direct_dex_destructor(void) {
-    ph_release_direct_dex_maps();
-}
-
 /*
- * Remove the standard DEX discovery markers from readable anonymous mappings
- * after ART has accepted the buffers. This is intentionally a marker scrub,
- * not a content wipe: ART may lazily resolve classes from the live mappings.
- *
- * The first pass runs synchronously after class-loader construction. The
- * existing watcher calls this bounded scan again after load, covering later
- * ART mappings without adding another thread or changing the loader lifetime.
+ * Preserve the selectively obfuscated maps parser, but use it only to verify
+ * a range already owned and tracked by Phantom before cleanup.
  */
 __attribute__((annotate(
     "+mba,+indirect_branch,+alias_access,"
@@ -2787,12 +2729,19 @@ static __attribute__((noinline)) int ph_parse_art_map(
     return 1;
 }
 
-static __attribute__((noinline)) void ph_scrub_art_dex_markers(void) {
+static PH_RUNTIME_NATIVE int ph_owned_map_is_nonexec_anon(
+        void *base, size_t map_len) {
+    uintptr_t target_start = (uintptr_t)base;
+    if (!base || base == MAP_FAILED || map_len == 0 ||
+        target_start > UINTPTR_MAX - map_len) return 0;
+    uintptr_t target_end = target_start + map_len;
+
     PH_XCHACHA(_maps, PROC_MAPS);
     int fd = vm_openat(AT_FDCWD, _maps, O_RDONLY | O_CLOEXEC, 0);
     PH_ZERO(_maps, SP_BUF_SZ);
-    if (fd < 0) return;
+    if (fd < 0) return 0;
 
+    int matched = 0;
     char line[MAX_LINE];
     while (vm_read_one_line(fd, line, MAX_LINE) > 0) {
         uintptr_t start = 0, end = 0;
@@ -2800,25 +2749,64 @@ static __attribute__((noinline)) void ph_scrub_art_dex_markers(void) {
         unsigned long inode = 0;
         if (!ph_parse_art_map(line, &start, &end, &readable,
                               &writable, &executable, &inode)) continue;
-        if (!readable || end <= start || (end - start) < 112 || inode != 0) continue;
-        if (my_strstr(line, "[stack") || my_strstr(line, "[heap") ||
-            my_strstr(line, "[vvar") || my_strstr(line, "[vdso")) continue;
-
-        uint8_t *ptr = (uint8_t *)start;
-        if (ptr[0] != 0x64 || ptr[1] != 0x65 ||
-            ptr[2] != 0x78 || ptr[3] != 0x0A) continue;
-
-        bool was_read_only = !writable;
-        int original_prot = PROT_READ | (executable ? PROT_EXEC : 0);
-        if (was_read_only &&
-            vm_mprotect(ptr, 4096, original_prot | PROT_WRITE) != 0) {
-            continue;
+        if (start <= target_start && end >= target_end) {
+            matched = !executable && inode == 0;
+            break;
         }
-        my_memset(ptr, 0, 8);
-        if ((end - start) > 44) my_memset(ptr + 40, 0, 4);
-        if (was_read_only) vm_mprotect(ptr, 4096, original_prot);
     }
     vm_close(fd);
+    return matched;
+}
+
+static __attribute__((noinline)) int ph_wipe_unmap_direct(
+        void *base, size_t map_len) {
+    if (!base || base == MAP_FAILED || map_len == 0) return 1;
+    if (!ph_owned_map_is_nonexec_anon(base, map_len)) {
+        PH_LOGE("tracked DEX map range/permissions could not be verified");
+        return 0;
+    }
+    if (vm_mprotect(base, map_len, PROT_READ | PROT_WRITE) == 0) {
+        ph_secure_zero(base, map_len);
+        vm_madvise(base, map_len, MADV_DONTNEED);
+    } else {
+        PH_LOGE("owned DEX map could not be made writable before cleanup");
+    }
+    if (vm_munmap(base, map_len) == 0) return 1;
+    PH_LOGE("owned DEX map unmap failed; retaining it for retry");
+    return 0;
+}
+
+static __attribute__((noinline)) int ph_remember_direct_dex_map(
+        const ph_direct_dex_map_t *map) {
+    unsigned int count = g_direct_dex_count;
+    if (!map || !map->base || count >= PH_MAX_DIRECT_DEX_MAPS) return 0;
+    g_direct_dex_maps[count] = *map;
+    g_direct_dex_count = count + 1u;
+    return 1;
+}
+
+static __attribute__((noinline)) void ph_release_direct_dex_maps(void) {
+    unsigned int count = g_direct_dex_count;
+    if (count > PH_MAX_DIRECT_DEX_MAPS) count = PH_MAX_DIRECT_DEX_MAPS;
+    unsigned int retained = 0;
+    for (unsigned int i = 0; i < count; ++i) {
+        if (!ph_wipe_unmap_direct(g_direct_dex_maps[i].base,
+                                  g_direct_dex_maps[i].map_len)) {
+            if (retained != i) g_direct_dex_maps[retained] = g_direct_dex_maps[i];
+            ++retained;
+        }
+    }
+    for (unsigned int i = retained; i < count; ++i) {
+        g_direct_dex_maps[i].base = NULL;
+        g_direct_dex_maps[i].map_len = 0;
+        g_direct_dex_maps[i].data_len = 0;
+    }
+    g_direct_dex_count = retained;
+}
+
+__attribute__((destructor))
+static void ph_direct_dex_destructor(void) {
+    ph_release_direct_dex_maps();
 }
 
 /*
@@ -2915,6 +2903,21 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         return NULL;
     }
     PH_LOGI("nativeLoadShards: load state entered");
+
+    ph_os_probe_result_t jni_probe =
+            ph_probe_jni_environment_native(env);
+    ph_os_probe_result_t memory_probe =
+            ph_probe_memory_semantics_native();
+    ph_os_probe_result_t eventfd_probe =
+            ph_probe_eventfd_semantics_native();
+    if (jni_probe == PH_OS_PROBE_INCONSISTENT ||
+        memory_probe == PH_OS_PROBE_INCONSISTENT ||
+        eventfd_probe == PH_OS_PROBE_INCONSISTENT) {
+        ph_load_fail();
+        PH_NUKE("native platform semantics inconsistent");
+        return NULL;
+    }
+
     ph_require_watcher();
     detect_general_dumper_before_decrypt();
     ph_probe_signal_gate_native();
@@ -2926,11 +2929,12 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
     uint8_t  salt[16]     = {0};
     uint8_t  pkg_hash[32] = {0};
     uint8_t  key[16]      = {0};
+    size_t   runtime_page_size = 0;
 
     ph_direct_dex_map_t pending_maps[PH_MAX_DIRECT_DEX_MAPS];
     int        n_pending_maps = 0;
     int        i;
-    for (i = 0; i < 64; i++) {
+    for (i = 0; i < PH_MAX_DIRECT_DEX_MAPS; i++) {
         pending_maps[i].base = NULL;
         pending_maps[i].map_len = 0;
         pending_maps[i].data_len = 0;
@@ -3009,6 +3013,17 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             PH_LOGE("nativeLoadShards: invalid shard count=%d", sc);
             goto cleanup;
         }
+        long page_bytes = sysconf(_SC_PAGESIZE);
+        if (page_bytes <= 0) {
+            PH_LOGE("nativeLoadShards: system page size unavailable");
+            goto cleanup;
+        }
+        runtime_page_size = (size_t)page_bytes;
+        if ((runtime_page_size & (runtime_page_size - 1u)) != 0u) {
+            PH_LOGE("nativeLoadShards: invalid system page size=%zu",
+                    runtime_page_size);
+            goto cleanup;
+        }
         PH_LOGI("nativeLoadShards: shard count=%d", sc);
         if (!ph_load_advance(PH_LOAD_KEY_READY, PH_LOAD_SHARDS_LOADING)) {
             PH_LOGE("nativeLoadShards: invalid state before shards");
@@ -3082,7 +3097,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             ph_probe_signal_gate_native();
 
             uint8_t *enc_buf = NULL, *aead_buf = NULL;
-            uint8_t *inter_buf = NULL, *plain_buf = NULL;
+            uint8_t *inter_buf = NULL;
             size_t   aead_len = 0, inter_len = 0, plain_len = 0;
 
             jbyteArray j_enc = (jbyteArray)(*env)->GetObjectArrayElement(env, j_enc_shards, i);
@@ -3153,8 +3168,19 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             free(enc_buf);
             PH_LOGI("nativeLoadShards: shard %d authenticated decrypt passed", i);
 
-            /* Outer inflate */
-            inter_buf = inflate_alloc(aead_buf, aead_len, &inter_len);
+            /*
+             * Outer zlib expands to the inner zlib stream. Bound it by the
+             * maximum size of a zlib-wrapped DEX, before any allocation.
+             */
+            uLong outer_limit = compressBound((uLong)MAX_SZ);
+            if (outer_limit == 0 || outer_limit > (uLong)UINT_MAX) {
+                ph_secure_zero(aead_buf, aead_len);
+                free(aead_buf);
+                PH_LOGE("nativeLoadShards: invalid outer inflate bound");
+                goto cleanup;
+            }
+            inter_buf = ph_inflate_alloc_bounded(
+                    aead_buf, aead_len, (size_t)outer_limit, &inter_len);
             ph_secure_zero(aead_buf, aead_len);
             free(aead_buf);
             if (!inter_buf) {
@@ -3171,49 +3197,57 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
               ph_secure_zero(shard_key, sizeof(shard_key));
               memset(&arx, 0, sizeof(arx)); }
 
-            /* Inner inflate */
-            plain_buf = inflate_alloc(inter_buf, inter_len, &plain_len);
-            ph_secure_zero(inter_buf, inter_len); free(inter_buf);
-            if (!plain_buf) {
+            /* Measure the bounded inner stream before reserving its final map. */
+            if (!ph_inflate_measure_bounded(
+                    inter_buf, inter_len, (size_t)MAX_SZ, &plain_len)) {
+                ph_secure_zero(inter_buf, inter_len);
+                free(inter_buf);
                 PH_LOGE("nativeLoadShards: shard %d inner inflate failed", i);
                 goto cleanup;
             }
 
-            if (plain_len > (size_t)INT32_MAX) {
-                PH_LOGE("nativeLoadShards: shard %d plaintext too large=%zu", i, plain_len);
-                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+            size_t map_len = 0;
+            if (!ph_round_up_to_page(plain_len, runtime_page_size, &map_len) ||
+                !ph_stage_policy_vm(plain_len, map_len, runtime_page_size)) {
+                ph_secure_zero(inter_buf, inter_len);
+                free(inter_buf);
+                PH_LOGE("nativeLoadShards: shard %d stage policy rejected data=%zu",
+                        i, plain_len);
                 goto cleanup;
             }
             PH_LOGI("nativeLoadShards: shard %d plaintext length=%zu", i, plain_len);
 
-            /*
-             * Plaintext moves from the temporary inflate
-             * allocation into a private native mapping, not a Java byte[].
-             */
-            size_t map_len = (plain_len + 4095u) & ~(size_t)4095u;
-            if (!ph_stage_policy_vm(plain_len, map_len)) {
-                PH_LOGE("nativeLoadShards: shard %d stage policy rejected data=%zu map=%zu",
-                        i, plain_len, map_len);
-                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
-                goto cleanup;
-            }
+            /* Inflate final plaintext straight into its bounded native map. */
             void *dex_map = vm_mmap_private_rw(map_len);
             if (dex_map == MAP_FAILED) {
                 PH_LOGE("nativeLoadShards: shard %d native mapping failed length=%zu",
                         i, map_len);
-                ph_secure_zero(plain_buf, plain_len); free(plain_buf);
+                ph_secure_zero(inter_buf, inter_len);
+                free(inter_buf);
                 goto cleanup;
             }
-            memcpy(dex_map, plain_buf, plain_len);
-            ph_secure_zero(plain_buf, plain_len); free(plain_buf);
-            plain_buf = NULL;
+            pending_maps[n_pending_maps].base = dex_map;
+            pending_maps[n_pending_maps].map_len = map_len;
+            pending_maps[n_pending_maps].data_len = plain_len;
+            ++n_pending_maps;
+
+            size_t written_len = 0;
+            int inflate_ok = ph_inflate_into_exact(
+                    inter_buf, inter_len, (uint8_t *)dex_map,
+                    plain_len, &written_len);
+            ph_secure_zero(inter_buf, inter_len);
+            free(inter_buf);
+            inter_buf = NULL;
+            if (!inflate_ok || written_len != plain_len) {
+                PH_LOGE("nativeLoadShards: shard %d direct inflate failed", i);
+                goto cleanup;
+            }
             vm_madvise(dex_map, map_len, MADV_DONTDUMP);
 #ifdef MADV_DONTFORK
             vm_madvise(dex_map, map_len, MADV_DONTFORK);
 #endif
             if (vm_mprotect(dex_map, map_len, PROT_READ) != 0) {
                 PH_LOGE("nativeLoadShards: shard %d read-only transition failed", i);
-                ph_wipe_unmap_direct(dex_map, map_len);
                 goto cleanup;
             }
             PH_LOGI("nativeLoadShards: shard %d native mapping ready length=%zu", i, map_len);
@@ -3223,13 +3257,8 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             if (!bb || (*env)->ExceptionCheck(env)) {
                 if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
                 PH_LOGE("nativeLoadShards: shard %d direct buffer creation failed", i);
-                ph_wipe_unmap_direct(dex_map, map_len);
                 goto cleanup;
             }
-            pending_maps[n_pending_maps].base = dex_map;
-            pending_maps[n_pending_maps].map_len = map_len;
-            pending_maps[n_pending_maps].data_len = plain_len;
-            ++n_pending_maps;
             (*env)->SetObjectArrayElement(env, bufs, i, bb);
             if ((*env)->ExceptionCheck(env)) {
                 (*env)->ExceptionClear(env);
@@ -3241,15 +3270,18 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             PH_LOGI("nativeLoadShards: shard %d ready", i);
         }
 
+        if (n_pending_maps != sc ||
+            n_pending_maps > PH_MAX_DIRECT_DEX_MAPS) {
+            PH_LOGE("nativeLoadShards: incomplete direct map staging");
+            goto cleanup;
+        }
         if (!ph_load_advance(PH_LOAD_SHARDS_LOADING, PH_LOAD_CLASSLOADER)) {
             PH_LOGE("nativeLoadShards: invalid state before class-loader construction");
             goto cleanup;
         }
         PH_LOGI("nativeLoadShards: constructing InMemoryDexClassLoader");
 
-        /* ── 6. new InMemoryDexClassLoader(bufs, parent)
-                  ART parses + mmaps every DEX synchronously inside this call.
-                  Hooking this return gets only a ClassLoader — not a byte[]. ── */
+        /* ── 6. Construct loader; ART copies direct-buffer bytes synchronously. ── */
         result_cl = (*env)->NewObject(env, imdcl, ctor, bufs, j_parent_cl);
         if ((*env)->ExceptionCheck(env)) {
             (*env)->ExceptionClear(env);
@@ -3263,11 +3295,12 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
         PH_LOGI("nativeLoadShards: class-loader constructed");
 
         /*
-         * ART has parsed the buffers synchronously inside the constructor.
-         * Scrub discovery markers while keeping the backing mappings alive for
-         * lazy class resolution. The watcher repeats this after load.
+         * Do not mutate ART/unknown mappings or assume that constructor return
+         * ends every runtime's need for the input buffers. Preserve the
+         * tracked read-only Phantom mappings for the class-loader lifetime.
          */
-        ph_scrub_art_dex_markers();
+        ph_probe_signal_gate_native();
+        detect_general_dumper_before_decrypt();
 
         if (!ph_load_advance(PH_LOAD_CLASSLOADER, PH_LOAD_COMPLETE)) {
             if (result_cl) (*env)->DeleteLocalRef(env, result_cl);
@@ -3276,10 +3309,6 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             goto cleanup;
         }
 
-        /*
-         * Commit successful backing mappings only after ART accepted every
-         * shard. The one-shot loader state prevents concurrent commits.
-         */
         if (g_direct_dex_count != 0 ||
             n_pending_maps != sc ||
             n_pending_maps > PH_MAX_DIRECT_DEX_MAPS) {
@@ -3296,7 +3325,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
             pending_maps[i].data_len = 0;
         }
         g_direct_dex_count = (unsigned int)n_pending_maps;
-        PH_LOGI("nativeLoadShards: committed %d live native mappings", n_pending_maps);
+
     }
 
 cleanup:
@@ -3305,8 +3334,12 @@ cleanup:
     }
     for (i = 0; i < n_pending_maps; ++i) {
         if (pending_maps[i].base) {
-            ph_wipe_unmap_direct(pending_maps[i].base,
-                                 pending_maps[i].map_len);
+            if (!ph_wipe_unmap_direct(pending_maps[i].base,
+                                      pending_maps[i].map_len) &&
+                !ph_remember_direct_dex_map(&pending_maps[i])) {
+                PH_NUKE("cannot retain failed owned DEX map cleanup");
+                nuke_app();
+            }
             pending_maps[i].base = NULL;
         }
     }

@@ -10,6 +10,20 @@
 #include <sys/syscall.h>
 #include "phantom_runtime_checks.h"
 
+static void test_page_rounding(void) {
+    size_t rounded = 0u;
+    assert(ph_round_up_to_page(112u, 4096u, &rounded) && rounded == 4096u);
+    assert(ph_round_up_to_page(4097u, 4096u, &rounded) && rounded == 8192u);
+    assert(ph_round_up_to_page(4097u, 16384u, &rounded) && rounded == 16384u);
+    assert(ph_round_up_to_page(16384u, 16384u, &rounded) && rounded == 16384u);
+
+    rounded = 123u;
+    assert(!ph_round_up_to_page(SIZE_MAX, 4096u, &rounded));
+    assert(rounded == 123u);
+    assert(!ph_round_up_to_page(1u, 6000u, &rounded));
+    puts("4-KiB/16-KiB page rounding and overflow checks: PASS");
+}
+
 static void *ack_worker(void *arg) {
     ph_watch_ack(arg, 22);
     return NULL;
@@ -68,6 +82,7 @@ static void test_real_rounds(void) {
 }
 
 int main(void) {
+    test_page_rounding();
     ph_watch_state_t watch = {0};
     assert(ph_watch_ready(&watch, 11) == -1);
     assert(ph_watch_begin(&watch));

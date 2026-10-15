@@ -219,11 +219,35 @@ int main(void) {
         subprocess.run([str(exe)], check=True)
     # Protect both early key derivation and each shard's materialization.
     loader = function(source, "Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards")
-    assert loader.index("ph_require_watcher();") < loader.index("arx_kdf(")
+    jni_probe = loader.index("ph_probe_jni_environment_native(env);")
+    memory_probe = loader.index("ph_probe_memory_semantics_native();")
+    eventfd_probe = loader.index("ph_probe_eventfd_semantics_native();")
+    watcher_probe = loader.index("ph_require_watcher();")
+    key_derivation = loader.index("arx_kdf(")
+    assert jni_probe < memory_probe < eventfd_probe < watcher_probe < key_derivation
     assert loader.count("ph_require_watcher();") == 2
+    assert "PH_OS_PROBE_INCONSISTENT" in loader
+    assert "== PH_OS_PROBE_UNSUPPORTED" not in loader
     assert "NewDirectByteBuffer" in loader
     assert "ph_direct_dex_map_t pending_maps" in loader
-    print("JNI placement and retained DEX lifetime: PASS")
+    assert "plain_buf" not in loader
+    assert "memcpy(dex_map" not in loader
+    assert "ph_scrub_art_dex_markers" not in source
+    assert "ph_parse_art_map" in source
+    measured = loader.index("ph_inflate_measure_bounded(")
+    mapped = loader.index("vm_mmap_private_rw(", measured)
+    direct_inflate = loader.index("ph_inflate_into_exact(", mapped)
+    constructor = loader.index("result_cl = (*env)->NewObject", direct_inflate)
+    signal_probe = loader.index("ph_probe_signal_gate_native();", constructor)
+    dumper_probe = loader.index("detect_general_dumper_before_decrypt();", constructor)
+    complete = loader.index(
+        "ph_load_advance(PH_LOAD_CLASSLOADER, PH_LOAD_COMPLETE)", constructor)
+    commit = loader.index("g_direct_dex_maps[i] = pending_maps[i]", complete)
+    assert measured < mapped < direct_inflate < constructor
+    assert constructor < signal_probe < complete < commit
+    assert dumper_probe < complete
+    assert "g_direct_dex_count = (unsigned int)n_pending_maps" in loader
+    print("JNI/platform gate ordering, direct bounded inflate, retained owned maps and probes: PASS")
 
 
 if __name__ == "__main__":

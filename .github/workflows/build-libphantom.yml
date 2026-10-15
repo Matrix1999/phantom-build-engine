@@ -35,7 +35,7 @@ jobs:
           add-to-path: false
 
       - name: Install Python (for encrypt_blob.py)
-        run: sudo apt-get install -y --no-install-recommends python3
+        run: sudo apt-get install -y --no-install-recommends python3 zlib1g-dev
 
       - name: Test watcher and essential runtime gates on host
         run: |
@@ -43,6 +43,12 @@ jobs:
           cc -std=c11 -O2 -Wall -Wextra -Werror -pthread \
             phantom_runtime_checks_test.c -o /tmp/phantom_runtime_checks_test
           /tmp/phantom_runtime_checks_test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-function \
+            phantom_os_consistency_test.c -o /tmp/phantom_os_consistency_test
+          /tmp/phantom_os_consistency_test
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            phantom_inflate_test.c -lz -o /tmp/phantom_inflate_test
+          /tmp/phantom_inflate_test
           cc -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-function -pthread \
             phantom_native_probes_test.c -o /tmp/phantom_native_probes_test
           /tmp/phantom_native_probes_test

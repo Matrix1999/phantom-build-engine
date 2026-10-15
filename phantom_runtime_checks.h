@@ -169,6 +169,18 @@ static PH_RUNTIME_NATIVE int ph_dumpability_ok(int set_result, int get_result) {
     return set_result == 0 && get_result == 0;
 }
 
+__attribute__((always_inline))
+static inline int ph_round_up_to_page(
+        size_t value, size_t page_size, size_t *rounded) {
+    if (!rounded || page_size == 0u ||
+        (page_size & (page_size - 1u)) != 0u ||
+        value > SIZE_MAX - (page_size - 1u)) {
+        return 0;
+    }
+    *rounded = (value + page_size - 1u) & ~(page_size - 1u);
+    return *rounded >= value;
+}
+
 /* Missing/malformed is not equivalent to an explicit untraced process. */
 static PH_RUNTIME_NATIVE int ph_tracer_pid(
         const char *status, size_t bytes, const char *label, int *pid) {
