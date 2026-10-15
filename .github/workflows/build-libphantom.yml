@@ -618,6 +618,7 @@ jobs:
               | grep -v '^module' \
               | sort -u > "$ACTUAL"
             cat "phantom-vmp-baseline-${ABI}.txt" > "$EXPECTED"
+            printf '\n' >> "$EXPECTED"
             printf '%s\n' "${ADDED_TARGETS[@]}" >> "$EXPECTED"
             sort -u -o "$EXPECTED" "$EXPECTED"
             diff -u "$EXPECTED" "$ACTUAL"
