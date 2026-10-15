@@ -173,8 +173,9 @@ static PH_PROBE_VM unsigned int ph_signal_delivery_vm(
     return nonce ^ (0xa5c39e17u & (0u - accepted));
 }
 
-static PH_PROBE_VM void ph_signal_context_apply_vm(
+static PH_PROBE_VM_FLAT void ph_signal_context_apply_vm(
         volatile uint32_t *saved_return_register, uint32_t return_value) {
+    if (!saved_return_register) return;
     *saved_return_register = return_value;
 }
 
@@ -225,8 +226,7 @@ static PH_RUNTIME_NATIVE void ph_probe_signal_handler_native(
             sp, state->nonce);
     unsigned int return_value = ph_signal_delivery_vm(
             route_valid, frame_valid, state->nonce);
-    if (saved_return_register)
-        ph_signal_context_apply_vm(saved_return_register, return_value);
+    ph_signal_context_apply_vm(saved_return_register, return_value);
 }
 
 /* OS ABI plumbing, not enforcement. A default-disposition, unblocked signal

@@ -627,15 +627,8 @@ static PH_PROBE_VM unsigned int ph_probe_atomic_gate_vm(unsigned int status) {
     return (unsigned int)(status == 1u);
 }
 
-static PH_PROBE_VM_FLAT unsigned int ph_probe_signal_gate_vm(
-        volatile unsigned int *accepted) {
-    unsigned int value = *accepted;
-    if (value == 1u) {
-        *accepted = 1u;
-        return 1u;
-    }
-    *accepted = 0u;
-    return 0u;
+static PH_PROBE_VM unsigned int ph_probe_signal_gate_vm(unsigned int accepted) {
+    return (unsigned int)(accepted == 1u);
 }
 
 static PH_RUNTIME_NATIVE void ph_probe_atomic_gate_native(void) {
@@ -647,13 +640,12 @@ static PH_RUNTIME_NATIVE void ph_probe_atomic_gate_native(void) {
 static PH_RUNTIME_NATIVE void ph_probe_signal_gate_native(void) {
     ph_probe_signal_state_t *state = ph_probe_signal_round_native();
     if (!state) {
-        unsigned int rejected = 0u;
-        if (ph_probe_signal_gate_vm(&rejected) != 1u) nuke_app();
+        if (ph_probe_signal_gate_vm(0u) != 1u) nuke_app();
         return;
     }
     unsigned int accepted = ph_signal_result_vm(
             state->setup_ok, state->token, state->nonce);
-    accepted = ph_probe_signal_gate_vm(&accepted);
+    accepted = ph_probe_signal_gate_vm(accepted);
     ph_probe_signal_finish_native();
     if (accepted != 1u) nuke_app();
 }
