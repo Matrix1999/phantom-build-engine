@@ -10,8 +10,7 @@
 
 #ifdef __clang__
 #define PH_PROBE_VM __attribute__((noinline, annotate("+vm_virtualize")))
-#define PH_PROBE_VM_FLAT \
-    __attribute__((noinline, optnone, annotate("+vm_virtualize,+vm_flatten")))
+#define PH_PROBE_VM_FLAT __attribute__((noinline, annotate("+vm_virtualize,+vm_flatten")))
 #else
 #define PH_PROBE_VM __attribute__((noinline))
 #define PH_PROBE_VM_FLAT __attribute__((noinline))
