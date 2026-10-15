@@ -21,6 +21,6 @@ int main(void) {
     report_probe("eventfd/poll/epoll",
                  ph_probe_event_notification_native());
     report_probe("pthread TLS lifecycle",
-                 ph_probe_thread_local_semantics_native());
+                 ph_probe_thread_local_semantics_native(pthread_create));
     return 0;
 }

@@ -225,7 +225,7 @@ int main(void) {
         "ph_probe_jni_environment_native(env, clazz);",
         "ph_probe_memory_semantics_native();",
         "ph_probe_event_notification_native();",
-        "ph_probe_thread_local_semantics_native();",
+        "ph_probe_thread_local_semantics_loader_native();",
     ):
         assert loader.index(probe) < loader.index("arx_kdf(")
     assert "PH_OS_PROBE_INCONSISTENT" in loader

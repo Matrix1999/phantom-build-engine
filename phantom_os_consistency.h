@@ -183,6 +183,10 @@ typedef struct {
     volatile unsigned int references;
 } ph_tls_probe_context_t;
 
+typedef int (*ph_os_thread_create_fn)(
+        pthread_t *, const pthread_attr_t *,
+        void *(*)(void *), void *);
+
 enum {
     PH_TLS_PROBE_RUNNING = 0,
     PH_TLS_PROBE_ORPHANED = 1,
@@ -231,7 +235,10 @@ static PH_RUNTIME_NATIVE void *ph_tls_probe_worker(void *opaque) {
  * value while the worker checks its own initially-empty thread-local slot.
  * No scheduling order or elapsed-time threshold is used. */
 static PH_RUNTIME_NATIVE ph_os_probe_result_t
-ph_probe_thread_local_semantics_native(void) {
+ph_probe_thread_local_semantics_native(
+        ph_os_thread_create_fn thread_create) {
+    if (!thread_create) return PH_OS_PROBE_UNSUPPORTED;
+
     ph_tls_probe_context_t *context =
             (ph_tls_probe_context_t *)calloc(1u, sizeof(*context));
     if (!context) return PH_OS_PROBE_UNSUPPORTED;
@@ -256,7 +263,7 @@ ph_probe_thread_local_semantics_native(void) {
     }
 
     __atomic_add_fetch(&context->references, 1u, __ATOMIC_RELAXED);
-    if (pthread_create(&worker, NULL, ph_tls_probe_worker, context) != 0) {
+    if (thread_create(&worker, NULL, ph_tls_probe_worker, context) != 0) {
         ph_tls_probe_release(context);
         goto cleanup;
     }

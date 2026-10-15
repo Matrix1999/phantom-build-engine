@@ -464,6 +464,13 @@ static __attribute__((noinline)) int vm_pthread_create(
     return ((_pth_t)cached)(t, attr, fn, arg);
 }
 
+/* Keep pthread_create out of the dynamic import table; this native bridge
+   supplies the existing hidden resolver to the TLS consistency probe. */
+static PH_RUNTIME_NATIVE ph_os_probe_result_t
+ph_probe_thread_local_semantics_loader_native(void) {
+    return ph_probe_thread_local_semantics_native(vm_pthread_create);
+}
+
 /* vm_prctl — raw syscall via existing raw_syscall_5 (arm64) / syscall() (arm32).
    Removes prctl from the PLT import table entirely.                          */
 static __attribute__((noinline)) int vm_prctl(int opt, unsigned long a2) {
@@ -2925,7 +2932,7 @@ Java_com_ultra_dex2cvmp_utils_DexCrypto_nativeLoadShards(
     ph_os_probe_result_t event_probe =
             ph_probe_event_notification_native();
     ph_os_probe_result_t tls_probe =
-            ph_probe_thread_local_semantics_native();
+            ph_probe_thread_local_semantics_loader_native();
     if (jni_probe == PH_OS_PROBE_INCONSISTENT ||
         memory_probe == PH_OS_PROBE_INCONSISTENT ||
         event_probe == PH_OS_PROBE_INCONSISTENT ||
