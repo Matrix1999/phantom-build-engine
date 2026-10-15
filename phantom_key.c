@@ -2649,12 +2649,16 @@ static volatile unsigned int g_direct_dex_count = 0;
 __attribute__((annotate("+vm_virtualize,-vm_flatten")))
 static __attribute__((noinline)) int ph_stage_policy_vm(
         size_t data_len, size_t map_len, size_t page_size) {
-    if (data_len < 112) return 0;
-    if (data_len > MAX_SZ) return 0;
-    size_t padded_len = 0;
-    if (!ph_round_up_to_page(data_len, page_size, &padded_len)) return 0;
-    if (map_len != padded_len) return 0;
-    return 1;
+    int accepted = 0;
+    if (data_len >= 112u && data_len <= MAX_SZ &&
+        page_size != 0u &&
+        (page_size & (page_size - 1u)) == 0u &&
+        data_len <= SIZE_MAX - (page_size - 1u)) {
+        size_t padded_len =
+                (data_len + page_size - 1u) & ~(page_size - 1u);
+        accepted = padded_len >= data_len && map_len == padded_len;
+    }
+    return accepted;
 }
 
 /*
