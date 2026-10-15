@@ -43,7 +43,6 @@ static void test_policy(void) {
     assert(return_value == (state.nonce ^ 0xa5c39e17u));
     volatile uint32_t *saved_return_register =
             (volatile uint32_t *)&uc.uc_mcontext.gregs[REG_R12];
-    ph_signal_context_apply_vm(NULL, 0u);
     ph_signal_context_apply_vm(saved_return_register, return_value);
     assert(*saved_return_register == (state.nonce ^ 0xa5c39e17u));
     assert(ph_signal_delivery_vm(0u, frame_valid, state.nonce) == state.nonce);
