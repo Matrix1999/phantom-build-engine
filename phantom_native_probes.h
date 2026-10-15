@@ -173,7 +173,7 @@ static PH_PROBE_VM unsigned int ph_signal_delivery_vm(
     return nonce ^ (0xa5c39e17u & (0u - accepted));
 }
 
-static PH_PROBE_VM_FLAT void ph_signal_context_apply_vm(
+static PH_PROBE_VM void ph_signal_context_apply_vm(
         volatile uint32_t *saved_return_register, uint32_t return_value) {
     if (!saved_return_register) return;
     *saved_return_register = return_value;
