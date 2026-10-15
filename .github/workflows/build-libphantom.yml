@@ -431,6 +431,7 @@ jobs:
       - name: VMP section audit (arm64 + arm32)
         run: |
           set -e
+          SUMMARY_REPORT="amice-vmp-functions-report.txt"
           ADDED_TARGETS=(
             ph_probe_atomic_gate_vm
             ph_signal_route_vm
@@ -444,6 +445,21 @@ jobs:
           # The context writer is a branchless VM store; its null guard stays
           # in the native signal-frame bridge, not in the virtualized target.
           FLATTEN_TARGETS=()
+          {
+            echo "# Amice VMP and flatten report"
+            echo ""
+            echo "Generated from the pre-strip ARM64 and ARM32 object files."
+            echo "VMP virtualized functions are listed where both Amice VM metadata and bytecode sections exist."
+            echo "Verified flattened functions require a VmFlatten log entry with JmpIf and no verification-failure entry."
+            echo "Explicit flatten target assertions configured in this workflow: none (FLATTEN_TARGETS is empty)."
+          } > "$SUMMARY_REPORT"
+          print_targets() {
+            if [ -s "$1" ]; then
+              sed 's/^/  - /' "$1"
+            else
+              echo "  - (none)"
+            fi
+          }
           PATTERN="ph_pstring_prepare_vm|ph_pstring_decrypt_vm|ph_pstring_auth_policy_vm|ph_pstring_scrub_key[0-3]_vm|ph_pstring_scrub_aad_vm|ph_pstring_unmask_vm|detect_ptrace|detect_frida|detect_proc_dump_artifacts|detect_phantom_self_integrity|detect_ebpf|detect_riru|detect_root|detect_linker_maps|check_rooted|nuke_app|hook_phdr|collect_exec|parse_maps|fetch_checksum|scan_executable|check_frida_port|ph_strings|stage_policy|stage_apply|stage_hchacha_vm|stage_hchacha_qr_vm|stage_decrypt"
           for OBJ in phantom_arm64.o phantom_arm32.o; do
             if [ "$OBJ" = "phantom_arm64.o" ]; then
@@ -454,6 +470,14 @@ jobs:
             SECTION_REPORT="amice-vmp-${ABI}-report.txt"
             SECTION_FILE="/tmp/${ABI}_phantom_sections.txt"
             AMICE_LOG="/tmp/phantom_${ABI}_amice.log"
+            META_TARGETS_FILE="/tmp/${ABI}_vmp_metadata_targets.txt"
+            BYTECODE_TARGETS_FILE="/tmp/${ABI}_vmp_bytecode_targets.txt"
+            VIRTUALIZED_TARGETS_FILE="/tmp/${ABI}_vmp_virtualized_targets.txt"
+            FLATTEN_CANDIDATES_FILE="/tmp/${ABI}_flatten_candidates.txt"
+            FLATTEN_FAILURES_FILE="/tmp/${ABI}_flatten_failures.txt"
+            FLATTENED_TARGETS_FILE="/tmp/${ABI}_flattened_targets.txt"
+            VMP_FLATTENED_TARGETS_FILE="/tmp/${ABI}_vmp_flattened_targets.txt"
+            VMP_UNCONFIRMED_FLATTEN_FILE="/tmp/${ABI}_vmp_unconfirmed_flatten.txt"
 
             echo "======================================================"
             echo "$OBJ - VMP protection audit"
@@ -467,6 +491,31 @@ jobs:
               echo "No VMP marker sections found in $OBJ" >&2
               exit 1
             fi
+            grep -oE 'amice\.vm\.meta\.[[:alnum:]_]+' "$SECTION_FILE" \
+              | sed 's/^amice\.vm\.meta\.//' \
+              | grep -v '^module' \
+              | sort -u > "$META_TARGETS_FILE"
+            grep -oE 'amice\.vm\.bytecode\.[[:alnum:]_]+' "$SECTION_FILE" \
+              | sed 's/^amice\.vm\.bytecode\.//' \
+              | sort -u > "$BYTECODE_TARGETS_FILE"
+            if [ ! -s "$AMICE_LOG" ]; then
+              echo "Missing Amice log for $ABI; cannot report flatten results" >&2
+              exit 1
+            fi
+            grep -E '\(VmFlatten\) fun: "[^"]+" opcodes: .*JmpIf' "$AMICE_LOG" \
+              | sed -E 's/.*\(VmFlatten\) fun: "([^"]+)".*/\1/' \
+              | sort -u > "$FLATTEN_CANDIDATES_FILE"
+            grep -E 'vm_flatten.*function "[^"]+" verify failed' "$AMICE_LOG" \
+              | sed -E 's/.*vm_flatten.*function "([^"]+)" verify failed.*/\1/' \
+              | sort -u > "$FLATTEN_FAILURES_FILE"
+            comm -23 "$FLATTEN_CANDIDATES_FILE" "$FLATTEN_FAILURES_FILE" \
+              > "$FLATTENED_TARGETS_FILE"
+            comm -12 "$META_TARGETS_FILE" "$BYTECODE_TARGETS_FILE" \
+              > "$VIRTUALIZED_TARGETS_FILE"
+            comm -12 "$VIRTUALIZED_TARGETS_FILE" "$FLATTENED_TARGETS_FILE" \
+              > "$VMP_FLATTENED_TARGETS_FILE"
+            comm -23 "$VIRTUALIZED_TARGETS_FILE" "$VMP_FLATTENED_TARGETS_FILE" \
+              > "$VMP_UNCONFIRMED_FLATTEN_FILE"
             head -80 "$SECTION_REPORT"
 
             echo ""
@@ -544,6 +593,45 @@ jobs:
               fi
               echo "✅ ${target} flattened control flow verified"
             done
+
+            {
+              echo ""
+              echo "## $ABI — $OBJ"
+              echo ""
+              echo "### Amice VMP metadata targets ($(wc -l < "$META_TARGETS_FILE" | tr -d ' '))"
+              print_targets "$META_TARGETS_FILE"
+              echo ""
+              echo "### Amice VM bytecode targets ($(wc -l < "$BYTECODE_TARGETS_FILE" | tr -d ' '))"
+              print_targets "$BYTECODE_TARGETS_FILE"
+              echo ""
+              echo "### VMP virtualized: metadata and bytecode both present ($(wc -l < "$VIRTUALIZED_TARGETS_FILE" | tr -d ' '))"
+              print_targets "$VIRTUALIZED_TARGETS_FILE"
+              echo ""
+              echo "### Anti-emulator function status"
+              for target in nuke_app vm_spawn_watcher detect_ptrace detect_frida check_rooted; do
+                if grep -Fxq "$target" "$VIRTUALIZED_TARGETS_FILE"; then
+                  VMP_STATUS="yes"
+                else
+                  VMP_STATUS="no"
+                fi
+                if grep -Fxq "$target" "$FLATTENED_TARGETS_FILE"; then
+                  FLATTEN_STATUS="yes"
+                else
+                  FLATTEN_STATUS="no verified flatten record"
+                fi
+                echo "- \`$target\`: VMP bytecode + metadata=$VMP_STATUS; VmFlatten=$FLATTEN_STATUS"
+              done
+              echo ""
+              echo "### VmFlatten verified with JmpIf ($(wc -l < "$FLATTENED_TARGETS_FILE" | tr -d ' '))"
+              print_targets "$FLATTENED_TARGETS_FILE"
+              echo ""
+              echo "### VMP-virtualized functions also verified flattened ($(wc -l < "$VMP_FLATTENED_TARGETS_FILE" | tr -d ' '))"
+              print_targets "$VMP_FLATTENED_TARGETS_FILE"
+              echo ""
+              echo "### VMP-virtualized functions without verified flatten evidence ($(wc -l < "$VMP_UNCONFIRMED_FLATTEN_FILE" | tr -d ' '))"
+              echo "These are not reported as flattened; this is not a flatten failure unless the workflow explicitly requires them."
+              print_targets "$VMP_UNCONFIRMED_FLATTEN_FILE"
+            } | tee -a "$SUMMARY_REPORT" >> "$SECTION_REPORT"
 
             echo ""
             echo "--- Linker/map consistency detector ---"
@@ -628,6 +716,10 @@ jobs:
               || { echo "$ABI: VMP metadata count changed ($EXPECTED_COUNT -> $ACTUAL_COUNT)" >&2; exit 1; }
             echo "✅ $ABI — exact baseline plus seven probe targets ($ACTUAL_COUNT targets)"
           done
+
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat "$SUMMARY_REPORT" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Strip + harden
         run: |
@@ -803,6 +895,7 @@ jobs:
           path: |
             libphantom_arm64.blob
             libphantom_arm.blob
+            amice-vmp-functions-report.txt
             amice-vmp-arm64-report.txt
             amice-vmp-arm32-report.txt
             phantom-helper-transforms.txt
