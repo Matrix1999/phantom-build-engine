@@ -10,7 +10,8 @@
 
 #ifdef __clang__
 #define PH_PROBE_VM __attribute__((noinline, annotate("+vm_virtualize")))
-#define PH_PROBE_VM_FLAT __attribute__((noinline, annotate("+vm_virtualize,+vm_flatten")))
+#define PH_PROBE_VM_FLAT \
+    __attribute__((noinline, optnone, annotate("+vm_virtualize,+vm_flatten")))
 #else
 #define PH_PROBE_VM __attribute__((noinline))
 #define PH_PROBE_VM_FLAT __attribute__((noinline))
@@ -165,12 +166,13 @@ static PH_PROBE_VM unsigned int ph_signal_frame_vm(
     return valid;
 }
 
-static PH_PROBE_VM unsigned int ph_signal_delivery_vm(
+static PH_PROBE_VM_FLAT unsigned int ph_signal_delivery_vm(
         unsigned int route_valid, unsigned int frame_valid,
         unsigned int nonce) {
-    volatile unsigned int accepted = 0u;
-    if (route_valid == 1u && frame_valid == 1u) accepted = 1u;
-    return nonce ^ (0xa5c39e17u & (0u - accepted));
+    if (route_valid == 1u) {
+        if (frame_valid == 1u) return nonce ^ 0xa5c39e17u;
+    }
+    return nonce;
 }
 
 static PH_PROBE_VM void ph_signal_context_apply_vm(
