@@ -644,8 +644,7 @@ static PH_RUNTIME_NATIVE void ph_probe_signal_gate_native(void) {
         return;
     }
     unsigned int accepted = ph_signal_result_vm(
-            state->setup_ok, (unsigned int)state->delivered,
-            state->token, state->nonce);
+            state->setup_ok, state->token, state->nonce);
     accepted = ph_probe_signal_gate_vm(accepted);
     ph_probe_signal_finish_native();
     if (accepted != 1u) nuke_app();

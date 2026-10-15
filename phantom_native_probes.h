@@ -120,7 +120,6 @@ __asm__(
 
 typedef struct {
     volatile sig_atomic_t armed;
-    volatile sig_atomic_t delivered;
     int signo;
     pid_t pid;
     unsigned int nonce;
@@ -137,8 +136,8 @@ static PH_RUNTIME_NATIVE ph_probe_signal_state_t *ph_probe_signal_state_native(v
     return &g_ph_probe_signal;
 }
 
-/* Flattened bytecode validates the complete kernel-delivered frame and edits
- * the saved return register. The native entry only forwards the ABI values. */
+/* VM bytecode validates the kernel-delivered frame and selects the restored
+ * register value; a separate VM store applies that value to the OS context. */
 static PH_PROBE_VM unsigned int ph_signal_route_vm(
         unsigned int armed, int signo, int expected_signo, int info_signo,
         int code, pid_t sender_pid, pid_t expected_pid) {
@@ -167,16 +166,16 @@ static PH_PROBE_VM unsigned int ph_signal_frame_vm(
 }
 
 static PH_PROBE_VM unsigned int ph_signal_delivery_vm(
-        unsigned int route_valid, unsigned int frame_valid) {
-    return (unsigned int)(route_valid == 1u) &
-           (unsigned int)(frame_valid == 1u);
+        unsigned int route_valid, unsigned int frame_valid,
+        unsigned int nonce) {
+    volatile unsigned int accepted = 0u;
+    if (route_valid == 1u && frame_valid == 1u) accepted = 1u;
+    return nonce ^ (0xa5c39e17u & (0u - accepted));
 }
 
-static PH_PROBE_VM_FLAT void ph_signal_context_apply_vm(
-        volatile uintptr_t *saved_return_register,
-        unsigned int accepted, unsigned int nonce) {
-    if (accepted != 1u) return;
-    *saved_return_register = (uintptr_t)(nonce ^ 0xa5c39e17u);
+static PH_PROBE_VM void ph_signal_context_apply_vm(
+        volatile uint32_t *saved_return_register, uint32_t return_value) {
+    *saved_return_register = return_value;
 }
 
 /* POSIX requires a native, address-taken signal entry point. It makes no
@@ -195,7 +194,7 @@ static PH_RUNTIME_NATIVE void ph_probe_signal_handler_native(
             (unsigned int)state->armed, signo, state->signo,
             info_signo, code, sender_pid, state->pid);
     uintptr_t actual_nonce = 0, actual_marker = 0, actual_pc = 0, sp = 0;
-    volatile uintptr_t *saved_return_register = NULL;
+    volatile uint32_t *saved_return_register = NULL;
     if (context) {
         ucontext_t *uc = (ucontext_t *)context;
 #if defined(__aarch64__)
@@ -204,29 +203,30 @@ static PH_RUNTIME_NATIVE void ph_probe_signal_handler_native(
         actual_pc = (uintptr_t)uc->uc_mcontext.pc;
         sp = (uintptr_t)uc->uc_mcontext.sp;
         saved_return_register =
-                (volatile uintptr_t *)&uc->uc_mcontext.regs[12];
+                (volatile uint32_t *)&uc->uc_mcontext.regs[12];
 #elif defined(__arm__)
         actual_nonce = (uintptr_t)uc->uc_mcontext.arm_ip;
         actual_marker = (uintptr_t)uc->uc_mcontext.arm_r4;
         actual_pc = (uintptr_t)uc->uc_mcontext.arm_pc;
         sp = (uintptr_t)uc->uc_mcontext.arm_sp;
         saved_return_register =
-                (volatile uintptr_t *)&uc->uc_mcontext.arm_ip;
+                (volatile uint32_t *)&uc->uc_mcontext.arm_ip;
 #elif defined(PH_PROBE_HOST_TEST) && defined(__x86_64__)
         actual_nonce = (uintptr_t)uc->uc_mcontext.gregs[REG_R12];
         actual_marker = (uintptr_t)uc->uc_mcontext.gregs[REG_R13];
         actual_pc = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
         sp = (uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
         saved_return_register =
-                (volatile uintptr_t *)&uc->uc_mcontext.gregs[REG_R12];
+                (volatile uint32_t *)&uc->uc_mcontext.gregs[REG_R12];
 #endif
     }
     unsigned int frame_valid = ph_signal_frame_vm(
             actual_nonce, actual_marker, actual_pc, state->resume_pc,
             sp, state->nonce);
-    unsigned int accepted = ph_signal_delivery_vm(route_valid, frame_valid);
-    ph_signal_context_apply_vm(saved_return_register, accepted, state->nonce);
-    state->delivered = (sig_atomic_t)accepted;
+    unsigned int return_value = ph_signal_delivery_vm(
+            route_valid, frame_valid, state->nonce);
+    if (saved_return_register)
+        ph_signal_context_apply_vm(saved_return_register, return_value);
 }
 
 /* OS ABI plumbing, not enforcement. A default-disposition, unblocked signal
@@ -236,7 +236,6 @@ static PH_RUNTIME_NATIVE ph_probe_signal_state_t *ph_probe_signal_round_native(v
     if (__sync_lock_test_and_set(&g_ph_probe_signal_busy, 1)) return NULL;
     ph_probe_signal_state_t *state = &g_ph_probe_signal;
     state->armed = 0;
-    state->delivered = 0;
     state->setup_ok = 0;
     sigset_t original, blocked, restored;
     if (sigprocmask(SIG_SETMASK, NULL, &original) != 0) return state;
@@ -309,10 +308,8 @@ static PH_RUNTIME_NATIVE unsigned int ph_probe_atomic_capture_native(void) {
 }
 
 static PH_PROBE_VM unsigned int ph_signal_result_vm(
-        unsigned int setup_ok, unsigned int delivered,
-        unsigned int token, unsigned int nonce) {
+        unsigned int setup_ok, unsigned int token, unsigned int nonce) {
     unsigned int valid = (unsigned int)(setup_ok == 1u);
-    valid &= (unsigned int)(delivered == 1u);
     valid &= (unsigned int)(token == (nonce ^ 0xa5c39e17u));
     return valid;
 }
