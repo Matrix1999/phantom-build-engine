@@ -627,8 +627,9 @@ static PH_PROBE_VM unsigned int ph_probe_atomic_gate_vm(unsigned int status) {
     return (unsigned int)(status == 1u);
 }
 
-static PH_PROBE_VM unsigned int ph_probe_signal_gate_vm(unsigned int accepted) {
-    return (unsigned int)(accepted == 1u);
+static PH_PROBE_VM_FLAT unsigned int ph_probe_signal_gate_vm(unsigned int accepted) {
+    if (accepted == 1u) return 1u;
+    return 0u;
 }
 
 static PH_RUNTIME_NATIVE void ph_probe_atomic_gate_native(void) {

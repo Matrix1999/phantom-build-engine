@@ -166,13 +166,12 @@ static PH_PROBE_VM unsigned int ph_signal_frame_vm(
     return valid;
 }
 
-static PH_PROBE_VM_FLAT unsigned int ph_signal_delivery_vm(
+static PH_PROBE_VM unsigned int ph_signal_delivery_vm(
         unsigned int route_valid, unsigned int frame_valid,
         unsigned int nonce) {
-    if (route_valid == 1u) {
-        if (frame_valid == 1u) return nonce ^ 0xa5c39e17u;
-    }
-    return nonce;
+    unsigned int accepted = (unsigned int)(route_valid == 1u) &
+                            (unsigned int)(frame_valid == 1u);
+    return nonce ^ (0xa5c39e17u & (0u - accepted));
 }
 
 static PH_PROBE_VM void ph_signal_context_apply_vm(
